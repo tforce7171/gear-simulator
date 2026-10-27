@@ -1,7 +1,7 @@
 ---
 id: S1-18
 title: 候補の表示とクリックで歯車を生やす
-status: todo
+status: doing
 depends: [S1-10, S1-16]
 ---
 
