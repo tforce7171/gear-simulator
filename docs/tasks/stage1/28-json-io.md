@@ -1,7 +1,7 @@
 ---
 id: S1-28
 title: JSON のエクスポートとインポート
-status: todo
+status: doing
 depends: [S1-27]
 ---
 
