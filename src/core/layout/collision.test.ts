@@ -166,6 +166,42 @@ describe('findInterferences: 並び', () => {
   });
 });
 
+describe('findInterferences: 粗い絞り込み', () => {
+  it('乱数の配置で、全ての組に collides を使った結果と一致する', () => {
+    // 決定的な線形合同法
+    let seed = 12345;
+    const rand = (): number => {
+      seed = (seed * 1103515245 + 12345) % 2147483648;
+      return seed / 2147483648;
+    };
+    const axes: readonly Axis[] = ['x', 'y', 'z'];
+    const point = (): Vec3 => [rand() * 80, rand() * 80, rand() * 80];
+    const colliders: Collider[] = [];
+    for (let i = 0; i < 60; i++) {
+      const axis = axes[Math.floor(rand() * 3)] ?? 'y';
+      colliders.push(
+        gearCollider(`g${i}`, `s${i}`, point(), axis, 'S', 12 + Math.floor(rand() * 20)),
+      );
+      colliders.push(seg(`s${i}`, point(), point()));
+    }
+    const expected: Array<[string, string]> = [];
+    for (let i = 0; i < colliders.length; i++) {
+      for (let j = i + 1; j < colliders.length; j++) {
+        const a = colliders[i];
+        const b = colliders[j];
+        if (a === undefined || b === undefined) continue;
+        const own =
+          (a.kind === 'cylinder' && a.shaftId === b.id) ||
+          (b.kind === 'cylinder' && b.shaftId === a.id);
+        if (!own && collides(a, b)) expected.push(a.id < b.id ? [a.id, b.id] : [b.id, a.id]);
+      }
+    }
+    expected.sort((p, q) => (p[0] < q[0] ? -1 : p[0] > q[0] ? 1 : p[1] < q[1] ? -1 : 1));
+    expect(expected.length).toBeGreaterThan(10);
+    expect(findInterferences(colliders, [])).toEqual(expected);
+  });
+});
+
 describe('findInterferences: 性能の目安', () => {
   it('30mm 間隔の格子の円柱 200 個と線分 200 本（干渉なし）→ 0 件、100ms 未満', () => {
     const colliders: Collider[] = [];

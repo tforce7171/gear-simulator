@@ -63,7 +63,8 @@ export function collides(a: Collider, b: Collider): boolean {
 }
 
 // 全ての組を調べる。exempt の組（順序は問わない）と、歯車とそれが載ったシャフトの組は除く。
-// 組の中は [小さい ID, 大きい ID]、一覧も辞書順（符号単位の比較）。重複なし
+// 組の中は [小さい ID, 大きい ID]、一覧も辞書順（符号単位の比較）。重複なし。
+// 粗い絞り込みとして、x の区間で並べ（sweep and prune）、軸に平行な箱が重なる組だけを詳しく調べる
 export function findInterferences(
   colliders: readonly Collider[],
   exempt: ReadonlyArray<readonly [string, string]>,
@@ -71,13 +72,25 @@ export function findInterferences(
   const exemptKeys = new Set<string>();
   for (const [a, b] of exempt) exemptKeys.add(pairKey(a, b));
 
+  const boxes = colliders.map(boundingBox);
+  const order = colliders
+    .map((_, i) => i)
+    .sort((i, j) => boxMin(boxes, i, 0) - boxMin(boxes, j, 0));
+
   const found = new Map<string, [string, string]>();
-  for (let i = 0; i < colliders.length; i++) {
+  for (let oi = 0; oi < order.length; oi++) {
+    const i = order[oi] ?? 0;
     const a = colliders[i];
-    if (a === undefined) continue;
-    for (let j = i + 1; j < colliders.length; j++) {
+    const boxA = boxes[i];
+    if (a === undefined || boxA === undefined) continue;
+    for (let oj = oi + 1; oj < order.length; oj++) {
+      const j = order[oj] ?? 0;
       const b = colliders[j];
-      if (b === undefined || a.id === b.id) continue;
+      const boxB = boxes[j];
+      if (b === undefined || boxB === undefined) continue;
+      // x の最小で並べているので、b の x の最小が a の x の最大を超えたら、以降は重ならない
+      if (boxB.min[0] > boxA.max[0]) break;
+      if (!boxesOverlap(boxA, boxB) || a.id === b.id) continue;
       if (onOwnShaft(a, b) || onOwnShaft(b, a)) continue;
       const key = pairKey(a.id, b.id);
       if (exemptKeys.has(key) || found.has(key)) continue;
@@ -86,6 +99,50 @@ export function findInterferences(
     }
   }
   return [...found.values()].sort((p, q) => compare(p[0], q[0]) || compare(p[1], q[1]));
+}
+
+interface Box {
+  readonly min: Vec3;
+  readonly max: Vec3;
+}
+
+// 軸に平行な外接箱（閉じた箱。触れているだけの組も残し、詳しい判定に回す）
+function boundingBox(c: Collider): Box {
+  if (c.kind === 'segment') {
+    return {
+      min: [
+        Math.min(c.start[0], c.end[0]),
+        Math.min(c.start[1], c.end[1]),
+        Math.min(c.start[2], c.end[2]),
+      ],
+      max: [
+        Math.max(c.start[0], c.end[0]),
+        Math.max(c.start[1], c.end[1]),
+        Math.max(c.start[2], c.end[2]),
+      ],
+    };
+  }
+  const ia = AXIS_INDEX[c.axis];
+  const half = (k: Index): number => (k === ia ? c.halfWidth : c.radius);
+  return {
+    min: [c.center[0] - half(0), c.center[1] - half(1), c.center[2] - half(2)],
+    max: [c.center[0] + half(0), c.center[1] + half(1), c.center[2] + half(2)],
+  };
+}
+
+function boxMin(boxes: readonly Box[], i: number, k: Index): number {
+  return boxes[i]?.min[k] ?? 0;
+}
+
+function boxesOverlap(a: Box, b: Box): boolean {
+  return (
+    a.min[0] <= b.max[0] &&
+    b.min[0] <= a.max[0] &&
+    a.min[1] <= b.max[1] &&
+    b.min[1] <= a.max[1] &&
+    a.min[2] <= b.max[2] &&
+    b.min[2] <= a.max[2]
+  );
 }
 
 function compare(a: string, b: string): number {
