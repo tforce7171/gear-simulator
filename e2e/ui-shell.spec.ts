@@ -15,7 +15,7 @@ const TOOLBAR_IDS = [
   'settings',
 ] as const;
 // 動作が付いて有効になっているボタン
-const ENABLED_IDS: ReadonlySet<string> = new Set(['info']);
+const ENABLED_IDS: ReadonlySet<string> = new Set(['info', 'theme']);
 
 type Box = { x: number; y: number; width: number; height: number };
 type Counts = { pointerdown: number; wheel: number };

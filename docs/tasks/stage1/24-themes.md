@@ -1,7 +1,7 @@
 ---
 id: S1-24
 title: テーマと質感
-status: todo
+status: done
 depends: [S1-04]
 ---
 
@@ -109,6 +109,6 @@ depends: [S1-04]
 - 両テーマで、選択の強調、候補、ハンドル、ロックの赤が見分けられるか。
 
 ## 完了の条件
-- [ ] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
-- [ ] design.md と後続のタスク資料に、必要な変更を反映した（`settings.theme` / `settings.quality`、`__gearSim` の追加 API を design.md §7・§10 に書く）
-- [ ] `status: done` にしてコミットした
+- [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
+- [x] design.md と後続のタスク資料に、必要な変更を反映した（`settings.theme` / `settings.quality`、`__gearSim` の追加 API を design.md §7・§10 に書く）
+- [x] `status: done` にしてコミットした

@@ -69,6 +69,11 @@ export const ja = {
   'properties.motor.on': 'ON',
   'properties.motor.off': 'OFF',
   'properties.motor.remove': '外す',
+  // テーマと品質の名前（S1-24。S1-30 の設定画面で使う）
+  'theme.brass': '真鍮',
+  'theme.wood': '木製',
+  'quality.high': '高品質',
+  'quality.low': '軽量',
   // トースト（S1-15）
   'toast.close': '閉じる',
   // 情報表示（S1-23）。ラベルの 2 行目の見出し

@@ -1,10 +1,10 @@
 import {
+  ACESFilmicToneMapping,
   AmbientLight,
-  Color,
   DirectionalLight,
-  GridHelper,
   Group,
   OrthographicCamera,
+  PCFShadowMap,
   PerspectiveCamera,
   Plane,
   Raycaster,
@@ -13,19 +13,20 @@ import {
   Vector3,
   WebGLRenderer,
 } from 'three';
+import { boundsOf } from '../core/layout/bounds';
+import type { Layout } from '../core/layout/types';
 import type { Vec3 } from '../core/math/vec3';
+import type { Quality, ThemeId } from '../core/theme';
 import type { HandleSpec, Ray } from '../input/handle-drag';
 import { type CandidateSpec, createCandidateView } from './candidates';
 import { createGeometryCache } from './gear-geometry';
 import { createHandleView, createReattachView, type ReattachRing } from './handles';
 import { createInfoArrowView, type InfoArrowSpec } from './info-arrows';
 import { createPicker, type PickHit, type PickKind } from './picking';
+import { createRedrawDetector } from './redraw';
 import type { SceneView } from './scene-view';
 import { createSceneSync, type Highlight, type PreviewStyle } from './sync';
-
-const BACKGROUND = 0x1e2126;
-const GRID_SIZE = 400; // mm
-const GRID_DIVISIONS = 40; // 10 mm 刻み
+import { createThemeController } from './themes';
 
 // 初期の視点（部品が 1 つも無いときの全体表示もここに戻す。S1-13）
 export const INITIAL_CAMERA_POSITION: Vec3 = [40, 75, 70];
@@ -70,21 +71,39 @@ export interface Renderer extends SceneView {
   // ワールド座標の点の、canvas の左上からの位置（CSS ピクセル）。カメラの後ろ・視野の外なら
   // visible: false（S1-23 のラベル）
   projectToCanvas(world: Vec3): { x: number; y: number; visible: boolean };
+  // テーマと品質を適用する（S1-24）。同じ値なら何もしない
+  applyTheme(theme: ThemeId, quality: Quality): void;
+  // 今の描画の状態（S1-24。__gearSim.getRenderInfo）
+  renderInfo(): RenderInfo;
+}
+
+export interface RenderInfo {
+  readonly theme: ThemeId;
+  readonly quality: Quality;
+  readonly shadowMapEnabled: boolean;
+  readonly pixelRatio: number;
+  readonly textures: number; // renderer.info.memory.textures
 }
 
 // キャンバスに描く SceneView を作る。canvas の大きさ（ResizeObserver）に追従する。
-// カメラの位置と向きは input/camera.ts が動かす
-export function createRenderer(canvas: HTMLCanvasElement): Renderer {
+// カメラの位置と向きは input/camera.ts が動かす。テーマと品質は applyTheme で決める（S1-24。
+// 最初は initial のテーマと品質）
+export function createRenderer(
+  canvas: HTMLCanvasElement,
+  initial: { theme: ThemeId; quality: Quality },
+): Renderer {
+  // アンチエイリアスは作るときにしか変えられないので、品質によらず ON
   const renderer = new WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.toneMapping = ACESFilmicToneMapping;
+  // three r18x では PCFSoftShadowMap が無くなり PCFShadowMap（radius でぼかす）に統合された
+  renderer.shadowMap.type = PCFShadowMap;
 
   const scene = new ThreeScene();
-  scene.background = new Color(BACKGROUND);
-  // 床のグリッド（y = 0 の XZ 平面）
-  scene.add(new GridHelper(GRID_SIZE, GRID_DIVISIONS, 0x8a9099, 0x4a4f57));
-  scene.add(new AmbientLight(0xffffff, 0.6));
+  // 床・グリッド・背景・環境マップはテーマ（render/themes.ts）が置く
+  const ambient = new AmbientLight(0xffffff, 0.2);
+  scene.add(ambient);
+  // 光源の位置と影の範囲はテーマのコントローラが部品の範囲に合わせて決める
   const sun = new DirectionalLight(0xffffff, 2);
-  sun.position.set(100, 200, 150);
   scene.add(sun);
 
   const camera = new PerspectiveCamera(45, 1, 1, 5000);
@@ -113,6 +132,23 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
   const infoArrows = createInfoArrowView();
   scene.add(infoArrows.root);
   const picker = createPicker({ canvas, root: pickRoot, camera: () => active });
+  const themes = createThemeController({
+    renderer,
+    scene,
+    sun,
+    ambient,
+    setBaseMaterials: objects.setBaseMaterials,
+    devicePixelRatio: () => window.devicePixelRatio,
+  });
+  themes.apply(initial.theme, initial.quality);
+  // 影マップは部品が動いた・変わったとき（とテーマ・品質の切り替え）だけ描き直す。止まっている
+  // シーンでは影の深度の描画（2048×2048）を毎フレーム繰り返さない
+  renderer.shadowMap.autoUpdate = false;
+  let shadowVersion = -1;
+  let fittedLayout: Layout | null = null;
+  let warmed = false;
+  // 見た目が前のフレームと同じなら描かない（render/redraw.ts）
+  const redraw = createRedrawDetector();
 
   // 描画バッファとカメラの縦横比を、canvas の表示の大きさに合わせる（S1-15。パネルを除いた描画領域）
   function resize(): void {
@@ -120,6 +156,7 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
     const height = canvas.clientHeight;
     if (width === 0 || height === 0) return;
     renderer.setSize(width, height, false);
+    redraw.invalidate(); // 描画バッファの大きさを変えると中身が消える
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
     orthoCamera.left = (-ORTHO_FRUSTUM_HEIGHT * camera.aspect) / 2;
@@ -194,13 +231,44 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
         visible,
       };
     },
-    sync: objects.sync,
+    applyTheme(theme, quality) {
+      themes.apply(theme, quality);
+      shadowVersion = -1;
+      redraw.invalidate();
+    },
+    renderInfo() {
+      return {
+        ...themes.current(),
+        shadowMapEnabled: renderer.shadowMap.enabled,
+        pixelRatio: renderer.getPixelRatio(),
+        textures: renderer.info.memory.textures,
+      };
+    },
+    sync(sceneData, layout) {
+      objects.sync(sceneData, layout);
+      if (layout === fittedLayout) return;
+      fittedLayout = layout;
+      themes.fitShadows(boundsOf(sceneData, layout));
+    },
     update(motion, layout, timeSec) {
       objects.update(motion, layout, timeSec);
       candidates.update(motion);
     },
     render() {
+      const version = objects.version();
+      if (!redraw.needsRedraw(scene, active, [version, renderer.getPixelRatio()])) return;
+      if (version !== shadowVersion) {
+        renderer.shadowMap.needsUpdate = true;
+        shadowVersion = version;
+      }
       renderer.render(scene, active);
+      if (!warmed) {
+        // 最初のフレームは描き終わるまで待つ（1 画素を読み戻す）。GPU の無い環境のソフトウェア描画では、
+        // 影・環境マップのシェーダーの準備がここで済み、起動直後の操作のフレームが止まらない
+        warmed = true;
+        const gl = renderer.getContext();
+        gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+      }
     },
     projectToScreen(world) {
       // 描く前（setCamera の直後など）でも今のカメラで写す

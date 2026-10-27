@@ -1,0 +1,104 @@
+{
+  "shafts": {
+    "shaft_s1": {
+      "id": "shaft_s1",
+      "placement": { "kind": "root", "origin": [0, 30, 0], "axis": "y" }
+    },
+    "shaft_s2": {
+      "id": "shaft_s2",
+      "placement": {
+        "kind": "mesh",
+        "parentGearId": "gear_g1",
+        "childGearId": "gear_g2",
+        "angle": 0
+      }
+    },
+    "shaft_s3": {
+      "id": "shaft_s3",
+      "placement": {
+        "kind": "mesh",
+        "parentGearId": "gear_g3",
+        "childGearId": "gear_g4",
+        "angle": 1.5707963267948966
+      }
+    },
+    "shaft_s4": {
+      "id": "shaft_s4",
+      "placement": {
+        "kind": "mesh",
+        "parentGearId": "gear_g4",
+        "childGearId": "gear_g5",
+        "angle": 2.356194490192345
+      }
+    },
+    "shaft_s5": {
+      "id": "shaft_s5",
+      "placement": {
+        "kind": "mesh",
+        "parentGearId": "gear_g1",
+        "childGearId": "gear_g6",
+        "angle": 3.9269908169872414
+      }
+    }
+  },
+  "gears": {
+    "gear_g1": {
+      "id": "gear_g1",
+      "kind": "spur",
+      "shaftId": "shaft_s1",
+      "size": "L",
+      "teeth": 24,
+      "offset": 0
+    },
+    "gear_g2": {
+      "id": "gear_g2",
+      "kind": "spur",
+      "shaftId": "shaft_s2",
+      "size": "L",
+      "teeth": 16,
+      "offset": 0
+    },
+    "gear_g3": {
+      "id": "gear_g3",
+      "kind": "spur",
+      "shaftId": "shaft_s2",
+      "size": "M",
+      "teeth": 30,
+      "offset": 12
+    },
+    "gear_g4": {
+      "id": "gear_g4",
+      "kind": "spur",
+      "shaftId": "shaft_s3",
+      "size": "M",
+      "teeth": 20,
+      "offset": 0
+    },
+    "gear_g5": {
+      "id": "gear_g5",
+      "kind": "spur",
+      "shaftId": "shaft_s4",
+      "size": "M",
+      "teeth": 36,
+      "offset": 0
+    },
+    "gear_g6": {
+      "id": "gear_g6",
+      "kind": "spur",
+      "shaftId": "shaft_s5",
+      "size": "L",
+      "teeth": 20,
+      "offset": 0
+    }
+  },
+  "motors": {
+    "motor_m1": {
+      "id": "motor_m1",
+      "shaftId": "shaft_s1",
+      "size": "M",
+      "rpm": 20,
+      "direction": 1,
+      "on": true
+    }
+  }
+}

@@ -77,6 +77,8 @@ export interface CameraInputSettings {
   readonly trackpadScroll: TrackpadScroll;
 }
 
+// update の 1 回で進める時間の上限（秒）
+const CAMERA_MAX_DT = 0.25;
 const DEFAULT_INPUT_SETTINGS: CameraInputSettings = { inputDevice: 'auto', trackpadScroll: 'pan' };
 
 // ページ座標の点の下にあるものの扱い（部品・ハンドルは 'app'、候補は 'click-only'。S1-18）。
@@ -628,7 +630,10 @@ export function createCameraInput(deps: CameraInputDeps): CameraInput {
     activeCamera: active,
     update() {
       const now = performance.now();
-      const dt = lastTime === null ? 0 : Math.min((now - lastTime) / 1000, 0.1);
+      // 経過時間は CAMERA_MAX_DT で頭打ちにする（タブが裏にあった後などの大きな飛びを防ぐ）。描画が重く
+      // フレームが遅い環境（影・環境マップの高品質をソフトウェアで描くときなど。S1-24）でも、移り変わりが
+      // 実時間で終わるよう 0.1 秒より長めに取る
+      const dt = lastTime === null ? 0 : Math.min((now - lastTime) / 1000, CAMERA_MAX_DT);
       lastTime = now;
       // ドラッグしている間は操作中（眺めるモードを止める）
       if (drag !== null) markUserInput();

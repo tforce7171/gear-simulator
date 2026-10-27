@@ -68,6 +68,11 @@ export const en = {
   'properties.motor.on': 'ON',
   'properties.motor.off': 'OFF',
   'properties.motor.remove': 'Remove',
+  // Theme and quality names (S1-24. Used by the settings screen in S1-30)
+  'theme.brass': 'Brass',
+  'theme.wood': 'Wood',
+  'quality.high': 'High quality',
+  'quality.low': 'Lightweight',
   'toast.close': 'Close',
   // Info overlay (S1-23). Heading of the second line of the label
   'info.ratio': 'Ratio',
