@@ -39,7 +39,7 @@
 | [S1-15](stage1/15-ui-shell.md) | 画面の骨組み | S1-04, S1-12 | done |
 | [S1-16](stage1/16-selection.md) | 選択、ピッキング、Esc、Delete | S1-11, S1-13, S1-15 | done |
 | [S1-17](stage1/17-root-shaft-placement.md) | 起点のシャフトを置く | S1-16 | done |
-| [S1-18](stage1/18-grow-gears.md) | 候補の表示とクリックで歯車を生やす | S1-10, S1-16 | doing |
+| [S1-18](stage1/18-grow-gears.md) | 候補の表示とクリックで歯車を生やす | S1-10, S1-16 | done |
 | [S1-19](stage1/19-handles.md) | 外周の角度の円弧ハンドル、シャフト上の位置のドラッグ | S1-18 | todo |
 | [S1-20](stage1/20-property-editing.md) | プロパティの編集（歯数、モーター） | S1-07, S1-16 | todo |
 | [S1-21](stage1/21-hand-rotation.md) | 手で回す | S1-07, S1-16 | todo |
