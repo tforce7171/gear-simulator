@@ -1,0 +1,129 @@
+/* プロパティパネルの中身（S1-20） */
+.gs-prop__section {
+  margin: 4px 0 16px;
+}
+
+.gs-prop__heading {
+  margin: 0 0 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--gs-panel-border);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.gs-prop__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 28px;
+  margin: 2px 0;
+}
+
+.gs-prop__label {
+  flex: none;
+  color: var(--gs-text-muted);
+  font-size: 12px;
+}
+
+.gs-prop__value {
+  text-align: right;
+}
+
+.gs-prop__hint {
+  display: block;
+  margin: 0 0 6px;
+  color: var(--gs-text-muted);
+  font-size: 11px;
+  text-align: right;
+}
+
+p.gs-prop__hint {
+  text-align: left;
+}
+
+.gs-prop__stepper,
+.gs-prop__sizes {
+  display: flex;
+  gap: 4px;
+}
+
+.gs-prop__button {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--gs-button-border);
+  border-radius: 4px;
+  background: var(--gs-button-bg);
+  color: var(--gs-text);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.gs-prop__button:hover:not(:disabled) {
+  background: #404651;
+}
+
+.gs-prop__button:disabled {
+  color: var(--gs-text-muted);
+  cursor: default;
+  opacity: 0.6;
+}
+
+.gs-prop__button:focus-visible,
+.gs-prop__number:focus-visible,
+.gs-prop__slider:focus-visible {
+  outline: 2px solid #7aa2d6;
+  outline-offset: 1px;
+}
+
+.gs-prop__step {
+  width: 28px;
+  padding: 0;
+}
+
+.gs-prop__size {
+  min-width: 36px;
+}
+
+.gs-prop__size.is-selected,
+.gs-prop__toggle.is-on {
+  border-color: #7aa2d6;
+  background: #3a4a60;
+}
+
+.gs-prop__toggle {
+  min-width: 64px;
+}
+
+.gs-prop__number {
+  width: 52px;
+  height: 28px;
+  box-sizing: border-box;
+  padding: 0 6px;
+  border: 1px solid var(--gs-button-border);
+  border-radius: 4px;
+  background: var(--gs-bg);
+  color: var(--gs-text);
+  font: inherit;
+  text-align: right;
+}
+
+.gs-prop__rpm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+}
+
+.gs-prop__slider {
+  flex: 1 1 auto;
+  min-width: 0;
+  accent-color: #7aa2d6;
+}
+
+.gs-prop__remove {
+  width: 100%;
+  margin-top: 8px;
+}

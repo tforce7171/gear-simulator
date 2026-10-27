@@ -1,7 +1,7 @@
 ---
 id: S1-20
 title: プロパティの編集（歯数、モーター）
-status: todo
+status: done
 depends: [S1-07, S1-16]
 ---
 
@@ -55,30 +55,30 @@ depends: [S1-07, S1-16]
 - 辞書に、パネルの見出し・項目名・ボタンのキーを足す
 
 ## 受け入れ条件
-- [ ] 歯車を選ぶと歯数を変えられ、範囲は大きさごとに守られる。先の歯車がついてくる
-- [ ] シャフト（または歯車）を選ぶとモーターを付け外しでき、rpm・向き・ON/OFF を変えるとすぐに回り方が変わる
-- [ ] どの変更も Undo 1 回で戻り、Undo するとパネルの表示も戻る
+- [x] 歯車を選ぶと歯数を変えられ、範囲は大きさごとに守られる。先の歯車がついてくる
+- [x] シャフト（または歯車）を選ぶとモーターを付け外しでき、rpm・向き・ON/OFF を変えるとすぐに回り方が変わる
+- [x] どの変更も Undo 1 回で戻り、Undo するとパネルの表示も戻る
 
 ## テストケース
 ### Vitest
-- [ ] `parseClampedInt('30', 12, 60)` → 30、`'100'` → 60、`'5'` → 12、`'20.6'` → 21、`' 25 '` → 25、`'abc'` → null、`''` → null
+- [x] `parseClampedInt('30', 12, 60)` → 30、`'100'` → 60、`'5'` → 12、`'20.6'` → 21、`' 25 '` → 25、`'abc'` → null、`''` → null
 ### Playwright（`e2e/properties.spec.ts`）
 準備: `two-gears.json`（S1-13。A と B、どちらも中・20 歯）を読み込み、A をクリックして選ぶ。
-- [ ] `prop-teeth` の値が 20
-- [ ] `prop-teeth` に 30 を入れて Enter → A の `teeth` が 30。A と B の中心距離（`getLayout`）が 50
-- [ ] Ctrl+Z → 20 に戻り、`prop-teeth` の表示も 20 に戻る
-- [ ] `prop-teeth` に 100 を入れて Enter → 60。5 → 12。`abc` → 元の値のまま、コマンドは出ない（Ctrl+Z 1 回で、その前の変更が戻る）
-- [ ] `prop-teeth-inc` を押す → 1 増える
-- [ ] `prop-motor-add-M` を押す → `getScene().motors` が 1 つ（`size: 'M'`、`rpm: 30`、`direction: 1`、`on: true`、`shaftId` が A のシャフト）。`getMotion().omegas` の A のシャフトが π（30 rpm）、B のシャフトが −π（`toBeCloseTo`）
-- [ ] `prop-motor-rpm` に 60 を入れて Enter → A のシャフトの ω が 2π
-- [ ] `prop-motor-rpm-slider` を `fill('90')` 相当で動かして `change` を起こす → `rpm` が 90
-- [ ] `prop-motor-direction` → ω の符号が反転する
-- [ ] `prop-motor-on` で OFF → ω が 0
-- [ ] `prop-motor-size-L` → `size: 'L'`、`rpm` は変わらない
-- [ ] `prop-motor-remove` → `motors` が空。Ctrl+Z を 1 回ずつ押すと、外す → 大きさ → ON/OFF → 向き → … の順に 1 つずつ戻る
-- [ ] A のシャフトを選んでも（シャフトの部分をクリック）、モーターの欄が出る
-- [ ] `prop-teeth` にフォーカスがある状態で Delete → 歯車は消えない
-- [ ] `__gearSim.setLanguage('en')` → パネルの見出しが英語の辞書の値になる
+- [x] `prop-teeth` の値が 20
+- [x] `prop-teeth` に 30 を入れて Enter → A の `teeth` が 30。A と B の中心距離（`getLayout`）が 50
+- [x] Ctrl+Z → 20 に戻り、`prop-teeth` の表示も 20 に戻る
+- [x] `prop-teeth` に 100 を入れて Enter → 60。5 → 12。`abc` → 元の値のまま、コマンドは出ない（Ctrl+Z 1 回で、その前の変更が戻る）
+- [x] `prop-teeth-inc` を押す → 1 増える
+- [x] `prop-motor-add-M` を押す → `getScene().motors` が 1 つ（`size: 'M'`、`rpm: 30`、`direction: 1`、`on: true`、`shaftId` が A のシャフト）。`getMotion().omegas` の A のシャフトが π（30 rpm）、B のシャフトが −π（`toBeCloseTo`）
+- [x] `prop-motor-rpm` に 60 を入れて Enter → A のシャフトの ω が 2π
+- [x] `prop-motor-rpm-slider` を `fill('90')` 相当で動かして `change` を起こす → `rpm` が 90
+- [x] `prop-motor-direction` → ω の符号が反転する
+- [x] `prop-motor-on` で OFF → ω が 0
+- [x] `prop-motor-size-L` → `size: 'L'`、`rpm` は変わらない
+- [x] `prop-motor-remove` → `motors` が空。Ctrl+Z を 1 回ずつ押すと、外す → 大きさ → ON/OFF → 向き → … の順に 1 つずつ戻る
+- [x] A のシャフトを選んでも（シャフトの部分をクリック）、モーターの欄が出る
+- [x] `prop-teeth` にフォーカスがある状態で Delete → 歯車は消えない
+- [x] `__gearSim.setLanguage('en')` → パネルの見出しが英語の辞書の値になる
 ### Playwright（見た目）
 - なし（S1-31 でまとめる）
 
@@ -87,6 +87,6 @@ depends: [S1-07, S1-16]
 - 歯数を変えたときに、先の歯車がついてくる様子が自然に見える
 
 ## 完了の条件
-- [ ] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
-- [ ] design.md と後続のタスク資料に、必要な変更を反映した
-- [ ] `status: done` にしてコミットした
+- [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
+- [x] design.md と後続のタスク資料に、必要な変更を反映した
+- [x] `status: done` にしてコミットした

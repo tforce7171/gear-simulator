@@ -97,7 +97,7 @@ depends: [S1-07, S1-08, S1-16]
 - [ ] 一時停止にしてから Ctrl+Z → 一時停止のまま（履歴に入っていない）、シーンも変わらない
 - [ ] Space を押したまま何もない所で左ドラッグ（100px）して、Space を離す → `getCamera().target` が変わり（平行移動）、`isPaused()` は変わらない
 - [ ] Space を 800ms 押して離す（`keyboard.down` → 待つ → `keyboard.up`）→ `isPaused()` は変わらない
-- [ ] プロパティパネルの入力欄（S1-20 がまだなら、テスト用の input）にフォーカスして Space → `isPaused()` は変わらない
+- [ ] プロパティパネルの入力欄（歯車を選んで `prop-teeth`。S1-20）にフォーカスして Space → `isPaused()` は変わらない
 - [ ] ボタン（テスト用に `page.evaluate` で足した、押すと数を数える button）にフォーカスがある状態で Space → 一時停止が切り替わり、ボタンは押されない（数が 0 のまま）
 ### Playwright（見た目、`e2e/visual/lock.spec.ts`）
 - [ ] `lock-opposed.json` を読み込み、2 枚が大きく映る視点（`setCamera`）で `screenshots/lock-red.png` を保存する。真っ黒・真っ白でないこと（赤く見えるかは人が画像で確かめる。design.md §10 のとおり自動の判定はこれだけ）
