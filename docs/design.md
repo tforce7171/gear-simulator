@@ -290,7 +290,7 @@ interface AppState {
   selection: string | null;      // 選択は 1 つだけ（S1-16）
   motion: MotionState;
   sim: { paused: boolean; hand: HandConstraint | null }; // S1-21、S1-22
-  view: { infoOverlay: boolean; watchMode: boolean };    // S1-14（watchMode。済）、S1-23
+  view: { infoOverlay: boolean; watchMode: boolean };    // S1-14（watchMode。済）、S1-23（infoOverlay。済。初期値 false、保存しない。切り替えは store の `setInfoOverlay` の action）
   palette: { size: SizeKey };    // パレットで選んでいる大きさ（S1-17）。S2-05 で種類を足す
   settings: Settings;            // localStorage に保存する（S1-30）
   currentWork: { id: string; name: string } | null;      // 開いている作品。保存しない（S1-27）
@@ -375,7 +375,7 @@ interface Settings {
   - 表示は `src/render/candidates.ts`（`Renderer.setCandidates(specs, hovered)`）。形状データは本物の歯車と同じ `GeometryCache` を共有し（`createRenderer` が 1 つ作って `createSceneSync` にも渡す）、材質だけ半透明の水色（マウスを乗せた候補は濃く）。外周の候補には仮のシャフトも描く。仮の歯車は親のシャフトの回転に合わせて回す（外周は `basePhase − (親の歯数/子の歯数)·θ_親`、同じ軸は `θ_親`）。ピッキングは `setPickTarget(group, 'candidate', String(番号))`（`candidatePickId`）。
   - 候補の上の左ボタンは `'click-only'`（ドラッグはカメラの回転）。`main.ts` の `selectAt` は `kind: 'candidate'` なら `interactions.grow(Number(id))` を呼ぶ。マウスを乗せた候補は描く前に毎フレーム `setHoveredCandidate` で渡す。
 - **画面の骨組み**（S1-15。`src/ui/shell.ts` の `createUiShell(root)`）: `index.html` の `#root` を CSS グリッドで分け、上にツールバー（44px）、左に部品パレット（200px）、右にプロパティパネル（260px）、中央に描画領域を置く。`main.ts` が canvas を作って `UiShell.canvasHost` に入れる。描画領域の右下に軸の目印の置き場 `UiShell.gizmoSlot`（96×96px。S1-14）。
-  - ツールバーのボタンは `UiShell.toolbar.button(id)`（`ToolbarButtonId`）で受け取る。最初は `disabled` なので、各担当タスク（S1-23・S1-24・S1-25・S1-27・S1-28・S1-30）が動作を付けて `disabled = false` にする。`data-testid` は `toolbar-<id>`。文字は `toolbar.<id>`（文字と `aria-label`）・`toolbar.<id>.tooltip`（`title`）。
+  - ツールバーのボタンは `UiShell.toolbar.button(id)`（`ToolbarButtonId`）で受け取る。最初は `disabled` なので、各担当タスク（S1-23・S1-24・S1-25・S1-27・S1-28・S1-30）が動作を付けて `disabled = false` にする。`data-testid` は `toolbar-<id>`。文字は `toolbar.<id>`（文字と `aria-label`）・`toolbar.<id>.tooltip`（`title`）。有効にしたタスクは `e2e/ui-shell.spec.ts` の `ENABLED_IDS` にその ID を足す（S1-23 で `info` を足した）。ON/OFF のボタンは `aria-pressed` で状態を示し、`shell.css` の `[aria-pressed="true"]` の見た目（S1-23）を共有する。
   - パレットの中身は `UiShell.palette.body` に入れる（S1-17・S1-18）。プロパティパネルの中身は `UiShell.properties.setContent(el)`、`null` で案内文（`properties.empty`）に戻す（S1-20）。
   - 文字列を言語の切り替えに追従させるには `src/ui/dom.ts` の `bindText(el, key, attr?, params?)`（解除関数を返す）を使う。
   - パネル・ツールバー・トーストは canvas の兄弟の要素なので、その上のポインターとホイールは canvas に届かない。カメラなど描画領域の入力は canvas に付け、`window` や `document` には付けない（ドラッグ中の `pointermove` は `setPointerCapture` で受ける）。パネルのホイールはパネルのスクロールになる。
@@ -455,6 +455,9 @@ interface GearSimDebug {
   isPaused(): boolean;               // 全モーターの一時停止中か（S1-22）
   // ロック中・干渉中として表示している部品の ID（どちらも昇順。interfering はロック中を除く。S1-22）
   getWarningParts(): { locked: string[]; interfering: string[] };
+  // 情報表示（S1-23）。enabled はツールバーの ON/OFF（view.infoOverlay。OFF でも選択中の歯車には出る）。
+  // arrows は今描いている回転方向の矢印（gearId の昇順。止まっている歯車は含まない。10 Hz で書き換える）
+  getInfoOverlay(): { enabled: boolean; arrows: Array<{ gearId: GearId; direction: 1 | -1 }> };
 }
 
 // src/render/picking.ts（S1-16）
@@ -482,7 +485,7 @@ API はタスクで必要になった時点で足していく。足したらこ�
 | S1-20 | なし（パネルは `data-testid` で操作し、状態は既存の `getScene` / `getMotion` で確かめる） |
 | S1-21 | `getHand`（済） |
 | S1-22 | `isPaused` / `getWarningParts`（済） |
-| S1-23 | `getInfoOverlay` |
+| S1-23 | `getInfoOverlay`（済） |
 | S1-24 | `getRenderInfo`（S1-30 で品質の切り替えを確かめるのにも使う） |
 | S1-25 | `getAudio`（S1-26、S2-05、S3-05 で中身を広げる） |
 | S1-27 | `getStorageStatus` |

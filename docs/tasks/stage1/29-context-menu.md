@@ -27,7 +27,7 @@ depends: [S1-14, S1-20, S1-23]
   |---|---|
   | 全体表示 | Home キー（S1-13）と同じ |
   | 眺めるモード | `view.watchMode` を切り替える（S1-14）。いまの状態をチェックの印で示す |
-  | 情報表示 | `view.infoOverlay` を切り替える（S1-23）。いまの状態をチェックの印で示す |
+  | 情報表示 | `view.infoOverlay` を切り替える（S1-23。ストアの `{ type: 'setInfoOverlay', on }` を使う。ツールバーのボタンの `aria-pressed` も追従する）。いまの状態をチェックの印で示す |
 - **閉じ方**: 項目を選ぶ、Esc、メニューの外でのクリック・ホイール、ウィンドウのリサイズ・フォーカスを失う。メニューを開いている間の Esc はメニューを閉じるだけで、選択は解除しない。
 - **キーボード**: 開いたら最初の項目にフォーカス。↑↓ で移動（端で折り返す）、Enter で実行。`role="menu"` と `role="menuitem"`（チェックの項目は `menuitemcheckbox` と `aria-checked`）。
 - **位置**: カーソルの右下に出す。画面からはみ出すなら左や上に反転し、それでも足りなければ画面の端に寄せる。
@@ -79,7 +79,7 @@ depends: [S1-14, S1-20, S1-23]
 - [ ] `placeMenu`（viewport 1000×800、menu 200×150）: cursor (100, 100) → (100, 100)。(900, 100) → (700, 100)。(100, 700) → (100, 550)。(950, 750) → (750, 600)。menu 200×900 で cursor (100, 100) → top 0。
 
 ### Playwright
-共通: シーン A（S1-23）を読む。g2 のシャフト s2 にはモーターがない。
+共通: シーン A（S1-23 の `e2e/fixtures/scene-a.json`。ID は `gear_g1`〜`gear_g3`・`shaft_s1`〜`shaft_s3`・`motor_m1`）を読む。g2 のシャフト s2 にはモーターがない。
 - [ ] g2 の中心（`projectToScreen`）で右クリック → `context-menu` が見え、項目が 3 つ、2 つ目の `data-action` が `attachMotor`、`getSelection()` が `[g2]`。
 - [ ] 「モーターを付ける」→ メニューが閉じる、`getScene().motors` に `shaftId === s2` のものが 1 つ増える。同じ所で右クリック → 2 つ目が `detachMotor`。選ぶ → モーターが消える。Ctrl+Z → モーターが戻る。
 - [ ] g3 で右クリック →「削除」→ `getScene().gears` に g3 がない。Ctrl+Z → 戻る。
