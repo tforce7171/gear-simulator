@@ -17,6 +17,7 @@ export const LOCK_OMEGA_EPS = 1e-6; // rad/s
 export const MESH_DISTANCE_EPS = 1e-3; // mm。偶然のかみ合いの判定に使う
 export const MAX_AUDIO_VOICES = 16;
 export const AUTOSAVE_DEBOUNCE_MS = 1000;
+export const MAX_SAVE_FILE_BYTES = 5 * 1024 * 1024; // 読み込める JSON ファイルの上限（5 MB。S1-28）
 export const THUMBNAIL_SIZE = 256;
 export const AXIAL_SNAP = 4; // mm。シャフト上の位置の吸着の単位（全サイズ共通）
 export const MESH_PHASE_EPS = 1e-6; // rad。位相を歯のピッチを法として比べるしきい値（contact の判定には使わない）

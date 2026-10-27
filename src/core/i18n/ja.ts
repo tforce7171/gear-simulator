@@ -113,6 +113,20 @@ export const ja = {
   'storage.failed': '保存領域（IndexedDB）の読み書きに失敗した',
   'storage.openFailed': '作品を開けなかった（データが壊れている）',
   'storage.restoreFailed': '自動保存を復元できなかったので、空のシーンで始めた',
+  // JSON のインポートの失敗（S1-28）。理由ごとに、どうすればよいかを添える
+  'import.error.tooLarge': 'ファイルが大きすぎて読み込めない（5 MB まで）',
+  'import.error.invalidJson':
+    'ファイルを読めなかった（JSON の形式ではない）。書き出した .json ファイルを選んでほしい',
+  'import.error.notGearSimulator':
+    'このアプリのファイルではない。このアプリで書き出した .json ファイルを選んでほしい',
+  'import.error.invalidVersion': 'ファイルのバージョンが正しくない（ファイルが壊れている）',
+  'import.error.unsupportedVersion':
+    'このファイルは新しいバージョンのアプリで作られたため読み込めない。アプリを更新してほしい',
+  'import.error.invalidScene': 'ファイルの中身に正しくない値がある（場所: {path}）',
+  'import.error.invalidScene.teeth':
+    '歯車の歯数が、大きさごとの範囲を外れているか整数でない（場所: {path}）',
+  'import.error.invalidScene.rpm':
+    'モーターの回転数が範囲（1〜120 rpm）を外れている（場所: {path}）',
 } as const;
 
 export type MessageKey = keyof typeof ja;
