@@ -31,7 +31,7 @@
 | [S1-07](stage1/07-lock-detection.md) | ロック判定と状態の出力 | S1-06 | done |
 | [S1-08](stage1/08-collision.md) | 干渉判定 | S1-04 | done |
 | [S1-09](stage1/09-layout-tree.md) | 配置の木構造 | S1-03, S1-08 | done |
-| [S1-10](stage1/10-candidates.md) | 生やす候補の列挙 | S1-08, S1-09 | doing |
+| [S1-10](stage1/10-candidates.md) | 生やす候補の列挙 | S1-08, S1-09 | done |
 | [S1-11](stage1/11-edit-commands-history.md) | 編集コマンドと Undo/Redo | S1-09 | todo |
 | [S1-12](stage1/12-i18n.md) | 日本語と英語の切り替えの仕組み | S1-01 | todo |
 | [S1-13](stage1/13-camera-basic.md) | カメラ（基本） | S1-04 | todo |
