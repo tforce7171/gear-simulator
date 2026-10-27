@@ -6,16 +6,22 @@ export const DRAG_THRESHOLD_PX = 4;
 // camera-rotate: 注視点のまわりを周回、camera-pan: 平行移動、app: 部品・ハンドル・候補が受け取る
 export type PointerRoute = 'camera-rotate' | 'camera-pan' | 'app' | 'none';
 
+// ポインターの下にあるものの扱い（hitTest の結果。S1-18）。
+// none: 何も無い、app: 部品・ハンドル（左ボタンをアプリが受け取る）、
+// click-only: 候補（左クリックだけアプリが受け取り、左ドラッグはカメラの回転にする）
+export type PointerTarget = 'none' | 'app' | 'click-only';
+
 export interface PointerDownInput {
   button: number; // 0 左, 1 中, 2 右
   altKey: boolean;
   shiftKey: boolean;
   spaceHeld: boolean;
-  overInteractive: boolean; // hitTest の結果
+  overInteractive: PointerTarget; // hitTest の結果
 }
 
 // 優先順位: Space+左 → pan、中 → pan、Shift+右 → pan、右 → rotate、Alt+左 → rotate、
-// 左で部品の上 → app、左 → rotate、それ以外 → none
+// 左で部品・ハンドルの上 → app、左 → rotate（候補の上も。クリックは selection-input が受ける）、
+// それ以外 → none
 export function routePointerDown(input: PointerDownInput): PointerRoute {
   const { button } = input;
   if (button === 0 && input.spaceHeld) return 'camera-pan';
@@ -23,7 +29,7 @@ export function routePointerDown(input: PointerDownInput): PointerRoute {
   if (button === 2) return input.shiftKey ? 'camera-pan' : 'camera-rotate';
   if (button === 0) {
     if (input.altKey) return 'camera-rotate';
-    return input.overInteractive ? 'app' : 'camera-rotate';
+    return input.overInteractive === 'app' ? 'app' : 'camera-rotate';
   }
   return 'none';
 }

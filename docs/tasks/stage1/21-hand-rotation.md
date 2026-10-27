@@ -43,6 +43,7 @@ depends: [S1-07, S1-16]
 
 ## 作るもの
 - S1-17 で済んだもの: `'app'` の経路の pointerdown は `CameraInput.onAppPointerDown` で知らされる（`main.ts` はハンドルに当たったときだけハンドルのドラッグを始めている。歯車・シャフト・モーターに当たったときに手で回すを始める）。Esc は `main.ts` の 1 つの登録で、まず `interactions.cancel()`（ドラッグをやめたら選択は外さない）を呼んでいるので、手で回すのをやめる処理もそこに足す
+- S1-18 で済んだもの: 候補は `Interactions.candidates()`（`src/app/interactions.ts` の `currentCandidates`）がドラッグ中に `[]` を返して隠している。手で回している間もここで `[]` にする（`isDragging()` に含めると、マウスを乗せた部品のハイライトも止まる）。候補の上の左ボタンは `'click-only'`（経路はカメラの回転）なので `onAppPointerDown` には来ない（候補は手で回せない）
 - S1-07 の `stepMotion` の `opts.hand` を使う（design.md §6。手の拘束の解き方は S1-07 で作ってある）
   ```ts
   interface HandConstraint { shaftId: ShaftId; angle: number } // 目標の角度（rad）

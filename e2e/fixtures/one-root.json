@@ -1,0 +1,23 @@
+{
+  "shafts": {
+    "shaft_a": {
+      "id": "shaft_a",
+      "placement": {
+        "kind": "root",
+        "origin": [0, 35, 0],
+        "axis": "y"
+      }
+    }
+  },
+  "gears": {
+    "gear_a": {
+      "id": "gear_a",
+      "kind": "spur",
+      "shaftId": "shaft_a",
+      "size": "M",
+      "teeth": 20,
+      "offset": 0
+    }
+  },
+  "motors": {}
+}

@@ -1,4 +1,5 @@
 import { applyCommand, type Command } from '../core/edit/commands';
+import type { GrowCandidate } from '../core/layout/candidates';
 import { newInterferences } from '../core/layout/interference-diff';
 import { resolveLayout } from '../core/layout/resolve';
 import type { Vec3 } from '../core/math/vec3';
@@ -14,11 +15,14 @@ import {
   startHandleDrag,
 } from '../input/handle-drag';
 import { intersectRayPlane, nextAxis, rootPlacementCommand } from '../input/placement';
+import type { CandidateSpec } from '../render/candidates';
 import type { PreviewStyle } from '../render/sync';
+import { candidateSpec, candidatesFor, growCommand } from './grow';
 import type { Store } from './store';
 
 // 編集の操作（S1-17）: パレットから起点のシャフトを置くドラッグ、ハンドルのドラッグ、R での向きの切り替え。
-// ドラッグ中は履歴に積まない仮のシーン（displayScene）を描かせ、離したら 1 つの編集コマンドで確定する
+// ドラッグ中は履歴に積まない仮のシーン（displayScene）を描かせ、離したら 1 つの編集コマンドで確定する。
+// 生やす候補（S1-18）: 歯車を選んでいる間は候補を出し、クリックした候補で growGear を実行する
 
 // 置く前の仮の部品の ID（シーンの ID と重ならない）
 export const GHOST_SHAFT_ID = '__ghost_shaft';
@@ -35,6 +39,8 @@ export interface InteractionsDeps {
   readonly isOverViewport: (pageX: number, pageY: number) => boolean;
   readonly setPreviewStyle: (style: PreviewStyle | null) => void;
   readonly setHandles: (handles: readonly HandleSpec[], activeId: string | null) => void;
+  // 生やす候補の表示（S1-18。Renderer.setCandidates）
+  readonly setCandidates: (candidates: readonly CandidateSpec[], hovered: number | null) => void;
 }
 
 export interface Interactions {
@@ -57,6 +63,13 @@ export interface Interactions {
   cancel(): boolean;
   // 何かをドラッグしている途中か
   isDragging(): boolean;
+  // 今出している生やす候補（S1-18）。選択が歯車でない・ドラッグ中は []。
+  // 選択・シーン・パレットの大きさが変わったときだけ列挙し直す（同じ間は同じ参照）
+  candidates(): readonly GrowCandidate[];
+  // マウスを乗せた候補の番号（濃く表示する）。無ければ null
+  setHoveredCandidate(index: number | null): void;
+  // 候補（番号）をクリックした: その歯車を生やして選ぶ。生やしたら true
+  grow(index: number): boolean;
 }
 
 interface RootDrag {
@@ -80,6 +93,40 @@ export function createInteractions(deps: InteractionsDeps): Interactions {
   let handleDrag: HandleDrag | null = null;
   let style: PreviewStyle | null = null;
   let styleKey = '';
+  let hoveredCandidate: number | null = null;
+  const NO_CANDIDATES: { list: readonly GrowCandidate[]; specs: readonly CandidateSpec[] } = {
+    list: [],
+    specs: [],
+  };
+  let candidateMemo: {
+    scene: Scene;
+    selection: string | null;
+    size: string;
+    list: readonly GrowCandidate[];
+    specs: readonly CandidateSpec[];
+  } | null = null;
+
+  // 選択中の歯車の候補と、その見た目。ドラッグ中（ハンドル・起点を置く）は出さない
+  function currentCandidates(): {
+    list: readonly GrowCandidate[];
+    specs: readonly CandidateSpec[];
+  } {
+    if (rootDrag !== null || handleDrag !== null) return NO_CANDIDATES;
+    const { scene, selection, palette } = store.getState();
+    const memo = candidateMemo;
+    if (
+      memo !== null &&
+      memo.scene === scene &&
+      memo.selection === selection &&
+      memo.size === palette.size
+    ) {
+      return memo;
+    }
+    const list = candidatesFor(scene, selection, palette.size);
+    const specs = list.map((c) => candidateSpec(scene, c));
+    candidateMemo = { scene, selection, size: palette.size, list, specs };
+    return candidateMemo;
+  }
 
   // 置く位置の仮のシーン。描画領域の外や床に当たらない所なら null
   function computeRootPreview(drag: RootDrag): RootDrag['preview'] {
@@ -177,6 +224,11 @@ export function createInteractions(deps: InteractionsDeps): Interactions {
       const active = handleDrag === null ? null : handlePickId(handleDrag.session.handle);
       deps.setHandles(handles(), active);
       deps.setPreviewStyle(currentStyle());
+      const { specs } = currentCandidates();
+      deps.setCandidates(
+        specs,
+        hoveredCandidate !== null && hoveredCandidate < specs.length ? hoveredCandidate : null,
+      );
     },
     beginRootDrag(pageX, pageY) {
       endHandleDrag(false);
@@ -248,5 +300,16 @@ export function createInteractions(deps: InteractionsDeps): Interactions {
       return false;
     },
     isDragging: () => rootDrag !== null || handleDrag !== null,
+    candidates: () => currentCandidates().list,
+    setHoveredCandidate(index) {
+      hoveredCandidate = index;
+    },
+    grow(index) {
+      const candidate = currentCandidates().list[index];
+      if (candidate === undefined) return false;
+      // 生やした歯車を選ぶ（外周は [シャフト, 歯車] の最後、同じ軸は [歯車]）。続けて次の候補が出る
+      store.dispatch({ type: 'command', command: growCommand(candidate), selectCreated: true });
+      return true;
+    },
   };
 }

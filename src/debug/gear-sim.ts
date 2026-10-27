@@ -1,5 +1,6 @@
 // window.__gearSim（開発用・テスト用ビルドのみ。design.md §10）
 
+import type { CandidateKind } from '../app/grow';
 import type { Settings } from '../app/store';
 import type { Command } from '../core/edit/commands';
 import type { Lang } from '../core/i18n';
@@ -58,6 +59,11 @@ export interface GearSimDebug {
    * （projectToScreen して押す）。targetId は move・height ではシャフト
    */
   getHandles(): Array<{ kind: HandleKind; targetId: string; position: Vec3 }>;
+  /**
+   * 今表示している生やす候補（S1-18）。center は仮の歯車の中心のワールド座標。
+   * index はピッキングの ID（pick の結果の kind: 'candidate' の id は String(index)）
+   */
+  getCandidates(): Array<{ index: number; kind: CandidateKind; center: Vec3 }>;
 }
 
 declare global {

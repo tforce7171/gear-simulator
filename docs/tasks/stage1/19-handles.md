@@ -45,6 +45,7 @@ depends: [S1-18]
 
 ## 作るもの
 - S1-17 で作った土台（design.md §7「起点を置く・ハンドル」）: `src/input/handle-drag.ts` の `HandleSpec`・`listHandles`（選択から出すハンドルの一覧。ここに `'arc'`・`'axial'` を足す）・`HANDLE_DRAGS`（種類ごとの「レイ → コマンド」）・`startHandleDrag`（仮のシーン、新たな干渉で invalid、`finish()` で最後の干渉の無いコマンド）・`movedParts`。`src/render/handles.ts` の `HANDLE_BUILDERS`（種類ごとの形）。ドラッグの開始・Esc・確定・赤い表示は `src/app/interactions.ts` が受け持つ。本体をつかむ付け直しは `CameraInput.onAppPointerDown` で、ハンドル以外に当たったときに始める
+- S1-18 で済んだもの: 歯車を選ぶと生やす候補（半透明の歯車）が出る。ハンドルはピッキングで候補より優先される。ハンドルのドラッグ中は候補を隠している（`interactions.ts` の `currentCandidates` がドラッグ中は `[]`）ので、付け直しのドラッグもここに含める。候補は選んだ歯車の中心から「中心距離 + 歯先円半径」まで広がるので、Playwright で「何もない所」や付け直し先を押すときは、候補に当たらない点を選ぶ（`__gearSim.pick` で確かめられる）
 - `src/input/handle-math.ts`（純粋関数）
   ```ts
   export const ARC_MESH_SNAP = (5 * Math.PI) / 180; // rad。かみ合いへの吸着の範囲（UI だけで使う）

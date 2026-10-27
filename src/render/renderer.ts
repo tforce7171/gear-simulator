@@ -15,6 +15,8 @@ import {
 } from 'three';
 import type { Vec3 } from '../core/math/vec3';
 import type { HandleSpec, Ray } from '../input/handle-drag';
+import { type CandidateSpec, createCandidateView } from './candidates';
+import { createGeometryCache } from './gear-geometry';
 import { createHandleView } from './handles';
 import { createPicker, type PickHit } from './picking';
 import type { SceneView } from './scene-view';
@@ -55,6 +57,8 @@ export interface Renderer extends SceneView {
   setPreviewStyle(style: PreviewStyle | null): void;
   // 出すハンドルと、ドラッグ中のハンドルのピッキングの ID（S1-17）
   setHandles(handles: readonly HandleSpec[], activeId: string | null): void;
+  // 出す生やす候補と、マウスを乗せた候補の番号（S1-18）。同じ一覧の参照なら作り直さない
+  setCandidates(candidates: readonly CandidateSpec[], hovered: number | null): void;
   // ページ座標の点を通る、activeCamera() からのレイ（向きは単位ベクトル）。canvas が大きさ 0 なら null
   rayAt(pageX: number, pageY: number): Ray | null;
 }
@@ -83,9 +87,13 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
   orthoCamera.quaternion.copy(camera.quaternion);
   let active: PerspectiveCamera | OrthographicCamera = camera;
 
-  const objects = createSceneSync();
+  // 歯車の形状データは本物の部品と候補（S1-18）で共有する
+  const geometries = createGeometryCache();
+  const objects = createSceneSync(geometries);
+  const candidates = createCandidateView(geometries);
   const pickRoot = new Group();
   pickRoot.add(objects.root);
+  pickRoot.add(candidates.root);
   const handles = createHandleView();
   pickRoot.add(handles.root);
   scene.add(pickRoot);
@@ -143,6 +151,7 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
     setHighlight: objects.setHighlight,
     setPreviewStyle: objects.setPreviewStyle,
     setHandles: handles.set,
+    setCandidates: candidates.set,
     rayAt(pageX, pageY) {
       if (!setRay(pageX, pageY)) return null;
       const { origin, direction } = raycaster.ray;
@@ -152,7 +161,10 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
       };
     },
     sync: objects.sync,
-    update: objects.update,
+    update(motion, layout) {
+      objects.update(motion, layout);
+      candidates.update(motion);
+    },
     render() {
       renderer.render(scene, active);
     },
