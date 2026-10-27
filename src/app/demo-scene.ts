@@ -1,7 +1,7 @@
 import type { Scene } from '../core/scene/types';
 
-// 起動時に読み込む仮のシーン（S1-04）。e2e/fixtures/two-spur.json と同じもの。
-// S1-27（自動保存からの復元）で置き換える
+// S1-04 で起動時に読み込んでいた仮のシーン。e2e/fixtures/two-spur.json と同じもの。
+// S1-27 から起動時は自動保存（無ければ空のシーン）で始めるので、今は単体テストの共通のシーンとして使う
 export const demoScene: Scene = {
   shafts: {
     shaft_1: { id: 'shaft_1', placement: { kind: 'root', origin: [0, 20, 0], axis: 'y' } },

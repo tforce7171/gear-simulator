@@ -6,12 +6,14 @@ const twoSpur = JSON.parse(
   readFileSync(new URL('./fixtures/two-spur.json', import.meta.url), 'utf8'),
 ) as Scene;
 
+// S1-27 から起動時のシーンは自動保存（無ければ空）なので、固定シーンは読み込んで始める
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
   await page.waitForFunction(() => window.__gearSim?.isReady() === true);
+  await page.evaluate((s) => window.__gearSim?.loadScene(s), twoSpur);
 });
 
-test('固定シーンが読み込まれ、回っている', async ({ page }) => {
+test('固定シーンを読み込むと回っている', async ({ page }) => {
   const scene = await page.evaluate(() => window.__gearSim?.getScene());
   expect(scene).toEqual(twoSpur);
 

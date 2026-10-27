@@ -293,7 +293,7 @@ interface AppState {
   view: { infoOverlay: boolean; watchMode: boolean };    // S1-14（watchMode。済）、S1-23（infoOverlay。済。初期値 false、保存しない。切り替えは store の `setInfoOverlay` の action）
   palette: { size: SizeKey };    // パレットで選んでいる大きさ（S1-17）。S2-05 で種類を足す
   settings: Settings;            // localStorage に保存する（S1-30）
-  currentWork: { id: string; name: string } | null;      // 開いている作品。保存しない（S1-27）
+  currentWork: { id: string; name: string } | null;      // 開いている作品。保存しない（S1-27。済。変えるのは setCurrentWork の action）
 }
 
 interface Settings {
@@ -395,7 +395,7 @@ interface Settings {
   - 表示は `src/render/candidates.ts`（`Renderer.setCandidates(specs, hovered)`）。形状データは本物の歯車と同じ `GeometryCache` を共有し（`createRenderer` が 1 つ作って `createSceneSync` にも渡す）、材質だけ半透明の水色（マウスを乗せた候補は濃く）。外周の候補には仮のシャフトも描く。仮の歯車は親のシャフトの回転に合わせて回す（外周は `basePhase − (親の歯数/子の歯数)·θ_親`、同じ軸は `θ_親`）。ピッキングは `setPickTarget(group, 'candidate', String(番号))`（`candidatePickId`）。
   - 候補の上の左ボタンは `'click-only'`（ドラッグはカメラの回転）。`main.ts` の `selectAt` は `kind: 'candidate'` なら `interactions.grow(Number(id))` を呼ぶ。マウスを乗せた候補は描く前に毎フレーム `setHoveredCandidate` で渡す。
 - **画面の骨組み**（S1-15。`src/ui/shell.ts` の `createUiShell(root)`）: `index.html` の `#root` を CSS グリッドで分け、上にツールバー（44px）、左に部品パレット（200px）、右にプロパティパネル（260px）、中央に描画領域を置く。`main.ts` が canvas を作って `UiShell.canvasHost` に入れる。描画領域の右下に軸の目印の置き場 `UiShell.gizmoSlot`（96×96px。S1-14）。
-  - ツールバーのボタンは `UiShell.toolbar.button(id)`（`ToolbarButtonId`）で受け取る。最初は `disabled` なので、各担当タスク（S1-23・S1-24・S1-25・S1-27・S1-28・S1-30）が動作を付けて `disabled = false` にする。`data-testid` は `toolbar-<id>`。文字は `toolbar.<id>`（文字と `aria-label`）・`toolbar.<id>.tooltip`（`title`）。有効にしたタスクは `e2e/ui-shell.spec.ts` の `ENABLED_IDS` にその ID を足す（S1-23 で `info`、S1-24 で `theme` を足した）。ON/OFF のボタンは `aria-pressed` で状態を示し、`shell.css` の `[aria-pressed="true"]` の見た目（S1-23）を共有する。
+  - ツールバーのボタンは `UiShell.toolbar.button(id)`（`ToolbarButtonId`）で受け取る。最初は `disabled` なので、各担当タスク（S1-23・S1-24・S1-25・S1-27・S1-28・S1-30）が動作を付けて `disabled = false` にする。`data-testid` は `toolbar-<id>`。文字は `toolbar.<id>`（文字と `aria-label`）・`toolbar.<id>.tooltip`（`title`）。有効にしたタスクは `e2e/ui-shell.spec.ts` の `ENABLED_IDS` にその ID を足す（S1-23 で `info`、S1-24 で `theme`、S1-25 で `mute`、S1-27 で `works`・`save` を足した）。ON/OFF のボタンは `aria-pressed` で状態を示し、`shell.css` の `[aria-pressed="true"]` の見た目（S1-23）を共有する。
   - パレットの中身は `UiShell.palette.body` に入れる（S1-17・S1-18）。プロパティパネルの中身は `UiShell.properties.setContent(el)`、`null` で案内文（`properties.empty`）に戻す（S1-20）。
   - 文字列を言語の切り替えに追従させるには `src/ui/dom.ts` の `bindText(el, key, attr?, params?)`（解除関数を返す）を使う。
   - パネル・ツールバー・トーストは canvas の兄弟の要素なので、その上のポインターとホイールは canvas に届かない。カメラなど描画領域の入力は canvas に付け、`window` や `document` には付けない（ドラッグ中の `pointermove` は `setPointerCapture` で受ける）。パネルのホイールはパネルのスクロールになる。
@@ -426,6 +426,13 @@ interface SaveFile {
 - IndexedDB は `gear-simulator` データベースの `works` ストア（作品：id、名前、更新日時、サムネイルの Blob、SaveFile）と `autosave` ストア（キー `'current'` に `{ updatedAt, file: SaveFile }` の 1 件のみ）。
 - 作品を開くこととインポートは、`replaceScene` コマンドでシーン全体を差し替える（Undo で前のシーンに戻れる）。
 - 設定は localStorage の `gear-simulator:settings` に JSON で保存する。読み書きは try/catch で囲み、失敗したら初期値で動かす。
+- **S1-27 で作ったもの**:
+  - `src/core/io/save-file.ts`: `SaveFile` の型・`CURRENT_SAVE_VERSION`（1）・`toSaveFile(scene)`・`parseSaveFileObject(raw: unknown)`（読み込みの 1 か所。`{ ok: true, file } | { ok: false, error: { code } }`。今の `code` は `'not-gear-simulator'`（オブジェクトでない・format が違う）・`'invalid-version'`（1 以上の整数でない）・`'unsupported-version'`（最新より新しい）・`'invalid-scene'`（`scene` に `shafts`・`gears`・`motors` のオブジェクトが無い、`validateScene` が通らない・例外を投げた）。S1-28 が移行と形の確認をこの中に足す）。`src/core/io/thumbnail.ts`: `centerSquareCrop`・`nextDefaultWorkName`。
+  - `src/storage/db.ts`: `openDb`（開けたら使い回す。失敗は覚えず次に開き直す）・`listWorks`（`updatedAt` の降順、`file` を含めない）・`getWork`・`putWork`・`renameWork`（更新日時は変えない）・`deleteWork`・`loadAutosave`・`saveAutosave`。書き込みはトランザクションの完了で resolve する。
+  - 自動保存（`src/storage/autosave.ts` の `createAutosaver(write, delayMs, { timers?, onError? })`）: `main.ts` がストアを購読し、シーンの参照が変わったら `notify`。`pending()` は待っている間と書き込みが終わるまで true。`pagehide` と `visibilitychange`（hidden）で `flush`。
+  - 起動（`src/app/restore.ts` の `restoreScene(loadAutosave)`）: `main.ts` は最初の描画の前に（トップレベルの `await`）自動保存を読み、そのシーンで `createStore` する（履歴は空）。自動保存が無ければ空のシーン（S1-04 の `demoScene` は起動に使わなくなり、単体テストの共通のシーンとしてだけ残る）。壊れていれば空のシーンとトースト `storage.restoreFailed`。IndexedDB を開けなければ空のシーンで、自動保存を止め、「保存」「作品一覧」でトースト `storage.unavailable` を出す。
+  - 作品（`src/app/works.ts` の `createWorks`）: ストアのアクション `setCurrentWork { work }` で `AppState.currentWork` を変える（シーンと履歴は変えない。`loadScene` と Undo は `currentWork` を変えない）。開くは `replaceScene` のコマンド。作品の ID は `work_<UUID>`。ダイアログは `src/ui/save-dialog.ts`（`save-dialog`・`save-name`・`save-submit`、作品を開いているときは `save-overwrite`・`save-as-new`、`save-cancel`）と `src/ui/works-dialog.ts`（`works-dialog`・`work-card`（`data-work-id`・`data-updated-at`）・`work-thumbnail`・`work-name`・`work-date`・`work-open`・`work-rename` → `work-rename-input`（Enter で確定、Esc でやめる）・`work-delete` → `work-delete-yes`／`work-delete-no`・`works-empty`・`works-close`）。どちらも `<dialog>` の `showModal` で、中のキー入力はアプリのショートカットに届けない（`src/ui/dom.ts` の `stopAppKeys`）。
+  - サムネイル: `Renderer.captureThumbnail(size)` が、選択とマウスの強調・候補・ハンドル・付け直しの輪・情報表示の矢印を隠して描き、描画バッファの中央の正方形を縮めた 2D の canvas を返す（描いた直後に写すので `preserveDrawingBuffer` は要らない）。`main.ts` が `toBlob('image/png')` にする。
 
 ## 10. テストの取り決め
 
@@ -437,6 +444,7 @@ interface SaveFile {
   - 共通フィクスチャ（`e2e/fixtures/test.ts`）で、コンソールエラーと pageerror を集め、テストの終わりに 0 件であることを確かめる。すべての spec はこの `test` を import する。
   - Playwright は `__gearSim.isReady()` が `true` になる（最初のフレームを描いた）のを待ってから操作する。
   - 準備に時間のかかるシーンは `e2e/fixtures/*.json` を `__gearSim.loadScene()` で読み込んで作る。
+  - 起動時のシーンは自動保存から復元する（S1-27）。テストごとにブラウザのコンテキストが新しく IndexedDB は空なので、起動直後は空のシーン。部品が要るテストは必ず `loadScene` する（S1-27 で `vertical-slice.spec.ts` と `visual/two-spur.spec.ts` を `two-spur.json` の読み込みに変えた）。`loadScene` も自動保存の対象になる（同じテストの中で再読み込みすると、そのシーンで始まる）。
 - `core` の部品（S1-05〜S1-11）を作ったタスクは、そのタスクの中でアプリ（`app/`）にも組み込み、画面で使われる状態にする。ただし S1-10（候補の列挙）は選択の仕組み（S1-16）が必要なので、組み込みは S1-18 で行う。
 - **見た目の確認**（`e2e/visual/`）: スクリーンショットを `screenshots/<場面名>.png` に保存する（git では無視する）。自動で判定するのは「真っ黒・真っ白でない」（画素の分散がしきい値以上）ことだけ。`e2e/fixtures/visual.ts` の `captureScene(page, name)` を使う（しきい値は `e2e/fixtures/blank.ts` の `BLANK_VARIANCE_THRESHOLD` = 輝度の分散 4）。
 - **`window.__gearSim`**: `import.meta.env.MODE !== 'production'` のときだけ公開する（`src/debug/gear-sim.ts` の `installGearSim`。型は `GearSimDebug` で、API を足すタスクがこの型を広げる）。
@@ -493,6 +501,10 @@ interface GearSimDebug {
     // 起動からの衝撃音の回数と、ガタガタ中のロックのキー（lockKey、昇順。S1-26）
     lockSounds: { impacts: number; rattling: string[] };
   };
+  // 保存（S1-27）。lastAutosaveAt は最後に自動保存を書き終えた時刻（Date.now()。まだなら null）、
+  // pendingAutosave は書いていない変更がある（デバウンスで待っている間と書き込みが終わるまで）、
+  // currentWorkId はいま開いている作品の ID（無ければ null）
+  getStorageStatus(): { lastAutosaveAt: number | null; pendingAutosave: boolean; currentWorkId: string | null };
 }
 
 // src/render/picking.ts（S1-16）
@@ -524,7 +536,7 @@ API はタスクで必要になった時点で足していく。足したらこ�
 | S1-24 | `getRenderInfo`（済。`{ theme, quality, shadowMapEnabled, pixelRatio, textures }`。theme・quality は描画に適用済みの値、textures は `renderer.info.memory.textures`。S1-30 で品質の切り替えを確かめるのにも使う） |
 | S1-25 | `getAudio`（済。`{ contextState, muted, material, voices }`。S1-26、S2-05、S3-05 で中身を広げる） |
 | S1-26 | `getAudio` を広げた（済。`voices[].position`・`background`・`motors`・`lockSounds`。新しい関数は足していない） |
-| S1-27 | `getStorageStatus` |
+| S1-27 | `getStorageStatus`（済。`{ lastAutosaveAt, pendingAutosave, currentWorkId }`） |
 | S1-29 | `getView` |
 | S1-30 | `getSettings` |
 

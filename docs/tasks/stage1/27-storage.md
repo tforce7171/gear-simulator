@@ -1,7 +1,7 @@
 ---
 id: S1-27
 title: 保存（IndexedDB）
-status: todo
+status: doing
 depends: [S1-11, S1-15]
 ---
 
@@ -84,26 +84,26 @@ depends: [S1-11, S1-15]
 
 ## テストケース
 ### Vitest
-- [ ] `toSaveFile(scene)` → `{ format: 'gear-simulator', version: 1, scene }`（scene は同じ参照でよい）。
-- [ ] `parseSaveFileObject`: `toSaveFile(シーン A)` → ok で同じシーン。`undefined`、`{ format: 'other' }`、`version: 2`、`scene: { shafts: 1 }`、歯数 81 の歯車を含むシーン → すべて `ok: false`（例外を投げない）。
-- [ ] `centerSquareCrop(1280, 800)` → `{ sx: 240, sy: 0, size: 800 }`。`(600, 900)` → `{ sx: 0, sy: 150, size: 600 }`。
-- [ ] `nextDefaultWorkName([], '作品')` → `作品 1`。`['作品 1', '作品 3']` → `作品 2`。
-- [ ] `createAutosaver`（`vi.useFakeTimers()`）: `notify` を 0・300・600 ms に 3 回 → 1599 ms までは書かない、1600 ms で 1 回だけ、最後のシーンで書く。`pending()` は書く前 true、後 false。
-- [ ] `flush()` は待たずに 1 回書き、その後タイマーが来ても重ねて書かない。`notify` なしの `flush()` は書かない。
+- [x] `toSaveFile(scene)` → `{ format: 'gear-simulator', version: 1, scene }`（scene は同じ参照でよい）。
+- [x] `parseSaveFileObject`: `toSaveFile(シーン A)` → ok で同じシーン。`undefined`、`{ format: 'other' }`、`version: 2`、`scene: { shafts: 1 }`、歯数 81 の歯車を含むシーン → すべて `ok: false`（例外を投げない）。
+- [x] `centerSquareCrop(1280, 800)` → `{ sx: 240, sy: 0, size: 800 }`。`(600, 900)` → `{ sx: 0, sy: 150, size: 600 }`。
+- [x] `nextDefaultWorkName([], '作品')` → `作品 1`。`['作品 1', '作品 3']` → `作品 2`。
+- [x] `createAutosaver`（`vi.useFakeTimers()`）: `notify` を 0・300・600 ms に 3 回 → 1599 ms までは書かない、1600 ms で 1 回だけ、最後のシーンで書く。`pending()` は書く前 true、後 false。
+- [x] `flush()` は待たずに 1 回書き、その後タイマーが来ても重ねて書かない。`notify` なしの `flush()` は書かない。
 
 ### Playwright
-- [ ] 自動保存と復元: S1-23 のシーン A を `loadScene` → `getStorageStatus().pendingAutosave` が false になるまで待つ → 再読み込み → `getScene()` がシーン A と等しい。
-- [ ] 何も保存されていない状態で起動 → 空のシーン、トーストなし、コンソールエラー 0 件。
-- [ ] 作品の保存と読み込み: シーン A を読む → 「保存」→ 名前に `テスト作品` → 保存 → `getStorageStatus().currentWorkId` が null でない → 空のシーンを `loadScene` → 「作品一覧」→ カード 1 枚、名前 `テスト作品`、サムネイルの `img` の `naturalWidth === 256` かつ `naturalHeight === 256` → 「開く」→ `getScene()` がシーン A と等しい → Ctrl+Z → 空のシーン。
-- [ ] 上書きと新規: 作品を開いた状態で歯数を変えて「上書き保存」→ 一覧は 1 枚のまま、更新日時が新しくなる。「新しい作品として保存」→ 2 枚になり、新しいほうが先頭。
-- [ ] 名前の変更: `別の名前` に変えて一覧を開き直すと `別の名前`。削除 → 確認 → 一覧が空で「保存した作品はまだない」が出る。
-- [ ] IndexedDB を使えなくする（`addInitScript` で `indexedDB.open` が例外を投げるようにする）→ 起動できる、「保存」でエラーのトーストが出る、コンソールエラー 0 件。
+- [x] 自動保存と復元: S1-23 のシーン A を `loadScene` → `getStorageStatus().pendingAutosave` が false になるまで待つ → 再読み込み → `getScene()` がシーン A と等しい。
+- [x] 何も保存されていない状態で起動 → 空のシーン、トーストなし、コンソールエラー 0 件。
+- [x] 作品の保存と読み込み: シーン A を読む → 「保存」→ 名前に `テスト作品` → 保存 → `getStorageStatus().currentWorkId` が null でない → 空のシーンを `loadScene` → 「作品一覧」→ カード 1 枚、名前 `テスト作品`、サムネイルの `img` の `naturalWidth === 256` かつ `naturalHeight === 256` → 「開く」→ `getScene()` がシーン A と等しい → Ctrl+Z → 空のシーン。
+- [x] 上書きと新規: 作品を開いた状態で歯数を変えて「上書き保存」→ 一覧は 1 枚のまま、更新日時が新しくなる。「新しい作品として保存」→ 2 枚になり、新しいほうが先頭。
+- [x] 名前の変更: `別の名前` に変えて一覧を開き直すと `別の名前`。削除 → 確認 → 一覧が空で「保存した作品はまだない」が出る。
+- [x] IndexedDB を使えなくする（`addInitScript` で `indexedDB.open` が例外を投げるようにする）→ 起動できる、「保存」でエラーのトーストが出る、コンソールエラー 0 件。
 
 ## 人が手で確かめる項目
 - サムネイルが作品を見分けられる絵になっているか（選択の枠や候補が写り込んでいないか）。
 - タブを閉じる直前の編集が、次に開いたときに残っているか。
 
 ## 完了の条件
-- [ ] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
-- [ ] design.md と後続のタスク資料に、必要な変更を反映した（`__gearSim.getStorageStatus` を design.md §10 に書く）
+- [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
+- [x] design.md と後続のタスク資料に、必要な変更を反映した（`__gearSim.getStorageStatus` を design.md §10 に書く）
 - [ ] `status: done` にしてコミットした

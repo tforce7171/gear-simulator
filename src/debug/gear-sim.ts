@@ -97,6 +97,16 @@ export interface GearSimDebug {
    * key は meshKey、frequency は歯の通過頻度（Hz、クランプしない）、click・tone はクロスフェードの重み
    */
   getAudio(): AudioState;
+  /**
+   * 保存の状態（S1-27）。lastAutosaveAt は最後に自動保存を書き終えた時刻（Date.now()。まだなら null）、
+   * pendingAutosave は書いていない変更がある（デバウンスで待っている間と、書き込みが終わるまで）、
+   * currentWorkId はいま開いている作品の ID（無ければ null）
+   */
+  getStorageStatus(): {
+    lastAutosaveAt: number | null;
+    pendingAutosave: boolean;
+    currentWorkId: string | null;
+  };
 }
 
 declare global {

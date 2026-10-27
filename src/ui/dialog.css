@@ -1,0 +1,128 @@
+/* 保存ダイアログと作品一覧（S1-27） */
+.gs-dialog {
+  min-width: 320px;
+  max-width: min(720px, calc(100vw - 32px));
+  max-height: calc(100vh - 64px);
+  padding: 16px;
+  border: 1px solid var(--gs-panel-border, #3b4049);
+  border-radius: 6px;
+  background: var(--gs-panel-bg, #2a2e35);
+  color: var(--gs-text, #d8dce2);
+  font-family: var(--gs-font, system-ui, sans-serif);
+  font-size: 13px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+}
+
+.gs-dialog::backdrop {
+  background: rgb(0 0 0 / 40%);
+}
+
+.gs-dialog__title {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.gs-dialog__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 14px;
+}
+
+.gs-dialog__input {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--gs-button-border, #4a505b);
+  border-radius: 4px;
+  background: var(--gs-bg, #1e2126);
+  color: inherit;
+  font: inherit;
+}
+
+.gs-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.gs-dialog__button {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--gs-button-border, #4a505b);
+  border-radius: 4px;
+  background: var(--gs-button-bg, #353a43);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.gs-dialog__button--primary {
+  border-color: #6f9bd1;
+  background: #3b5a80;
+}
+
+.gs-dialog__button--danger {
+  border-color: #c96b6b;
+  background: #7a3b3b;
+}
+
+.gs-dialog__button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.gs-works__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+  max-height: calc(100vh - 200px);
+  margin-bottom: 14px;
+  overflow-y: auto;
+}
+
+.gs-works__empty {
+  margin: 8px 0 16px;
+  color: var(--gs-text-muted, #9aa1ab);
+}
+
+.gs-work-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--gs-panel-border, #3b4049);
+  border-radius: 4px;
+  background: var(--gs-bg, #1e2126);
+}
+
+.gs-work-card__thumb {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 2px;
+  object-fit: cover;
+  background: #111;
+}
+
+.gs-work-card__name {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gs-work-card__date {
+  color: var(--gs-text-muted, #9aa1ab);
+  font-size: 12px;
+}
+
+.gs-work-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.gs-work-card__actions .gs-dialog__button {
+  height: 26px;
+  padding: 0 8px;
+}

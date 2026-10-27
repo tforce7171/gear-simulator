@@ -67,6 +67,13 @@ export interface AppState {
   readonly view: ViewState; // S1-14
   readonly settings: Settings; // S1-14
   readonly palette: PaletteState; // S1-17
+  // いま開いている作品（S1-27）。保存しない（再読み込み後は null）
+  readonly currentWork: CurrentWork | null;
+}
+
+export interface CurrentWork {
+  readonly id: string;
+  readonly name: string;
 }
 
 // loadScene: 履歴を空にしてシーンを置き換える（テストの準備用。Undo の対象にしない）。
@@ -92,7 +99,9 @@ export type AppAction =
   // パレットで選ぶ歯車の大きさ（S1-17）
   | { readonly type: 'setPaletteSize'; readonly size: SizeKey }
   // 全モーターの一時停止を切り替える（S1-22）。シーンと履歴は変えない
-  | { readonly type: 'togglePause' };
+  | { readonly type: 'togglePause' }
+  // いま開いている作品を置き換える（S1-27。保存・開く・名前の変更・削除で使う）。シーンと履歴は変えない
+  | { readonly type: 'setCurrentWork'; readonly work: CurrentWork | null };
 
 export interface StoreOptions {
   readonly ids?: IdGenerator; // 新しい部品の ID（既定はランダム）
@@ -190,6 +199,17 @@ function reduce(state: AppState, action: AppAction, ids: IdGenerator): AppState 
       const motion = solveMotion(state.scene, resolveLayout(state.scene), state.motion, { paused });
       return { ...state, sim: { ...state.sim, paused }, motion };
     }
+    case 'setCurrentWork': {
+      const prev = state.currentWork;
+      const next = action.work;
+      if (
+        prev === next ||
+        (prev !== null && next !== null && prev.id === next.id && prev.name === next.name)
+      ) {
+        return state;
+      }
+      return { ...state, currentWork: next };
+    }
   }
 }
 
@@ -212,6 +232,7 @@ export function createStore(scene: Scene, options: StoreOptions = {}): Store {
     view: DEFAULT_VIEW,
     settings: DEFAULT_SETTINGS,
     palette: DEFAULT_PALETTE,
+    currentWork: null,
   };
   const listeners = new Set<(state: AppState) => void>();
   return {

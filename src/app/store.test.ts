@@ -385,3 +385,22 @@ describe('情報表示（S1-23）', () => {
     expect(store.getState().view.infoOverlay).toBe(true);
   });
 });
+
+describe('いま開いている作品（S1-27）', () => {
+  it('最初は null。setCurrentWork で変わり、同じ値なら知らせない。シーンと履歴は変えない', () => {
+    const store = createStore(demoScene);
+    expect(store.getState().currentWork).toBeNull();
+    const { scene, history } = store.getState();
+    const listener = vi.fn();
+    store.subscribe(listener);
+    store.dispatch({ type: 'setCurrentWork', work: { id: 'w1', name: 'a' } });
+    expect(store.getState().currentWork).toEqual({ id: 'w1', name: 'a' });
+    expect(store.getState().scene).toBe(scene);
+    expect(store.getState().history).toBe(history);
+    expect(listener).toHaveBeenCalledTimes(1);
+    store.dispatch({ type: 'setCurrentWork', work: { id: 'w1', name: 'a' } });
+    expect(listener).toHaveBeenCalledTimes(1);
+    store.dispatch({ type: 'setCurrentWork', work: null });
+    expect(store.getState().currentWork).toBeNull();
+  });
+});

@@ -13,6 +13,7 @@ import {
   Vector3,
   WebGLRenderer,
 } from 'three';
+import { centerSquareCrop } from '../core/io/thumbnail';
 import { boundsOf } from '../core/layout/bounds';
 import type { Layout } from '../core/layout/types';
 import type { Vec3 } from '../core/math/vec3';
@@ -75,6 +76,10 @@ export interface Renderer extends SceneView {
   applyTheme(theme: ThemeId, quality: Quality): void;
   // 今の描画の状態（S1-24。__gearSim.getRenderInfo）
   renderInfo(): RenderInfo;
+  // 作品のサムネイル（S1-27）。選択とマウスの強調・候補・ハンドル・付け直しの輪・情報表示の矢印を
+  // 隠して今のカメラで描き、描画バッファの中央の正方形を size×size に縮めた 2D の canvas を返す。
+  // 描いた後は隠したものを元に戻す（情報表示のラベルは DOM なので画に入らない）
+  captureThumbnail(size: number): HTMLCanvasElement;
 }
 
 export interface RenderInfo {
@@ -149,6 +154,8 @@ export function createRenderer(
   let warmed = false;
   // 見た目が前のフレームと同じなら描かない（render/redraw.ts）
   const redraw = createRedrawDetector();
+  // サムネイルを撮った後に戻すため、最後に受けた強調を覚えておく
+  let highlight: Highlight = { selected: null, hovered: null };
 
   // 描画バッファとカメラの縦横比を、canvas の表示の大きさに合わせる（S1-15。パネルを除いた描画領域）
   function resize(): void {
@@ -200,7 +207,10 @@ export function createRenderer(
     },
     pick: picker.pick,
     pickRoot,
-    setHighlight: objects.setHighlight,
+    setHighlight(next) {
+      highlight = next;
+      objects.setHighlight(next);
+    },
     setPreviewStyle: objects.setPreviewStyle,
     setWarnings: objects.setWarnings,
     setHandles: handles.set,
@@ -269,6 +279,33 @@ export function createRenderer(
         const gl = renderer.getContext();
         gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
       }
+    },
+    captureThumbnail(size) {
+      const overlays = [candidates.root, handles.root, reattach.root, infoArrows.root];
+      const visible = overlays.map((o) => o.visible);
+      for (const o of overlays) o.visible = false;
+      const kept = highlight;
+      objects.setHighlight({ selected: null, hovered: null });
+      renderer.shadowMap.needsUpdate = true;
+      shadowVersion = objects.version();
+      renderer.render(scene, active);
+      // 描いた直後（同じタスクの中）なら、preserveDrawingBuffer なしでも描画バッファを写せる
+      const out = document.createElement('canvas');
+      out.width = size;
+      out.height = size;
+      const ctx = out.getContext('2d');
+      if (ctx !== null) {
+        const crop = centerSquareCrop(canvas.width, canvas.height);
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(canvas, crop.sx, crop.sy, crop.size, crop.size, 0, 0, size, size);
+      }
+      overlays.forEach((o, i) => {
+        o.visible = visible[i] ?? true;
+      });
+      objects.setHighlight(kept);
+      redraw.invalidate();
+      return out;
     },
     projectToScreen(world) {
       // 描く前（setCamera の直後など）でも今のカメラで写す

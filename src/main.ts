@@ -1,13 +1,16 @@
 import { Vector3 } from 'three';
-import { demoScene } from './app/demo-scene';
 import { getLanguage, onLanguageChange, setLanguage, t } from './app/i18n';
 import { createInfoOverlay } from './app/info-overlay';
 import { createInteractions } from './app/interactions';
 import { startLoop } from './app/loop';
+import { restoreScene } from './app/restore';
 import { selectionForPick } from './app/selection';
 import { createLayoutMemo, createStore } from './app/store';
+import { createWorks } from './app/works';
 import { createAudioEngine } from './audio/engine';
 import { computeMeshVoices, computeMotorHums, lockPosition } from './core/audio-model';
+import { AUTOSAVE_DEBOUNCE_MS, THUMBNAIL_SIZE } from './core/constants';
+import { toSaveFile } from './core/io/save-file';
 import { boundsOf } from './core/layout/bounds';
 import { resolveLayout } from './core/layout/resolve';
 import { nextTheme } from './core/theme';
@@ -26,11 +29,16 @@ import {
 } from './render/renderer';
 import { motorCenter } from './render/sync';
 import { warningParts } from './render/warning-effects';
+import { createAutosaver } from './storage/autosave';
+import * as db from './storage/db';
 import { createInfoLabels } from './ui/info-labels';
 import { createPalette } from './ui/palette';
 import { createPauseIndicator } from './ui/pause-indicator';
 import { createProperties } from './ui/properties';
+import { openSaveDialog } from './ui/save-dialog';
 import { createUiShell } from './ui/shell';
+import { showToast } from './ui/toast';
+import { openWorksDialog } from './ui/works-dialog';
 
 const root = document.querySelector<HTMLElement>('#root');
 if (!root) throw new Error('#root が見つからない');
@@ -49,7 +57,12 @@ function applyLanguage(): void {
 applyLanguage();
 onLanguageChange(applyLanguage);
 
-const store = createStore(demoScene);
+// 最初の描画の前に自動保存を読み、あればそのシーンで始める（S1-27。履歴は空）。読めない・壊れているときは
+// 空のシーンで始め、壊れていたときだけトーストで知らせる。IndexedDB を使えなければ自動保存を止める
+const restored = await restoreScene(db.loadAutosave);
+if (restored.status === 'failed') showToast('storage.restoreFailed', 'error');
+const storageAvailable = restored.status !== 'unavailable';
+const store = createStore(restored.scene);
 const layoutOf = createLayoutMemo();
 const renderer = createRenderer(canvas, {
   theme: store.getState().settings.theme,
@@ -273,6 +286,58 @@ const toggleMute = (): void => {
 muteButton.addEventListener('click', toggleMute);
 keyboard.bind({ key: 'm' }, { onDown: toggleMute });
 store.subscribe((state) => applyMute(state.settings.muted));
+// 自動保存（S1-27）: シーンの参照が変わってから AUTOSAVE_DEBOUNCE_MS 後に最後のシーンを書く。
+// ページを離れる・隠れるときは待たずに書く（書き切れなくてもよい）
+let lastAutosaveAt: number | null = null;
+const autosaver = createAutosaver(async (scene) => {
+  if (!storageAvailable) return;
+  await db.saveAutosave(toSaveFile(scene));
+  lastAutosaveAt = Date.now();
+}, AUTOSAVE_DEBOUNCE_MS);
+let autosavedScene = store.getState().scene;
+store.subscribe(({ scene }) => {
+  if (scene === autosavedScene) return;
+  autosavedScene = scene;
+  if (storageAvailable) autosaver.notify(scene);
+});
+window.addEventListener('pagehide', () => {
+  void autosaver.flush();
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') void autosaver.flush();
+});
+// 作品の保存と一覧（S1-27）。サムネイルは選択の強調・候補・ハンドル・情報表示の矢印を隠して撮る
+const works = createWorks({
+  store,
+  db,
+  isAvailable: () => storageAvailable,
+  captureThumbnail: () =>
+    new Promise<Blob>((resolve, reject) => {
+      syncDisplay();
+      renderer
+        .captureThumbnail(THUMBNAIL_SIZE)
+        .toBlob(
+          (blob) => (blob === null ? reject(new Error('サムネイルを作れない')) : resolve(blob)),
+          'image/png',
+        );
+    }),
+  openSaveDialog,
+  openWorksDialog,
+  showToast,
+  t,
+  getLanguage,
+  newId: () => `work_${crypto.randomUUID()}`,
+});
+const saveButton = shell.toolbar.button('save');
+saveButton.disabled = false;
+saveButton.addEventListener('click', () => {
+  void works.save();
+});
+const worksButton = shell.toolbar.button('works');
+worksButton.disabled = false;
+worksButton.addEventListener('click', () => {
+  void works.openList();
+});
 // 右下の軸の目印（S1-14）。球をクリックすると、その軸の側から見る
 const gizmo = createAxisGizmo(shell.gizmoSlot, (v) => cameraInput.setView(v));
 // コンテキストメニューの中身は S1-29。それまではテスト用に最後の要求だけ覚えておく
@@ -348,6 +413,11 @@ installGearSim({
     arrows: infoOverlay.arrows(),
   }),
   getAudio: () => audio.state(),
+  getStorageStatus: () => ({
+    lastAutosaveAt,
+    pendingAutosave: autosaver.pending(),
+    currentWorkId: store.getState().currentWork?.id ?? null,
+  }),
 });
 
 startLoop({

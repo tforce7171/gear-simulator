@@ -33,3 +33,11 @@ export function h<K extends keyof HTMLElementTagNameMap>(
   if (testId !== undefined) el.dataset.testid = testId;
   return el;
 }
+
+// ダイアログの中のキー入力を、window に付けたアプリのショートカット（Delete・Ctrl+Z など）に届けない（S1-27）。
+// Esc でダイアログを閉じるのは既定の動作なので、そのまま効く
+export function stopAppKeys(el: HTMLElement): void {
+  const stop = (e: Event): void => e.stopPropagation();
+  el.addEventListener('keydown', stop);
+  el.addEventListener('keyup', stop);
+}
