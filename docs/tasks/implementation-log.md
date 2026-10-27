@@ -17,3 +17,9 @@
 | S1-02 | 歯底の円弧は、手前の歯との間の円弧を各歯の周期の先頭に置く（周期は 1 つ前の歯の歯面の下端の直後から始まる）。`r_f ≥ r_b` のときは歯面の下端の点が歯底の円弧の端を兼ね、`r_b > r_f` のときは半径方向の直線の下端の点が兼ねる | 点の重複を作らずに、12 回対称（点 i と点 i + 点数/z が回転で一致）を保つため |
 | S1-02 | `GeometryCache.release` で、持っていないキーは何もしない（例外にしない） | 描画側の後片付けの順序の都合で二重に release しても壊れないようにするため |
 | S1-02 | 作業は main の作業ツリーではなく `.claude/worktrees/S1-02`（`git worktree add`）で行った | 実行環境が共有の作業ツリーへの書き込みを禁止していたため |
+| S1-03 | 歯車の中心を求める `gearCenter(shaftOrigin, axis, gear)` を `src/core/scene/gear-center.ts` に足した | 資料の「範囲」に式はあるが「作るもの」に関数が無く、S1-04・S1-09 が同じ式を使うため 1 か所にまとめた |
+| S1-03 | `validateScene` のエラーの `code` は `idMismatch`・`missingRef`・`invalidKind`・`invalidSize`・`invalidAxis`・`notFinite`・`teethNotInteger`・`teethOutOfRange`・`offsetNotSnapped`・`rpmOutOfRange`・`invalidDirection`・`invalidMotorOn`・`multipleMotors`・`meshChildNotOnShaft`・`meshChildOffset`・`meshParentOnSameShaft`・`meshSizeMismatch`・`meshCycle` とした（`SceneErrorCode` 型） | 資料は「実装で決める」としていたため。S1-28 の読み込みでも使うので、型の上ではありえない値（不正な kind・size・on）も調べる |
+| S1-03 | `meshCycle` は循環にかかわる `mesh` のシャフトごとに 1 件ずつ出す（2 本が互いを親にすれば 2 件）。参照切れで根に行き着かない場合は `missingRef` だけを出し、`meshCycle` は出さない | 問題の場所（`path`）をシャフトごとに示せるようにするため。参照切れを二重に報告しないため |
+| S1-03 | `multipleMotors` の `id` はシャフトの ID、`path` は `shafts.<id>` にした。`meshChildOffset`・`meshSizeMismatch` の `id` は子の歯車 | どの部品に問題があるかを最も直接に示す場所にしたため |
+| S1-03 | `createRandomIdGenerator` は `<kind>_` に英小文字と数字 10 文字を続ける（36^10 通り）。乱数を注入できる | 1000 回で重複しない確率が十分に高く、保存形式の ID として短いため |
+| S1-03 | `shaftAxis` は参照先の歯車・シャフトが無いときも `null` を返す | 資料は循環のときだけ `null` としていたが、たどれないのは同じため |
