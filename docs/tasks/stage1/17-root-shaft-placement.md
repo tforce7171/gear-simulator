@@ -74,36 +74,36 @@ depends: [S1-16]
 - 辞書に、パレットの項目と大きさの名前のキーを足す
 
 ## 受け入れ条件
-- [ ] パレットから床へドラッグして起点のシャフト（歯車 1 枚付き）を置ける。向きは R で切り替わる
-- [ ] 干渉する位置、パネルの上、Esc では置かれない
-- [ ] 起点を選ぶと位置と高さのハンドルが出て、ドラッグで動かせる。その先の歯車もついてくる
-- [ ] 新たな干渉を生む位置で離したら、最後の干渉の無い位置で止まる
-- [ ] どの操作も Undo 1 回で戻る
+- [x] パレットから床へドラッグして起点のシャフト（歯車 1 枚付き）を置ける。向きは R で切り替わる
+- [x] 干渉する位置、パネルの上、Esc では置かれない
+- [x] 起点を選ぶと位置と高さのハンドルが出て、ドラッグで動かせる。その先の歯車もついてくる
+- [x] 新たな干渉を生む位置で離したら、最後の干渉の無い位置で止まる
+- [x] どの操作も Undo 1 回で戻る
 
 ## テストケース
 ### Vitest
-- [ ] `snap(12.4, 5)` → 10、`snap(12.5, 5)` → 15、`snap(-7, 5)` → -5
-- [ ] `rootHeight('M', 20)` → 35（歯先円半径 22 + 10 = 32 を切り上げ）。`rootHeight('L', 16)` → 40（27 + 10 = 37）
-- [ ] `nextAxis`: y → x、x → z、z → y
-- [ ] `intersectRayPlane`: 原点 `[0, 100, 0]`・向き `[0, -1, 0]` と床 → `[0, 0, 0]`。床と平行なレイ → null。床から離れる向き → null
-- [ ] `closestHeightOnVerticalLine`: 水平なレイが直線を通るなら、そのレイの高さを返す
-- [ ] `newInterferences`: before に `[a, b]`、after に `[b, a]` と `[c, d]` → `[[c, d]]` だけ
-- [ ] 向きを変えるコマンド: A（起点）→B→C の木で A を `'x'` にすると、A の `placement.axis` が `'x'`、B・C のシャフトの `placement` は前と同じ参照。`resolveLayout` の `shafts[id].axis` は 3 本とも `'x'` で、A-B、B-C がかみ合いのまま（中心距離 = ピッチ円半径の和）
-- [ ] 原点を変えるコマンド: A を `[10, 0, 0]` 動かすと、`resolveLayout` での B と C の中心も `[10, 0, 0]` 動く
+- [x] `snap(12.4, 5)` → 10、`snap(12.5, 5)` → 15、`snap(-7, 5)` → -5
+- [x] `rootHeight('M', 20)` → 35（歯先円半径 22 + 10 = 32 を切り上げ）。`rootHeight('L', 16)` → 40（27 + 10 = 37）
+- [x] `nextAxis`: y → x、x → z、z → y
+- [x] `intersectRayPlane`: 原点 `[0, 100, 0]`・向き `[0, -1, 0]` と床 → `[0, 0, 0]`。床と平行なレイ → null。床から離れる向き → null
+- [x] `closestHeightOnVerticalLine`: 水平なレイが直線を通るなら、そのレイの高さを返す
+- [x] `newInterferences`: before に `[a, b]`、after に `[b, a]` と `[c, d]` → `[[c, d]]` だけ
+- [x] 向きを変えるコマンド: A（起点）→B→C の木で A を `'x'` にすると、A の `placement.axis` が `'x'`、B・C のシャフトの `placement` は前と同じ参照。`resolveLayout` の `shafts[id].axis` は 3 本とも `'x'` で、A-B、B-C がかみ合いのまま（中心距離 = ピッチ円半径の和）
+- [x] 原点を変えるコマンド: A を `[10, 0, 0]` 動かすと、`resolveLayout` での B と C の中心も `[10, 0, 0]` 動く
 ### Playwright（`e2e/root-placement.spec.ts`）
 準備: 空のシーンで、`setCamera` で斜め上から見下ろす視点にする。
-- [ ] パレットの起点の項目から `projectToScreen([0, 0, 0])` へドラッグ（`mouse.down` → 何段階かに分けて `mouse.move` → `mouse.up`）→ シャフトが 1 本（`placement.kind: 'root'`、`placement.axis: 'y'`、`placement.origin` が `[0, 35, 0]` に近く x・z は 5 の倍数）、歯車が 1 枚（`size: 'M'`、`teeth: 20`、`offset: 0`）。`getSelection()` がその歯車
-- [ ] ドラッグ中に R を 1 回押してから離す → `placement.axis: 'x'`
-- [ ] パレットで「小」を選んでから置く → 歯車が `size: 'S'`、`teeth: 30`
-- [ ] ドラッグ中に Esc → 何も増えない
-- [ ] パレットへ戻して離す → 何も増えない
-- [ ] 1 本置いた後、その歯車の中心の真下へもう 1 本ドラッグして離す → 増えない（干渉）
-- [ ] 置いた後 Ctrl+Z → シャフトも歯車も無くなる
-- [ ] `chain-three.json`（S1-16）を読み込み A を選ぶ → `getHandles()` に `move` と `height` がある。`height` を 60px 上へドラッグ → A のシャフトの `placement.origin[1]` が増え、5 の倍数。B・C の中心の y も同じだけ増える。Ctrl+Z で戻る
-- [ ] `move` を右へ 80px ドラッグ → `placement.origin` の x か z が変わり、y は変わらない。C の中心も同じだけ動く
-- [ ] A を選んで R → A の `placement.axis` が `'x'`、`getLayout().shafts` の 3 本の `axis` が `'x'`、`getLayout().meshes` に A-B、B-C がある。Ctrl+Z で `'y'` に戻る
-- [ ] B を選んで R → 何も変わらない（`mesh` のシャフト）
-- [ ] `two-roots.json` を読み込み、1 本目の `move` をもう 1 本目の位置まで引きずって離す → `getLayout().interferences` が空のまま、1 本目は 2 本目の手前で止まっている
+- [x] パレットの起点の項目から `projectToScreen([0, 0, 0])` へドラッグ（`mouse.down` → 何段階かに分けて `mouse.move` → `mouse.up`）→ シャフトが 1 本（`placement.kind: 'root'`、`placement.axis: 'y'`、`placement.origin` が `[0, 35, 0]` に近く x・z は 5 の倍数）、歯車が 1 枚（`size: 'M'`、`teeth: 20`、`offset: 0`）。`getSelection()` がその歯車
+- [x] ドラッグ中に R を 1 回押してから離す → `placement.axis: 'x'`
+- [x] パレットで「小」を選んでから置く → 歯車が `size: 'S'`、`teeth: 30`
+- [x] ドラッグ中に Esc → 何も増えない
+- [x] パレットへ戻して離す → 何も増えない
+- [x] 1 本置いた後、その歯車の中心の真下へもう 1 本ドラッグして離す → 増えない（干渉）
+- [x] 置いた後 Ctrl+Z → シャフトも歯車も無くなる
+- [x] `chain-three.json`（S1-16）を読み込み A を選ぶ → `getHandles()` に `move` と `height` がある。`height` を 60px 上へドラッグ → A のシャフトの `placement.origin[1]` が増え、5 の倍数。B・C の中心の y も同じだけ増える。Ctrl+Z で戻る
+- [x] `move` を右へ 80px ドラッグ → `placement.origin` の x か z が変わり、y は変わらない。C の中心も同じだけ動く
+- [x] A を選んで R → A の `placement.axis` が `'x'`、`getLayout().shafts` の 3 本の `axis` が `'x'`、`getLayout().meshes` に A-B、B-C がある。Ctrl+Z で `'y'` に戻る
+- [x] B を選んで R → 何も変わらない（`mesh` のシャフト）
+- [x] `two-roots.json` を読み込み、1 本目の `move` をもう 1 本目の位置まで引きずって離す → `getLayout().interferences` が空のまま、1 本目は 2 本目の手前で止まっている
 ### Playwright（見た目）
 - なし（S1-31 でまとめる）
 
@@ -113,6 +113,6 @@ depends: [S1-16]
 - 干渉で止まるときの手触りに違和感がない
 
 ## 完了の条件
-- [ ] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
-- [ ] design.md と後続のタスク資料に、必要な変更を反映した（§3 の定数、§10 の `__gearSim` の API）
-- [ ] `status: done` にしてコミットした
+- [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
+- [x] design.md と後続のタスク資料に、必要な変更を反映した（§3 の定数、§10 の `__gearSim` の API）
+- [x] `status: done` にしてコミットした
