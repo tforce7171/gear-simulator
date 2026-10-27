@@ -1,7 +1,7 @@
 ---
 id: S1-26
 title: 音（空間）
-status: todo
+status: done
 depends: [S1-13, S1-25]
 ---
 
@@ -95,29 +95,29 @@ depends: [S1-13, S1-25]
   ```
 
 ## 受け入れ条件
-- [ ] 多数の歯車が回るシーンで、カメラを寄せた箇所の音が大きく、左右の位置に応じて聞こえる。
-- [ ] 個別の音源は常に 16 個以下で、残りは背景のうなりとして聞こえる。
-- [ ] 同じ強さのモーター 2 つを互いに逆に回そうとするようにつないでロックさせると衝撃音が 1 回鳴り、ロック中はガタガタ鳴る。
-- [ ] 負けて逆に回されているモーターから、きしむ音が聞こえる。
+- [x] 多数の歯車が回るシーンで、カメラを寄せた箇所の音が大きく、左右の位置に応じて聞こえる。
+- [x] 個別の音源は常に 16 個以下で、残りは背景のうなりとして聞こえる。
+- [x] 同じ強さのモーター 2 つを互いに逆に回そうとするようにつないでロックさせると衝撃音が 1 回鳴り、ロック中はガタガタ鳴る。
+- [x] 負けて逆に回されているモーターから、きしむ音が聞こえる。
 
 ## テストケース
 ### Vitest
-- [ ] `meshContactPoint`: a（中心 (0,0,0)、r 12）と b（中心 (36,0,0)、r 24）→ (12, 0, 0)。
-- [ ] `distanceGain`: 150 → 1、600 → 0.25、50 → 1（Web Audio の `inverse` と同じく、refDistance 未満の距離は refDistance として扱う）。
-- [ ] `selectVoices`: x = 0, 10, 20, …, 200 に 21 個の候補、リスナー (0,0,0)、previous 空、max 16 → selected は x = 0〜150 の 16 個、rest は 5 個。
-- [ ] ヒステリシス: 候補 A（距離 100、previous に含む）と B（距離 95、含まない）、max 1 → A が残る（95 > 100 × 0.9）。B が距離 85 → B に入れ替わる。
-- [ ] 同じ距離の候補は key の文字列順で選ばれる。
-- [ ] `summarizeBackground`: 空 → null。同じ周波数 100 Hz・同じ level・同じ距離の 4 個 → frequency 100、level は 1 個のときの 2 倍（0.5 でクランプ）。100 Hz と 400 Hz を同じ重み → frequency 200（対数の平均）。
-- [ ] `diffLocks`: prev 空 → next に 1 件 → entered 1 件、exited 0。同じ内容（配列は別の参照）→ どちらも空。
-- [ ] `motorHumParams`（小、60 rpm、向き +1）: ω = 2π → strain 0、frequency 220、grind 0。ω = 0 → strain 1、frequency 132。ω = −π → strain 1.5、grind 0.5、frequency 220 × (0.6 + 0.4 × 0.5) = 176。
+- [x] `meshContactPoint`: a（中心 (0,0,0)、r 12）と b（中心 (36,0,0)、r 24）→ (12, 0, 0)。
+- [x] `distanceGain`: 150 → 1、600 → 0.25、50 → 1（Web Audio の `inverse` と同じく、refDistance 未満の距離は refDistance として扱う）。
+- [x] `selectVoices`: x = 0, 10, 20, …, 200 に 21 個の候補、リスナー (0,0,0)、previous 空、max 16 → selected は x = 0〜150 の 16 個、rest は 5 個。
+- [x] ヒステリシス: 候補 A（距離 100、previous に含む）と B（距離 95、含まない）、max 1 → A が残る（95 > 100 × 0.9）。B が距離 85 → B に入れ替わる。
+- [x] 同じ距離の候補は key の文字列順で選ばれる。
+- [x] `summarizeBackground`: 空 → null。同じ周波数 100 Hz・同じ level・同じ距離の 4 個 → frequency 100、level は 1 個のときの 2 倍（0.5 でクランプ）。100 Hz と 400 Hz を同じ重み → frequency 200（対数の平均）。
+- [x] `diffLocks`: prev 空 → next に 1 件 → entered 1 件、exited 0。同じ内容（配列は別の参照）→ どちらも空。
+- [x] `motorHumParams`（小、60 rpm、向き +1）: ω = 2π → strain 0、frequency 220、grind 0。ω = 0 → strain 1、frequency 132。ω = −π → strain 1.5、grind 0.5、frequency 220 × (0.6 + 0.4 × 0.5) = 176。
 
 ### Playwright
-- [ ] `chain-22.json`（S1-25、x 方向に一直線）を読み、クリックで音を開始 → `voices.length === 16`、`background` が null でない。
-- [ ] `setCamera` で列の左端に寄せる → 選ばれた 16 組の `position` の x がすべて、選ばれなかった組の x より小さい。右端に寄せる → 逆になる。
-- [ ] 小のモーター 2 つ（ともに 60 rpm、向き +1）を、同じ歯数の歯車 2 枚のシャフトにそれぞれ付けてかみ合わせたシーン（`e2e/fixtures/lock-opposed.json`。かみ合うと回る向きが逆になるので、互いに逆に回そうとしてつり合う）→ `lockSounds.impacts === 1`、`rattling.length === 1`。モーターを 1 つ OFF にする → `rattling` が空。
-- [ ] 小のモーター（60 rpm、+1）と大のモーター（15 rpm、+1）を、同じ歯数の歯車 2 枚のシャフトに付けてかみ合わせたシーン（`e2e/fixtures/back-driven.json`）→ 大が勝ち、小のモーターは `backDriven` に入る。小の `strain` ≈ 1.22、`grind` ≈ 0.22、大の `grind === 0`。
-- [ ] Space で一時停止 → `motors` が空、`voices` が空。
-- [ ] 上のすべてでコンソールエラー 0 件。
+- [x] `chain-22.json`（S1-25、x 方向に一直線）を読み、クリックで音を開始 → `voices.length === 16`、`background` が null でない。
+- [x] `setCamera` で列の左端に寄せる → 選ばれた 16 組の `position` の x がすべて、選ばれなかった組の x より小さい。右端に寄せる → 逆になる。
+- [x] 小のモーター 2 つ（ともに 60 rpm、向き +1）を、同じ歯数の歯車 2 枚のシャフトにそれぞれ付けてかみ合わせたシーン（`e2e/fixtures/lock-opposed.json`。かみ合うと回る向きが逆になるので、互いに逆に回そうとしてつり合う）→ `lockSounds.impacts === 1`、`rattling.length === 1`。モーターを 1 つ OFF にする → `rattling` が空。
+- [x] 小のモーター（60 rpm、+1）と大のモーター（15 rpm、+1）を、同じ歯数の歯車 2 枚のシャフトに付けてかみ合わせたシーン（`e2e/fixtures/back-driven.json`）→ 大が勝ち、小のモーターは `backDriven` に入る。小の `strain` ≈ 1.22、`grind` ≈ 0.22、大の `grind === 0`。
+- [x] Space で一時停止 → `motors` が空、`voices` が空。
+- [x] 上のすべてでコンソールエラー 0 件。
 
 ## 人が手で確かめる項目
 - ヘッドホンで、カメラを回すと音が左右に動き、寄ると大きくなるか。
@@ -126,6 +126,6 @@ depends: [S1-13, S1-25]
 - ロックの衝撃音、ガタガタ、きしみ、モーターのうなりが、それぞれ何の音か分かるか。真鍮と木製で性格が違って聞こえるか。
 
 ## 完了の条件
-- [ ] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
-- [ ] design.md と後続のタスク資料に、必要な変更を反映した（`__gearSim.getAudio` の拡張を design.md §10 に書く）
-- [ ] `status: done` にしてコミットした
+- [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
+- [x] design.md と後続のタスク資料に、必要な変更を反映した（`__gearSim.getAudio` の拡張を design.md §10 に書く）
+- [x] `status: done` にしてコミットした

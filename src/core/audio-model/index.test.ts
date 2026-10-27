@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_AUDIO_VOICES } from '../constants';
 import { initialMotionState, solveMotion } from '../kinematics/motion';
 import { resolveLayout } from '../layout/resolve';
 import type { Scene } from '../scene/types';
 import type { AudioMaterialId } from '../theme';
 import {
-  activeVoices,
   CLICK_JITTER,
   CLICK_MAX_HZ,
   clickParams,
@@ -297,34 +295,25 @@ describe('computeMeshVoices', () => {
     expect(voice?.tone).toBeCloseTo(0.809, 3);
   });
 
+  it('位置はかみ合いの接点（g1 の中心から g2 へ、g1 のピッチ円半径 6 mm の点）', () => {
+    const scene = sceneA();
+    const layout = resolveLayout(scene);
+    const voice = voicesOf(scene).find((v) => v.key === 'gear_g1|gear_g2');
+    const g1 = layout.gears.gear_g1;
+    const g2 = layout.gears.gear_g2;
+    if (voice === undefined || g1 === undefined || g2 === undefined) throw new Error('無い');
+    const d = Math.hypot(...g2.center.map((x, i) => x - (g1.center[i] ?? 0)));
+    for (let i = 0; i < 3; i += 1) {
+      const expected = (g1.center[i] ?? 0) + (((g2.center[i] ?? 0) - (g1.center[i] ?? 0)) * 6) / d;
+      expect(voice.position[i]).toBeCloseTo(expected, 9);
+    }
+  });
+
   it('クリックの時刻に使う歯車は key の先頭の歯車で、その歯数とシャフトを持つ', () => {
     const voice = voicesOf(sceneA()).find((v) => v.key === 'gear_g2|gear_g3');
     expect(voice?.gearId).toBe('gear_g2');
     expect(voice?.shaftId).toBe('shaft_s2');
     expect(voice?.teeth).toBe(36);
-  });
-});
-
-describe('activeVoices', () => {
-  const voice = (key: string, frequency: number): MeshVoice => ({
-    key,
-    gearId: key,
-    shaftId: key,
-    teeth: 12,
-    frequency,
-    ...clickToneMix(frequency),
-  });
-
-  it('動いている組だけを、並びのまま最初の max 組まで残す', () => {
-    const voices = [voice('a', 0), voice('b', 12), voice('c', 40), voice('d', 0), voice('e', 5)];
-    expect(activeVoices(voices, 2).map((v) => v.key)).toEqual(['b', 'c']);
-    expect(activeVoices(voices).map((v) => v.key)).toEqual(['b', 'c', 'e']);
-  });
-
-  it('既定の上限は MAX_AUDIO_VOICES（16）', () => {
-    const voices = Array.from({ length: 21 }, (_, i) => voice(`k${i}`, 24));
-    expect(MAX_AUDIO_VOICES).toBe(16);
-    expect(activeVoices(voices)).toHaveLength(16);
   });
 });
 

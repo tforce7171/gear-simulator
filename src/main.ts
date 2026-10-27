@@ -1,3 +1,4 @@
+import { Vector3 } from 'three';
 import { demoScene } from './app/demo-scene';
 import { getLanguage, onLanguageChange, setLanguage, t } from './app/i18n';
 import { createInfoOverlay } from './app/info-overlay';
@@ -6,7 +7,7 @@ import { startLoop } from './app/loop';
 import { selectionForPick } from './app/selection';
 import { createLayoutMemo, createStore } from './app/store';
 import { createAudioEngine } from './audio/engine';
-import { computeMeshVoices } from './core/audio-model';
+import { computeMeshVoices, computeMotorHums, lockPosition } from './core/audio-model';
 import { boundsOf } from './core/layout/bounds';
 import { resolveLayout } from './core/layout/resolve';
 import { nextTheme } from './core/theme';
@@ -23,6 +24,7 @@ import {
   INITIAL_CAMERA_TARGET,
   ORTHO_FRUSTUM_HEIGHT,
 } from './render/renderer';
+import { motorCenter } from './render/sync';
 import { warningParts } from './render/warning-effects';
 import { createInfoLabels } from './ui/info-labels';
 import { createPalette } from './ui/palette';
@@ -354,9 +356,28 @@ startLoop({
   layoutOf,
   displayScene: () => interactions.displayScene(),
   onFrame: (dt) => {
-    // 音は運動を進めた後の状態で更新する（S1-25）
-    const { scene, motion } = store.getState();
-    audio.update(computeMeshVoices(scene, layoutOf(scene), motion), motion.angles, dt);
+    // 音は運動を進めた後の状態で更新する（S1-25）。リスナーは今描いたカメラ（S1-26）
+    const { scene, motion, sim } = store.getState();
+    const layout = layoutOf(scene);
+    const camera = cameraInput.activeCamera();
+    camera.updateMatrixWorld();
+    const forward = camera.getWorldDirection(new Vector3());
+    const up = new Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
+    audio.update({
+      voices: computeMeshVoices(scene, layout, motion),
+      angles: motion.angles,
+      dt,
+      listener: {
+        position: [camera.position.x, camera.position.y, camera.position.z],
+        forward: [forward.x, forward.y, forward.z],
+        up: [up.x, up.y, up.z],
+      },
+      motors: computeMotorHums(scene, motion, sim.paused, (motor) => {
+        const placed = layout.shafts[motor.shaftId];
+        return placed === undefined ? null : motorCenter(placed, motor.size);
+      }),
+      locks: motion.locks.map((info) => ({ info, position: lockPosition(layout, info) })),
+    });
     ready = true;
   },
 });

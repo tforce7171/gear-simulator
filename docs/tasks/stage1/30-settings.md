@@ -31,7 +31,7 @@ depends: [S1-14, S1-24, S1-25]
   - `version` が 1 でないときは全項目を初期値にする（形式を変えたときの移行は、そのときのタスクで書く）。
 - **言語の結び付け**: S1-12 の言語は i18n のモジュールが持っている。`settings.language: Lang` を足し、起動時は保存された値（なければ `detectLanguage(navigator.language)`）で `setLanguage` を呼ぶ。設定画面や `__gearSim.setLanguage` で変わったら、`settings.language` と i18n の言語がいつも一致するようにする。
 - **テーマと音の材質の結び付け**: テーマが変わったら（起動時を含む）、音の材質を `THEME_AUDIO_MATERIAL[theme]`（S1-24）にする（S1-25 の `setMaterial`）。
-  - S1-25 の時点: `setMaterial` は `src/audio/engine.ts` の `AudioEngine.setMaterial`。`main.ts` が `createAudioEngine({ muted })` で作った `audio` を持っている（初期値は `'metal'`。作るときに `material` を渡せる）。`settings.muted`（初期値 `false`）は既に `src/app/store.ts` の `Settings` にあり、M キーとツールバーのボタンは `updateSettings { muted }` を通すので、保存した値を読み込んで `updateSettings` すればボタンの `aria-pressed` と主音量も追従する（`main.ts` のストアの購読）。
+  - S1-25 の時点: `setMaterial` は `src/audio/engine.ts` の `AudioEngine.setMaterial`。`main.ts` が `createAudioEngine({ muted })` で作った `audio` を持っている（初期値は `'metal'`。作るときに `material` を渡せる）。S1-26 の時点で `setMaterial` はかみ合いの音源と背景のうなりの材質を変える。衝撃音は鳴らすときの材質を使い、ガタガタは作ったときの材質のまま（ロックが解けるまで）。`settings.muted`（初期値 `false`）は既に `src/app/store.ts` の `Settings` にあり、M キーとツールバーのボタンは `updateSettings { muted }` を通すので、保存した値を読み込んで `updateSettings` すればボタンの `aria-pressed` と主音量も追従する（`main.ts` のストアの購読）。
 
 ## 範囲外
 - 各設定の効き目そのもの（品質・テーマ S1-24、入力デバイス・2 本指スクロール S1-14、言語 S1-12、ミュート S1-25）

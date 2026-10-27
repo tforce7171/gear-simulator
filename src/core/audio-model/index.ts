@@ -1,8 +1,11 @@
-import { MAX_AUDIO_VOICES } from '../constants';
 import type { MotionState } from '../kinematics/types';
 import type { Layout } from '../layout/types';
-import type { GearId, Scene, ShaftId } from '../scene/types';
+import type { Vec3 } from '../math/vec3';
+import type { GearId, Motor, MotorId, Scene, ShaftId, SizeKey } from '../scene/types';
 import type { AudioMaterialId } from '../theme';
+import { meshContactPoint, motorHumParams } from './spatial';
+
+export * from './spatial';
 
 // 音の計算（S1-25、要件 §9）。Web Audio には触れず、src/audio/ がこの結果をノードに流す
 
@@ -101,6 +104,12 @@ function clamp(x: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, x));
 }
 
+// 連続音の音量の素（30 Hz で 0.6、400 Hz 以上で 1.0。その間は log2 で直線。30 Hz 未満も 0.6）
+function toneLevelOf(f: number): number {
+  const rise = Math.log2(f / TONE_MIN_HZ) / Math.log2(TONE_FULL_LEVEL_HZ / TONE_MIN_HZ);
+  return 0.6 + 0.4 * clamp(rise, 0, 1);
+}
+
 // 連続音の基本周波数（クランプ済み）と音量（toneLevel × 材質の音量 × クロスフェードの重み）。
 // toneLevel は 30 Hz で 0.6、400 Hz 以上で 1.0（その間は log2 で直線）
 export function toneParams(
@@ -110,9 +119,14 @@ export function toneParams(
   const frequency = clamp(f, TONE_MIN_HZ, TONE_MAX_HZ);
   const { tone } = clickToneMix(f);
   if (tone === 0) return { frequency, level: 0 };
-  const rise = Math.log2(f / TONE_MIN_HZ) / Math.log2(TONE_FULL_LEVEL_HZ / TONE_MIN_HZ);
-  const toneLevel = 0.6 + 0.4 * clamp(rise, 0, 1);
-  return { frequency, level: toneLevel * MATERIALS[material].tone.gain * tone };
+  return { frequency, level: toneLevelOf(f) * MATERIALS[material].tone.gain * tone };
+}
+
+// 背景のうなりに使う推定の音量（S1-26）: クリックの範囲の組も連続音とみなした、連続音の level
+// （クロスフェードの重みを掛けない toneLevel × 材質の連続音の音量）
+export function backgroundToneLevel(f: number, material: AudioMaterialId): number {
+  if (!(f > 0)) return 0;
+  return toneLevelOf(f) * MATERIALS[material].tone.gain;
 }
 
 // 前後のフレームの角度から、歯の通過（シャフトの角度 × z / 2π が整数を跨いだ点）の時刻を返す。
@@ -149,7 +163,7 @@ export function clickParams(material: AudioMaterialId, random: () => number): Cl
   };
 }
 
-// かみ合いごとの音源の状態（S1-26 で位置を足す）
+// かみ合いごとの音源の状態
 export interface MeshVoice {
   readonly key: string; // meshKey
   // クリックの時刻を求める歯車（key の先頭の歯車）とそのシャフト・歯数
@@ -159,6 +173,7 @@ export interface MeshVoice {
   readonly frequency: number; // 歯の通過頻度（Hz。クランプしない）
   readonly click: number; // clickToneMix の重み
   readonly tone: number;
+  readonly position: Vec3; // かみ合いの接点（meshContactPoint。S1-26）
 }
 
 // Layout.meshes の順に、かみ合い 1 組ずつの音源の状態を返す（止まっている組も含む）
@@ -177,20 +192,56 @@ export function computeMeshVoices(scene: Scene, layout: Layout, motion: MotionSt
       teeth: gear.teeth,
       frequency,
       ...clickToneMix(frequency),
+      position: meshContactPoint(layout, mesh),
     });
   }
   return voices;
 }
 
-// 鳴らす音源: 動いている（f > 0）組のうち、並びの順に最初の max 組（S1-26 でカメラに近い順に置き換える）
-export function activeVoices(
-  voices: readonly MeshVoice[],
-  max: number = MAX_AUDIO_VOICES,
-): MeshVoice[] {
-  return voices.filter((v) => v.frequency > 0).slice(0, max);
-}
-
 // 1 フレームで跨いだ歯の数が多い（f ≥ TONE_MIN_HZ 相当）ときはクリックを予約しない
 export function shouldScheduleClicks(count: number, dt: number): boolean {
   return count > 0 && dt > 0 && count / dt < TONE_MIN_HZ;
+}
+
+// モーターのうなりの音源（S1-26）
+export interface MotorHum {
+  readonly motorId: MotorId;
+  readonly size: SizeKey;
+  readonly position: Vec3; // モーターの描画位置
+  readonly frequency: number;
+  readonly level: number;
+  readonly strain: number;
+  readonly grind: number; // backDriven に入っていないモーターは 0
+}
+
+// ON のモーターのうなり（ID の昇順）。一時停止中は空。位置が求まらない（シャフトが無い）モーターは除く
+export function computeMotorHums(
+  scene: Scene,
+  motion: MotionState,
+  paused: boolean,
+  positionOf: (motor: Motor) => Vec3 | null,
+): MotorHum[] {
+  if (paused) return [];
+  const backDriven = new Set(motion.backDriven);
+  const hums: MotorHum[] = [];
+  const motors = Object.values(scene.motors).sort((a, b) =>
+    a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
+  );
+  for (const motor of motors) {
+    if (!motor.on) continue;
+    const position = positionOf(motor);
+    if (position === null) continue;
+    const omega = motion.omegas[motor.shaftId] ?? 0;
+    const p = motorHumParams(motor.size, motor.rpm, motor.direction, omega);
+    hums.push({
+      motorId: motor.id,
+      size: motor.size,
+      position,
+      frequency: p.frequency,
+      level: p.level,
+      strain: p.strain,
+      grind: backDriven.has(motor.id) ? p.grind : 0,
+    });
+  }
+  return hums;
 }
