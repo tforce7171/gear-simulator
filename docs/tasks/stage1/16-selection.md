@@ -1,7 +1,7 @@
 ---
 id: S1-16
 title: 選択、ピッキング、Esc、Delete
-status: doing
+status: done
 depends: [S1-11, S1-13, S1-15]
 ---
 
@@ -62,37 +62,37 @@ depends: [S1-11, S1-13, S1-15]
 - `e2e/fixtures/chain-three.json`: 縦軸の起点のシャフトに中・20 歯の歯車 A、その外周に B（中・20 歯）、B の外周に C（中・20 歯）。A→B→C の木
 
 ## 受け入れ条件
-- [ ] 歯車・シャフト・モーターをクリックすると、その部品（モーターならシャフト）が選ばれ、ハイライトされる
-- [ ] 何もない所のクリックと Esc で選択が外れる
-- [ ] Delete で選択中の部品が消え、その先は浮いたまま残る
-- [ ] Ctrl+Z／Ctrl+Shift+Z で元に戻す・やり直す
-- [ ] 歯車の上の左ドラッグではカメラが回らず、Alt+左ドラッグでは回る
+- [x] 歯車・シャフト・モーターをクリックすると、その部品（モーターならシャフト）が選ばれ、ハイライトされる
+- [x] 何もない所のクリックと Esc で選択が外れる
+- [x] Delete で選択中の部品が消え、その先は浮いたまま残る
+- [x] Ctrl+Z／Ctrl+Shift+Z で元に戻す・やり直す
+- [x] 歯車の上の左ドラッグではカメラが回らず、Alt+左ドラッグでは回る
 
 ## テストケース
 ### Vitest
-- [ ] `choosePick`: `[shaft(1), gear(5)]` → gear（距離より種類が優先）。`[gear(5), gear(2)]` → 距離 2 の gear。`[gear(1), handle(9)]` → handle。空 → null
-- [ ] `selectionForPick`: gear → `gearId`、motor → そのモーターの `shaftId`、shaft → `shaftId`、null → `null`
-- [ ] `pruneSelection`: シーンに無い ID → `null`、ある ID → そのまま、`null` → `null`
+- [x] `choosePick`: `[shaft(1), gear(5)]` → gear（距離より種類が優先）。`[gear(5), gear(2)]` → 距離 2 の gear。`[gear(1), handle(9)]` → handle。空 → null
+- [x] `selectionForPick`: gear → `gearId`、motor → そのモーターの `shaftId`、shaft → `shaftId`、null → `null`
+- [x] `pruneSelection`: シーンに無い ID → `null`、ある ID → そのまま、`null` → `null`
 ### Playwright（`e2e/selection.spec.ts`）
 準備: `chain-three.json` を読み込み、`setCamera` で上から見下ろす視点にする。歯車の中心は `getLayout().gears[id].center` を `projectToScreen` して得る。
-- [ ] B の中心をクリック → `getSelection()` が `[B]`。`pick` の結果も `{ kind: 'gear', id: B }`
-- [ ] A のシャフトの、歯車から外れた所（`getLayout().shafts[id]` の `span` の端の近く）をクリック → `[A のシャフト]`
-- [ ] 何もない所をクリック → `[]`
-- [ ] B を選んで Esc → `[]`
-- [ ] B を選んで、何もない所で左ドラッグ（カメラ回転）→ 選択は `[B]` のまま
-- [ ] B を選んで Delete → `getScene().gears` に B が無い。C のシャフトの `placement.kind` が `'detached'`。C の中心（`getLayout`）が削除前と同じ（`toBeCloseTo`）。`getSelection()` が `[]`
-- [ ] 続けて Ctrl+Z → B が戻り、C のシャフトが `'mesh'` に戻る。Ctrl+Shift+Z → また消える
-- [ ] A のシャフトを選んで Delete → A とそのシャフトが消え、B のシャフトが `'detached'`
-- [ ] 歯車 B の上で左ドラッグ（100px）→ `getCamera()` が変わらない。Alt を押しながら同じドラッグ → 変わる
-- [ ] パレットの上で左ドラッグ → `getCamera()` が変わらない
-- [ ] B を選んで F → 移り終わった後、`getCamera().target` が B の中心に近い（歯先円半径以内）
-- [ ] プロパティパネルなどの `input` にフォーカスがあるとき（テスト用の input でよい）、Delete を押しても部品は消えない
+- [x] B の中心をクリック → `getSelection()` が `[B]`。`pick` の結果も `{ kind: 'gear', id: B }`
+- [x] A のシャフトの、歯車から外れた所（`getLayout().shafts[id]` の `span` の端の近く）をクリック → `[A のシャフト]`
+- [x] 何もない所をクリック → `[]`
+- [x] B を選んで Esc → `[]`
+- [x] B を選んで、何もない所で左ドラッグ（カメラ回転）→ 選択は `[B]` のまま
+- [x] B を選んで Delete → `getScene().gears` に B が無い。C のシャフトの `placement.kind` が `'detached'`。C の中心（`getLayout`）が削除前と同じ（`toBeCloseTo`）。`getSelection()` が `[]`
+- [x] 続けて Ctrl+Z → B が戻り、C のシャフトが `'mesh'` に戻る。Ctrl+Shift+Z → また消える
+- [x] A のシャフトを選んで Delete → A とそのシャフトが消え、B のシャフトが `'detached'`
+- [x] 歯車 B の上で左ドラッグ（100px）→ `getCamera()` が変わらない。Alt を押しながら同じドラッグ → 変わる
+- [x] パレットの上で左ドラッグ → `getCamera()` が変わらない
+- [x] B を選んで F → 移り終わった後、`getCamera().target` が B の中心に近い（歯先円半径以内）
+- [x] プロパティパネルなどの `input` にフォーカスがあるとき（テスト用の input でよい）、Delete を押しても部品は消えない
 
 ## 人が手で確かめる項目
 - 選択と、マウスを乗せたときのハイライトが見やすく、ロックの赤と区別できる
 - 細いシャフトもクリックしやすい
 
 ## 完了の条件
-- [ ] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
-- [ ] design.md と後続のタスク資料に、必要な変更を反映した（§10 の `__gearSim` の API）
-- [ ] `status: done` にしてコミットした
+- [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
+- [x] design.md と後続のタスク資料に、必要な変更を反映した（§10 の `__gearSim` の API）
+- [x] `status: done` にしてコミットした
