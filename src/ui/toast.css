@@ -1,0 +1,65 @@
+/* トースト（S1-15） */
+.toast-stack {
+  position: absolute;
+  left: 50%;
+  bottom: 24px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 2 * var(--gs-gizmo-size, 96px) - 32px);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.toast-stack--fallback {
+  position: fixed;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 8px 8px 8px 14px;
+  border: 1px solid #4a505b;
+  border-left-width: 4px;
+  border-radius: 4px;
+  background: #2f343c;
+  color: #e4e7ec;
+  font-family: system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
+  font-size: 13px;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 35%);
+  pointer-events: auto;
+}
+
+.toast--info {
+  border-left-color: #6f9bd1;
+}
+
+.toast--error {
+  border-left-color: #d9534f;
+}
+
+.toast__message {
+  overflow-wrap: anywhere;
+}
+
+.toast__close {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.toast__close:hover {
+  background: rgb(255 255 255 / 10%);
+}
