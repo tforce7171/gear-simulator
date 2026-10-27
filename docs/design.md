@@ -82,6 +82,7 @@ export const COLLISION_EPS = 1e-6; // mm（S1-08）
 export const SHAFT_END_MARGIN = 4; // mm（S1-09）
 export const EMPTY_SHAFT_HALF_LENGTH = 10; // mm（S1-09）
 export const PERIMETER_CANDIDATE_COUNT = 8; // 外周の候補の方向の数（S1-10）
+export const HISTORY_LIMIT = 100; // Undo の履歴に残すシーンの数の上限（S1-11）
 ```
 
 各タスクで足す定数（足したタスクがこの一覧の値と合わせる）:
@@ -307,12 +308,23 @@ interface Settings {
 - `offset` が `AXIAL_SNAP` の倍数であることは、シーンの検証（S1-03）とコマンドの引数チェック（S1-11）で強制する。
 - **部品の上での左ドラッグ**: 選択中の detached シャフトの本体なら付け直し（S1-19）、それ以外は手で回す（S1-21）。
 - `reattachShaft` は、子の歯車の `offset` が 0 になるように、そのシャフト上の全歯車の `offset` を同じ量だけずらす（S1-11）。
+- **編集コマンド**（S1-11。`src/core/edit/commands.ts` の `applyCommand(scene, command, { ids })`）: 入力のシーンを変えずに新しいシーンを返し、変わらない部分（コレクション・部品）は元の参照を使い回す。何も変わらなければ同じシーンの参照を返す。失敗は例外にせず `{ ok: false, error: { code: 'notFound' | 'invalidValue' | 'notAllowed', message } }`。成功の `created` は新しく作った部品の ID（作った順。例: `addRootShaft` は `[シャフト, 歯車]`）。成功したシーンは必ず `validateScene` を通る。コマンドの一覧:
+  - `addRootShaft { axis, origin, gear: { size, teeth } }`、`growGear { mode: 'perimeter', parentGearId, angle, teeth }`（親と同じ大きさ・`offset 0` の歯車と `mesh` のシャフト）、`growGear { mode: 'coaxial', shaftId, offset, size, teeth }`
+  - `deleteParts { ids }`（複数を 1 回の Undo で。下の削除の規則）、`removeMotor { motorId }`（モーターだけを消す別名）
+  - `setGearTeeth { gearId, teeth }`、`setMeshAngle { shaftId, angle }`（`mesh` だけ。`[0, 2π)` に正規化）、`setGearOffset { gearId, offset }`（`AXIAL_SNAP` の倍数。`mesh` のシャフトの子は `notAllowed`）
+  - `addMotor { shaftId, size }`（`rpm` は `MOTOR_SIZES[size].defaultRpm`、`direction 1`、`on: true`。1 本に 1 個）、`updateMotor { motorId, patch: { size?, rpm?, direction?, on? } }`（`size` を変えても `rpm` は変えない）
+  - `moveShaft { shaftId, origin }`・`setShaftAxis { shaftId, axis }`（`root`・`detached` だけ。その先の `mesh` は書き換えない）
+  - `reattachShaft { shaftId, childGearId, parentGearId, angle }`（`detached` だけ。大きさが同じで、親がこのシャフトとその先（`descendantShafts`）に無いこと）
+  - `replaceScene { scene }`（`validateScene` を通らなければ `invalidValue`）
+- **削除の規則**: 歯車を消すと、その歯車を `parentGearId` に持つ `mesh` のシャフトと、その歯車を `childGearId` に持つ自分のシャフトは、消す直前（入力のシーンの `resolveLayout`）の原点と向きで `detached` になる（その先はそのまま）。歯車が 1 枚も残らなくなったシャフトはモーターごと消す。シャフトを消すと載っている歯車とモーターも消える。同じコマンドの中で先に消えた ID は無視し、シーンに無い ID が 1 つでもあれば `notFound`。
+- **Undo/Redo の履歴**（S1-11。`src/core/edit/history.ts`）: `History { past（古い順）, future（次に Redo するものが先頭）, coalesceKey }`。`execute(state, command, ctx, { coalesceKey? })` は成功し、シーンの参照が変わったときだけ積み（未来は消える。上限 `HISTORY_LIMIT`、古いものから捨てる）、失敗・何も変えないコマンドでは履歴もそのまま。`coalesceKey` を渡すと、直前に積んだときと同じキーなら新しく積まない（ドラッグなど連続した入力を 1 回の Undo にする。UI は操作ごとに別のキーを作る）。Undo・Redo・キーなしの実行でキーは途切れる。
+- **ストアのアクション**（S1-11）: `loadScene`（履歴を空にしてシーンを置き換え、運動を初期化）、`command { command, coalesceKey? }`、`undo`、`redo`。シーンが変わったときは角度を引き継いで `solveMotion` で ω などを求め直す。失敗したコマンドや戻せない Undo は状態を変えず、購読者にも知らせない。新しい部品の ID は `createStore(scene, { ids })` の生成関数（既定はランダム）で作る。
 - シーンの検証エラー（`SceneError`）は、問題の場所を示す `path` を持つ（S1-03 で作り、S1-28 が表示に使う）。`code` の一覧は `src/core/scene/validate.ts` の `SceneErrorCode`。
 - `__gearSim.loadScene` は、Undo の履歴を空にしてシーンを置き換える（テストの準備用。ユーザーの操作で使う `replaceScene` コマンドとは別）。
 - 編集コマンドは、干渉を理由に失敗しない（干渉は Layout が赤い警告として出す）。干渉する位置に置かせない・戻すといった判断は、UI 側（候補の列挙、ハンドル）が行う。
 - エラーや通知は、S1-15 で作るトーストで表示する。想定内の失敗（読み込めないファイルなど）は `console.warn` にとどめ、`console.error` は出さない（§10 のテストで失敗になるため）。
 - **描画の層**（S1-04）: app は `src/render/scene-view.ts` の `SceneView`（`sync(scene, layout)` / `update(motion, layout)` / `render()` / `projectToScreen(world)`）だけを使う。毎フレームの更新ループは `src/app/loop.ts`（`requestAnimationFrame`、`dt` は 0.1 秒で頭打ち）で、`sync` → 運動を進める（`stepMotion`）→ `update` → `render` の順に呼ぶ。`loadScene` の直後の運動は `solveMotion(scene, layout, initialMotionState())`（`src/app/store.ts` の `initialMotion`）。歯車は中心に置いた `Group` のローカルの x・y・z を `u`・`v`・`w` に合わせ、その子のメッシュをローカルの z まわりに `basePhase + シャフトの角度` だけ回す。
-- ストア（S1-04 の `src/app/store.ts`）は、`dispatch` で購読者に知らせる。毎フレームの運動は `setMotion` で入れ、購読者には知らせない。
+- ストア（S1-04 の `src/app/store.ts`）は、`dispatch` で状態が変わったときに購読者に知らせる（S1-11 から。失敗したコマンドでは知らせない）。毎フレームの運動は `setMotion` で入れ、購読者には知らせない。
 - render は、前回と参照が変わった部品だけを作り直す。形状データ（BufferGeometry）は `(種類, 大きさ, 歯数)` をキーに共有する。
 - UI は素の TypeScript で書き、DOM を直接操作する。文字列はすべて `t('key')` を通す。
 
@@ -358,8 +370,10 @@ interface GearSimDebug {
   getLayout(): Layout;
   getMotion(): MotionState;
   getSelection(): string | null;
-  loadScene(scene: Scene): void;
-  dispatch(command: Command): void;
+  loadScene(scene: Scene): void;     // 履歴を空にする（Undo の対象にしない）
+  dispatch(command: Command): void;  // 編集コマンドを実行して履歴に積む。失敗したら何も変えない
+  undo(): void;                      // 戻せなければ何もしない
+  redo(): void;
   // 画面上の位置を求める。Playwright でクリックやドラッグの座標に使う
   projectToScreen(world: Vec3): { x: number; y: number };
 }
@@ -371,7 +385,7 @@ API はタスクで必要になった時点で足していく。足したらこ�
 |---|---|
 | S1-01 | `isReady`（済） |
 | S1-04 | `getScene` / `getLayout` / `getMotion` / `loadScene` / `projectToScreen`（済） |
-| S1-11 | `undo` / `redo` |
+| S1-11 | `dispatch` / `undo` / `redo`（済） |
 | S1-12 | `getLanguage` / `setLanguage` |
 | S1-13 | `getCamera` / `setCamera` / `getLastContextRequest` |
 | S1-14 | `getInputDevice` / `updateSettings` / `setWatchMode` / `getGizmoTargets` |
