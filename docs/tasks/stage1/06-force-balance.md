@@ -1,7 +1,7 @@
 ---
 id: S1-06
 title: 力のつり合い
-status: todo
+status: doing
 depends: [S1-05]
 ---
 
