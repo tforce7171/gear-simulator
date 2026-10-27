@@ -1,7 +1,7 @@
 ---
 id: S1-02
 title: インボリュート歯形の生成と形状データの共有
-status: doing
+status: done
 depends: [S1-01]
 ---
 
