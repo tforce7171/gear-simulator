@@ -1,0 +1,350 @@
+# Gear Simulator 設計
+
+全タスクで共有する設計の前提。要件は [requirements.md](requirements.md)、タスクは [tasks/README.md](tasks/README.md) を参照。
+
+- 前提を変えるタスクは、そのタスクのコミットでこの資料も書き換える。
+- ここに書くのは「複数のタスクにまたがる取り決め」だけ。各タスク固有の詳細はタスク資料に書く。
+
+## 1. ディレクトリ構成
+
+```
+src/
+  core/            純粋関数のみ。three・DOM・Web Audio・IndexedDB を import しない
+    constants.ts   寸法・モーター特性・しきい値などの定数（要件で決めた値はすべてここ）
+    math/          Vec3 などの最小限のベクトル演算
+    scene/         シーンの型、ID 生成、シーンの検証
+    geometry/      インボリュート歯形、かみ合いの幾何（中心距離、位相）
+    layout/        配置の木構造の解決、干渉判定、生やす候補の列挙
+    kinematics/    かみ合いグラフ、力のつり合い、ロック判定、角度の積分
+    edit/          編集コマンド、Undo/Redo の履歴
+    audio-model/   音の高さ、鳴らす音源の選び方など、音の計算
+    i18n/          辞書と翻訳関数
+    io/            保存形式（JSON）のシリアライズ、バージョン移行
+  render/          Three.js による描画（シーン → Object3D の同期、テーマ、ハンドル）
+  input/           Pointer Events・キーボード・カメラ操作
+  ui/              画面 UI（パレット、プロパティ、ツールバー、メニュー、設定）
+  audio/           Web Audio による合成と再生
+  storage/         IndexedDB と localStorage
+  app/             状態ストア、毎フレームの更新ループ、各層の組み立て
+  debug/           window.__gearSim（開発用・テスト用ビルドのみ）
+  main.ts
+e2e/               Playwright の通しテスト（*.spec.ts）
+e2e/visual/        Playwright の見た目確認（*.spec.ts）
+e2e/fixtures/      テスト用のシーン JSON、共通フィクスチャ
+scripts/           性能計測などの手元用スクリプト
+```
+
+- `src/core/` から three などを import できないように、Biome の `noRestrictedImports` で禁止する。
+- 単体テストは対象の隣に `*.test.ts` で置く。Vitest は `src/core/` を node 環境で実行する。
+
+## 2. 座標系と単位
+
+- 右手系で **Y が上**。床は y = 0 の XZ 平面。
+- 長さは mm（1 = 1 mm）。角度は内部では常にラジアン、角速度は rad/s。rpm は表示と設定でだけ使う。
+- 軸の向きは `'x' | 'y' | 'z'` の 3 種類だけ。軸の正の向きは各座標軸の正の向き。
+- 回転の正の向きは、軸の正の向きに対する右ねじの向き（反時計回り）。
+- ベクトルは `readonly [number, number, number]` の `Vec3` で表す。`core` では Three.js の `Vector3` を使わない。
+
+## 3. 定数
+
+`src/core/constants.ts` に置く（値は要件の §3.2、§5 と同じ）。
+
+```ts
+export const PRESSURE_ANGLE = (20 * Math.PI) / 180;
+
+export const GEAR_SIZES = {
+  S: { module: 1, faceWidth: 4, minTeeth: 12, maxTeeth: 80 },
+  M: { module: 2, faceWidth: 8, minTeeth: 12, maxTeeth: 60 },
+  L: { module: 3, faceWidth: 12, minTeeth: 12, maxTeeth: 40 },
+} as const;
+
+export const MOTOR_SIZES = {
+  S: { stallTorque: 1, defaultRpm: 60 },
+  M: { stallTorque: 3, defaultRpm: 30 },
+  L: { stallTorque: 10, defaultRpm: 15 },
+} as const;
+export const MOTOR_RPM_RANGE = { min: 1, max: 120 } as const;
+
+export const LOCK_OMEGA_EPS = 1e-6; // rad/s
+export const MESH_DISTANCE_EPS = 1e-3; // mm。偶然のかみ合いの判定に使う
+export const MAX_AUDIO_VOICES = 16;
+export const AUTOSAVE_DEBOUNCE_MS = 1000;
+export const THUMBNAIL_SIZE = 256;
+export const AXIAL_SNAP = 4; // mm。シャフト上の位置の吸着の単位（全サイズ共通）
+```
+
+各タスクで足す定数（足したタスクがこの一覧の値と合わせる）:
+
+| 定数 | 値 | 追加するタスク |
+|---|---|---|
+| `COLLISION_EPS` | 1e-6 mm | S1-08 |
+| `SHAFT_END_MARGIN` | 4 mm（歯車の両端からシャフトを伸ばす長さ） | S1-09 |
+| `EMPTY_SHAFT_HALF_LENGTH` | 10 mm | S1-09 |
+| `MESH_PHASE_EPS` | 1e-6 rad（位相が同じかどうかの比較。contact の判定には使わない） | S1-03 |
+| `PERIMETER_CANDIDATE_COUNT` | 8（45° 刻み） | S1-10 |
+| `HISTORY_LIMIT` | 100 | S1-11 |
+| `DEFAULT_TEETH` | `{ S: 30, M: 20, L: 16 }` | S1-17 |
+| `GRID_SNAP` | 5 mm（起点シャフトの床上の位置） | S1-17 |
+
+音・カメラ・UI だけで使う定数は、各タスクの資料に書く。
+
+## 4. シーンのデータ形式
+
+シーンは **ユーザーが決めたこと（意図）だけ** を持つ不変データ。位置・位相・かみ合い・干渉などの導出できる値は持たない。Undo/Redo、自動保存、エクスポートはすべてこの形式を使う。
+
+```ts
+type ShaftId = string; // "shaft_xxx"
+type GearId = string;  // "gear_xxx"
+type MotorId = string; // "motor_xxx"
+type Axis = 'x' | 'y' | 'z';
+type SizeKey = 'S' | 'M' | 'L';
+
+interface Scene {
+  readonly shafts: Readonly<Record<ShaftId, Shaft>>;
+  readonly gears: Readonly<Record<GearId, Gear>>;
+  readonly motors: Readonly<Record<MotorId, Motor>>;
+}
+
+interface Shaft {
+  readonly id: ShaftId;
+  readonly placement: ShaftPlacement;
+}
+
+type ShaftPlacement =
+  // 起点のシャフト。origin はワールド座標
+  | { readonly kind: 'root'; readonly origin: Vec3; readonly axis: Axis }
+  // 親の歯車の外周に生やしたシャフト。軸の向きは保存せず、親から導く（平歯車なら親と同じ）
+  | {
+      readonly kind: 'mesh';
+      readonly parentGearId: GearId; // かみ合う相手（親）
+      readonly childGearId: GearId;  // このシャフト上の、親とかみ合う歯車
+      readonly angle: number;        // 親の軸まわりの角度（rad）
+    }
+  // 親が削除されてその場に残ったシャフト。削除時点のワールド座標と向きを持つ
+  | { readonly kind: 'detached'; readonly origin: Vec3; readonly axis: Axis };
+
+interface Gear {
+  readonly id: GearId;
+  readonly kind: 'spur'; // 段階 2・3 で 'helical' | 'bevel' | ... を足し、kind で分ける判別共用体にする
+  readonly shaftId: ShaftId;
+  readonly size: SizeKey;
+  readonly teeth: number;
+  readonly offset: number; // シャフトの原点から、歯幅の負側の面までの軸方向の位置（mm）。AXIAL_SNAP の倍数
+}
+
+interface Motor {
+  readonly id: MotorId;
+  readonly shaftId: ShaftId;
+  readonly size: SizeKey;
+  readonly rpm: number;       // 無負荷回転数（1〜120）
+  readonly direction: 1 | -1; // 回転の正の向きに対する向き
+  readonly on: boolean;
+}
+```
+
+- 歯車の中心は `シャフトの原点 + (offset + 歯幅 / 2) × 軸の単位ベクトル`。`offset` を中心ではなく面の位置にしているのは、歯幅がすべて 4 の倍数なので、大きさの違う歯車を面を接して並べても 4 mm の格子に乗るようにするため。
+- **区画**: 一般には、部品はシャフト上で「区画」（幅は軸方向の長さを 4 の倍数に切り上げた値）を占め、`offset` は区画の負側の面とする。平歯車では区画の幅＝歯幅。ウォームのように長さが 4 の倍数でない部品や、かさ歯車のように基準点が中心でない部品は、各タスク（S2-02、S2-03）で区画との関係を決める。
+- `offset` は負の値もとれる（`AXIAL_SNAP` の倍数であればよい）。
+- **向きの違う子**: 段階 2 以降の、親と軸の向きが違う配置（bevel、skew、rack など）は、向きを絶対値で持たず、親の軸からの相対値（`axisStep: 1 | 2` ＝ 親の軸を x→y→z→x の順に何回進めたか）で持つ。向きの計算は `stepAxis` 関数 1 つにまとめる（S2-02 で作る）。
+- シャフトの長さの決め方は、部品によって例外がある（かさ歯車では頂点を越えないように切る。S2-02）。
+- `mesh` のシャフトの原点は、子の歯車が親の歯車と同じ面に来るように決める（子の `offset` を 0 として置く。かみ合う相手は同じ大きさなので、面がそろえば中心もそろう）。
+- `detached` は、`mesh` だった親が削除されたときに、木から切り離して浮かせた状態。`root` と同じく位置と高さのハンドルを出す。ドラッグして別の歯車の外周候補の上で離すと、`mesh` に付け直せる（S1-19）。
+- シャフトの長さは保存しない。載っている歯車の両端から `SHAFT_END_MARGIN` ずつ伸ばした長さを、レイアウトで求める。
+- モーターは 1 本のシャフトに 1 個まで。軸方向の位置は持たず、描画ではシャフトの端の外側に置く。段階 1 では干渉判定に含めない。
+- 歯車が 1 枚も残らなくなったシャフトは、モーターごと削除する。
+- ID は `core/scene` の ID 生成関数で作る。テストでは決まった順の ID を返す生成関数を注入する。
+- 段階 3 で `anchors` などのコレクションを足すときは、保存形式のバージョンを上げて移行を書く（§9）。
+
+## 5. 導出データ（レイアウト）
+
+`resolveLayout(scene): Layout` は純粋関数で、シーンから位置などを毎回求める。シーンの参照が同じなら結果をキャッシュしてよい。
+
+```ts
+interface Layout {
+  shafts: Record<ShaftId, { origin: Vec3; axis: Axis; span: [number, number] }>;
+  gears: Record<GearId, { center: Vec3; axis: Axis; pitchRadius: number; basePhase: number }>;
+  meshes: Mesh[];           // かみ合っている歯車の組
+  interferences: Array<[string, string]>; // 干渉している部品の組（赤い警告に使う）
+}
+
+interface Mesh {
+  a: GearId;
+  b: GearId;
+  source: 'tree' | 'contact'; // 木の親子による / 偶然ちょうどの距離にある
+}
+```
+
+- **木構造**: `mesh` のシャフトは親の歯車の位置から決まる。根（`root` / `detached`）から幅優先でたどって位置を求める。
+- **偶然のかみ合い（contact）**: 同じ大きさで、軸が平行、歯幅が重なり、中心距離がピッチ円半径の和と `MESH_DISTANCE_EPS` 以内で一致する組は、木の親子でなくてもかみ合いとして扱う。**位相が合っているかどうかは問わない**（拘束として扱い、干渉にもしない）。三角形のロックなどは、ここから生まれる。
+- **ループを作る操作**: 外周の角度ハンドル（S1-19）は、子の歯車が別の歯車とちょうどかみ合う角度に吸着する。これで、ループを意図して作れる。
+- **ループの辻褄**: 編集の結果、contact の距離がずれた組は、単にかみ合いではなくなる（木の辺ではないので位置は変わらない）。重なっていれば干渉として赤く表示する。
+- **位相（basePhase）**: 基準シャフト（§6）の回転角が 0 のときの、歯車の回転のずれ。木の親子では、子の歯が親の歯の谷に入るように決める。
+
+## 6. 運動の状態と計算
+
+運動の状態はシーンとは別に持つ。Undo の対象にもならず、保存もしない。
+
+```ts
+interface MotionState {
+  angles: Record<ShaftId, number>; // シャフトの回転角（rad）
+  omegas: Record<ShaftId, number>; // 角速度（rad/s）。後から慣性を足せるように状態として持つ
+  locks: LockInfo[];               // ロックしている部品の組と理由
+  backDriven: MotorId[];           // 負けて逆に回されているモーター
+}
+
+type LockReason = 'contradiction' | 'stalemate'; // 段階 2・3 で 'wormBackDrive' | 'anchor' | 'rackEnd' を足す
+
+interface LockInfo {
+  reason: LockReason;
+  shaftIds: ShaftId[];
+  gearIds: GearId[];
+}
+
+// 手で回しているシャフトと、その目標角度（S1-07 で作る）
+interface HandConstraint {
+  shaftId: ShaftId;
+  angle: number;
+}
+
+// 毎フレーム呼ぶ。S1-07 で作り、S1-21（手）と S1-22（一時停止）が opts を使う
+function stepMotion(
+  scene: Scene, layout: Layout, prev: MotionState, dt: number,
+  opts?: { paused?: boolean; hand?: HandConstraint },
+): MotionState;
+```
+
+- **剛体の単位はシャフト**。同じシャフトに載った歯車とモーターは一緒に回る。未知数はシャフトごとの ω。
+- **かみ合いの拘束**: 外歯車同士では `z_a·ω_a + z_b·ω_b = 0`。拘束行列 C の零空間の基底 N を求め、`ω = N q`（q は機構の自由度）と書く。
+- **力のつり合い**: モーターのトルクは `τ_i = T_stall · (d_i − ω_i / ω0_i)`（d_i は向き、ω0_i は無負荷角速度）で、ω に対して一次。仮想仕事の原理から `Nᵀ τ(N q) = 0` を解く（q についての一次方程式）。
+- **解が一意でないとき**: 駆動されていない自由度があると、方程式の解が 1 つに決まらない。その場合は、解のうち **ω の二乗和が最小のもの** をとる（N の基底の取り方に結果が左右されない）。モーターがつながっていない連結成分は、これで自然に ω = 0（止まったまま）になる。OFF のモーターは無いものとして扱う。
+- **基準シャフトと角度の引き継ぎ**: 連結成分ごとに基準シャフトを 1 本決める（root / detached を優先し、次に ID 順）。N は基準シャフトの行が単位行列になるように作り、q は基準シャフトの角度とする。構成が変わったら、新しい基準シャフトの現在の角度から q を引き継ぐ（S1-05、S1-07）。
+- **ロック**: 次の場合に、その連結成分をロックとし、ω = 0 にする。
+  - 零空間が 0 次元なのにモーターがある（回転条件の矛盾）
+  - 解の |ω| が `LOCK_OMEGA_EPS` 未満なのに、トルクを出しているモーターがある
+  - 段階 2 以降で、ウォームの逆駆動、ラックの端、固定具との矛盾
+- **角度の積分**: 毎フレーム q を積分して `θ = N q` で角度を求める。シャフトごとに積分しないので、かみ合った歯車の位相がずれない。
+- **手で回す**: つかんだシャフトの角度を手の位置で拘束する（無限に強い力）。手を離したら、つり合いの解に戻す。
+- **一時停止**（Space）: すべてのモーターを止めた状態で解く。シーンは変えない。
+
+## 7. アプリの状態と層の関係
+
+```
+input / ui ──(コマンド)──▶ app/store ──▶ core（純粋関数）
+                              │
+                              ├─▶ render（毎フレーム、状態から Three.js のオブジェクトを同期）
+                              ├─▶ audio（毎フレーム、運動の状態から音を更新）
+                              └─▶ storage（シーンが変わったら自動保存）
+```
+
+- ストアは `getState` / `dispatch` / `subscribe` を持つ自作の小さなもの。
+
+```ts
+interface AppState {
+  scene: Scene;
+  history: History;              // S1-11
+  selection: string | null;      // 選択は 1 つだけ（S1-16）
+  motion: MotionState;
+  sim: { paused: boolean; hand: HandConstraint | null }; // S1-21、S1-22
+  view: { infoOverlay: boolean; watchMode: boolean };    // S1-14、S1-23
+  palette: { size: SizeKey };    // パレットで選んでいる大きさ（S1-17）。S2-05 で種類を足す
+  settings: Settings;            // localStorage に保存する（S1-30）
+  currentWork: { id: string; name: string } | null;      // 開いている作品。保存しない（S1-27）
+}
+
+interface Settings {
+  quality: 'high' | 'low';
+  inputDevice: 'auto' | 'mouse' | 'trackpad';
+  trackpadScroll: 'pan' | 'orbit';
+  language: 'ja' | 'en';
+  theme: 'brass' | 'wood';
+  muted: boolean;
+}
+```
+
+- 各欄は、それを使うタスクで足していく（上の型は段階 1 の完成形）。
+- シーンの変更は、必ず `core/edit` のコマンドを通す（Undo の履歴に積まれる）。コマンドの一覧と引数は S1-11 の資料が正。選択・カメラ・設定はシーンに含めない。
+- `offset` が `AXIAL_SNAP` の倍数であることは、シーンの検証（S1-03）とコマンドの引数チェック（S1-11）で強制する。
+- **部品の上での左ドラッグ**: 選択中の detached シャフトの本体なら付け直し（S1-19）、それ以外は手で回す（S1-21）。
+- `reattachShaft` は、子の歯車の `offset` が 0 になるように、そのシャフト上の全歯車の `offset` を同じ量だけずらす（S1-11）。
+- シーンの検証エラー（`SceneError`）は、問題の場所を示す `path` を持つ（S1-03 で作り、S1-28 が表示に使う）。
+- `__gearSim.loadScene` は、Undo の履歴を空にしてシーンを置き換える（テストの準備用。ユーザーの操作で使う `replaceScene` コマンドとは別）。
+- 編集コマンドは、干渉を理由に失敗しない（干渉は Layout が赤い警告として出す）。干渉する位置に置かせない・戻すといった判断は、UI 側（候補の列挙、ハンドル）が行う。
+- エラーや通知は、S1-15 で作るトーストで表示する。想定内の失敗（読み込めないファイルなど）は `console.warn` にとどめ、`console.error` は出さない（§10 のテストで失敗になるため）。
+- render は、前回と参照が変わった部品だけを作り直す。形状データ（BufferGeometry）は `(種類, 大きさ, 歯数)` をキーに共有する。
+- UI は素の TypeScript で書き、DOM を直接操作する。文字列はすべて `t('key')` を通す。
+
+## 8. 国際化
+
+- 辞書は `core/i18n/ja.ts` と `core/i18n/en.ts`。`ja` のキーを正とし、`en` は同じキーを持つことを型で強制する。
+- 言語は設定から切り替える。初期値はブラウザの言語（`ja` で始まれば日本語、それ以外は英語）。
+
+## 9. 保存形式
+
+```ts
+interface SaveFile {
+  format: 'gear-simulator';
+  version: number; // 1 から始める
+  scene: Scene;
+}
+```
+
+- JSON のエクスポート、IndexedDB の作品と自動保存は、すべてこの形式を使う。
+- 読み込むときは `migrate(file)` で最新のバージョンまで順に変換し、`core/scene` のシーン検証関数（S1-03）で検証する。検証はこの 1 か所にまとめる。不正な形式は例外にせず、エラーの結果を返す。
+- IndexedDB は `gear-simulator` データベースの `works` ストア（作品：id、名前、更新日時、サムネイルの Blob、SaveFile）と `autosave` ストア（キー `'current'` に `{ updatedAt, file: SaveFile }` の 1 件のみ）。
+- 作品を開くこととインポートは、`replaceScene` コマンドでシーン全体を差し替える（Undo で前のシーンに戻れる）。
+- 設定は localStorage の `gear-simulator:settings` に JSON で保存する。読み書きは try/catch で囲み、失敗したら初期値で動かす。
+
+## 10. テストの取り決め
+
+- `pnpm verify` = `biome check . && tsc --noEmit && vitest run && playwright test`。コミット前に必ず通す。
+- **Vitest**: `src/**/*.test.ts`。`core` は厚くテストする。浮動小数の比較は `toBeCloseTo` を使う。
+- **Playwright**: Chromium のみ。`webServer` で `vite --mode e2e` を起動する。WebGL は SwiftShader（`--use-angle=swiftshader`）で動かす。
+  - 共通フィクスチャで、コンソールエラーと pageerror を集め、テストの終わりに 0 件であることを確かめる。
+  - 準備に時間のかかるシーンは `e2e/fixtures/*.json` を `__gearSim.loadScene()` で読み込んで作る。
+- `core` の部品（S1-05〜S1-11）を作ったタスクは、そのタスクの中でアプリ（`app/`）にも組み込み、画面で使われる状態にする。ただし S1-10（候補の列挙）は選択の仕組み（S1-16）が必要なので、組み込みは S1-18 で行う。
+- **見た目の確認**（`e2e/visual/`）: スクリーンショットを `screenshots/<場面名>.png` に保存する（git では無視する）。自動で判定するのは「真っ黒・真っ白でない」（画素の分散がしきい値以上）ことだけ。
+- **`window.__gearSim`**: `import.meta.env.MODE !== 'production'` のときだけ公開する。
+
+```ts
+interface GearSimDebug {
+  getScene(): Scene;
+  getLayout(): Layout;
+  getMotion(): MotionState;
+  getSelection(): string | null;
+  loadScene(scene: Scene): void;
+  dispatch(command: Command): void;
+  // 画面上の位置を求める。Playwright でクリックやドラッグの座標に使う
+  projectToScreen(world: Vec3): { x: number; y: number };
+}
+```
+
+API はタスクで必要になった時点で足していく。足したらこの節も更新する。各タスクの資料で予定している追加は次のとおり。
+
+| タスク | 追加する API |
+|---|---|
+| S1-01 | `isReady` |
+| S1-11 | `undo` / `redo` |
+| S1-12 | `getLanguage` / `setLanguage` |
+| S1-13 | `getCamera` / `setCamera` / `getLastContextRequest` |
+| S1-14 | `getInputDevice` / `updateSettings` / `setWatchMode` / `getGizmoTargets` |
+| S1-16 | `pick` / `select` |
+| S1-17 | `getHandles` |
+| S1-18 | `getCandidates` |
+| S1-21 | `getHand` |
+| S1-22 | `isPaused` / `getWarningParts` |
+| S1-23 | `getInfoOverlay` |
+| S1-24 | `getRenderInfo`（S1-30 で品質の切り替えを確かめるのにも使う） |
+| S1-25 | `getAudio`（S1-26、S2-05、S3-05 で中身を広げる） |
+| S1-27 | `getStorageStatus` |
+| S1-29 | `getView` |
+| S1-30 | `getSettings` |
+
+- トーストは `__gearSim` を通さず、Playwright から `page.evaluate` で `/src/ui/toast.ts` を動的 import して呼ぶ（S1-15）。
+
+- テスト用のシーンは `e2e/fixtures/<名前>.json` に置く（サブフォルダは作らない）。先に作られたものがあれば使い回し、S1-31 で重複を整理する。
+
+## 11. コミットの取り決め
+
+- `main` に直接コミットする。1 タスク＝1 コミットを基本とする（大きいときは数コミットに分けてよい）。
+- メッセージは `feat(S1-05): 力のつり合いを一次方程式で解く` の形。種類は `feat` / `fix` / `refactor` / `test` / `docs` / `chore`。
+- タスク資料の `status` の更新（`doing` → `done`）は、そのタスクの最後のコミットに含める。
