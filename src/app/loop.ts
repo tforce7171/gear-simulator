@@ -1,4 +1,5 @@
 import { stepMotion } from '../core/kinematics/motion';
+import { resolveLayout } from '../core/layout/resolve';
 import type { Layout } from '../core/layout/types';
 import type { Scene } from '../core/scene/types';
 import type { SceneView } from '../render/scene-view';
@@ -18,16 +19,20 @@ export interface LoopDeps {
   readonly view: SceneView;
   readonly layoutOf: (scene: Scene) => Layout;
   readonly onFrame?: () => void; // 描いた後に呼ぶ
+  // 描くシーン（ドラッグ中の仮のシーン。S1-17）。省略するとストアのシーン。運動はストアのシーンで進める
+  readonly displayScene?: () => Scene;
 }
 
 // 1 フレーム分: 運動を進めてストアに入れ、描画に渡す
-export function runFrame({ store, view, layoutOf }: LoopDeps, dt: number): void {
+export function runFrame({ store, view, layoutOf, displayScene }: LoopDeps, dt: number): void {
   const { scene, motion } = store.getState();
   const layout = layoutOf(scene);
-  view.sync(scene, layout);
+  const shown = displayScene?.() ?? scene;
+  const shownLayout = shown === scene ? layout : resolveLayout(shown);
+  view.sync(shown, shownLayout);
   const next = stepMotion(scene, layout, motion, dt);
   store.setMotion(next);
-  view.update(next, layout);
+  view.update(next, shownLayout);
   view.render();
 }
 

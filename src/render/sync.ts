@@ -28,18 +28,35 @@ const SELECTED_EMISSIVE_INTENSITY = 0.9;
 const HOVER_EMISSIVE = 0x1ea7ff;
 const HOVER_EMISSIVE_INTENSITY = 0.25;
 
+// 編集中の仮の部品の見た目（S1-17・S1-19）。置く前の部品は半透明（ghost）、
+// 新たな干渉を生む位置では赤（invalid）。ロックの赤（S1-22）とは別に、色そのものを赤くする
+const INVALID_COLOR = 0xe0403a;
+const INVALID_EMISSIVE = 0x801010;
+const GHOST_OPACITY = 0.45;
+
+// 仮の部品の見た目。ids の部品（シャフトならそのモーターも）に効く。ハイライトより優先する
+export interface PreviewStyle {
+  readonly ids: ReadonlySet<string>;
+  readonly ghost: boolean; // 半透明にする（まだ置いていない部品）
+  readonly invalid: boolean; // 赤くする（そこでは置けない・確定しない）
+}
+
 // ハイライトする部品の ID（歯車かシャフト。シャフトならそのモーターも光らせる）
 export interface Highlight {
   readonly selected: string | null;
   readonly hovered: string | null;
 }
 
-type HighlightLevel = 'none' | 'hovered' | 'selected';
+type MaterialLevel = 'none' | 'hovered' | 'selected' | 'ghost' | 'invalid' | 'ghostInvalid';
 
-interface MaterialSet {
-  none: MeshStandardMaterial;
-  hovered: MeshStandardMaterial;
-  selected: MeshStandardMaterial;
+type MaterialSet = Record<MaterialLevel, MeshStandardMaterial>;
+
+function ghostOf(material: MeshStandardMaterial): MeshStandardMaterial {
+  const ghost = material.clone();
+  ghost.transparent = true;
+  ghost.opacity = GHOST_OPACITY;
+  ghost.depthWrite = false;
+  return ghost;
 }
 
 function materialSet(base: MeshStandardMaterial): MaterialSet {
@@ -49,7 +66,18 @@ function materialSet(base: MeshStandardMaterial): MaterialSet {
   const selected = base.clone();
   selected.emissive.setHex(SELECTED_EMISSIVE);
   selected.emissiveIntensity = SELECTED_EMISSIVE_INTENSITY;
-  return { none: base, hovered, selected };
+  const invalid = base.clone();
+  invalid.color.setHex(INVALID_COLOR);
+  invalid.emissive.setHex(INVALID_EMISSIVE);
+  invalid.emissiveIntensity = 1;
+  return {
+    none: base,
+    hovered,
+    selected,
+    ghost: ghostOf(base),
+    invalid,
+    ghostInvalid: ghostOf(invalid),
+  };
 }
 
 interface GearEntry {
@@ -76,6 +104,8 @@ export interface SceneSync {
   update(motion: MotionState, layout: Layout): void;
   // 選択とマウスを乗せた部品を光らせる（S1-16）
   setHighlight(highlight: Highlight): void;
+  // 編集中の仮の部品の見た目（S1-17）。null で戻す
+  setPreviewStyle(style: PreviewStyle | null): void;
   gearCount(): number;
 }
 
@@ -96,6 +126,7 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
   // 当たり判定だけの形（描かないがレイキャストには当たる）
   const pickProxyMaterial = new MeshBasicMaterial({ visible: false });
   let highlight: Highlight = { selected: null, hovered: null };
+  let preview: PreviewStyle | null = null;
 
   const gears = new Map<GearId, GearEntry>();
   const shafts = new Map<ShaftId, ShaftEntry>();
@@ -210,7 +241,11 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
     }
   }
 
-  function levelOf(id: string): HighlightLevel {
+  function levelOf(id: string): MaterialLevel {
+    if (preview?.ids.has(id) === true) {
+      if (preview.ghost) return preview.invalid ? 'ghostInvalid' : 'ghost';
+      if (preview.invalid) return 'invalid';
+    }
     if (id === highlight.selected) return 'selected';
     if (id === highlight.hovered) return 'hovered';
     return 'none';
@@ -220,9 +255,10 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
   function applyHighlight(): void {
     for (const [id, entry] of gears) entry.body.material = gearMaterials[levelOf(id)];
     for (const [id, entry] of shafts) entry.object.material = shaftMaterials[levelOf(id)];
-    // モーターはシャフトとして選ばれるので、シャフトと同じに光らせる
+    // モーターはシャフトとして選ばれるので、シャフトと同じに光らせる（仮の部品の見た目も同じ）
     for (const entry of motors.values()) {
-      entry.object.material = motorMaterials[levelOf(entry.motor.shaftId)];
+      const own = levelOf(entry.motor.id);
+      entry.object.material = motorMaterials[own === 'none' ? levelOf(entry.motor.shaftId) : own];
     }
   }
 
@@ -240,6 +276,11 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
     setHighlight(next) {
       if (next.selected === highlight.selected && next.hovered === highlight.hovered) return;
       highlight = { selected: next.selected, hovered: next.hovered };
+      applyHighlight();
+    },
+    setPreviewStyle(style) {
+      if (style === preview) return;
+      preview = style;
       applyHighlight();
     },
     update(motion, layout) {

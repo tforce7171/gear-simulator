@@ -14,9 +14,11 @@ import {
   WebGLRenderer,
 } from 'three';
 import type { Vec3 } from '../core/math/vec3';
+import type { HandleSpec, Ray } from '../input/handle-drag';
+import { createHandleView } from './handles';
 import { createPicker, type PickHit } from './picking';
 import type { SceneView } from './scene-view';
-import { createSceneSync, type Highlight } from './sync';
+import { createSceneSync, type Highlight, type PreviewStyle } from './sync';
 
 const BACKGROUND = 0x1e2126;
 const GRID_SIZE = 400; // mm
@@ -49,6 +51,12 @@ export interface Renderer extends SceneView {
   readonly pickRoot: Group;
   // 選択とマウスを乗せた部品のハイライト（S1-16）
   setHighlight(highlight: Highlight): void;
+  // 編集中の仮の部品の見た目（半透明・赤。S1-17）。null で戻す
+  setPreviewStyle(style: PreviewStyle | null): void;
+  // 出すハンドルと、ドラッグ中のハンドルのピッキングの ID（S1-17）
+  setHandles(handles: readonly HandleSpec[], activeId: string | null): void;
+  // ページ座標の点を通る、activeCamera() からのレイ（向きは単位ベクトル）。canvas が大きさ 0 なら null
+  rayAt(pageX: number, pageY: number): Ray | null;
 }
 
 // キャンバスに描く SceneView を作る。canvas の大きさ（ResizeObserver）に追従する。
@@ -78,6 +86,8 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
   const objects = createSceneSync();
   const pickRoot = new Group();
   pickRoot.add(objects.root);
+  const handles = createHandleView();
+  pickRoot.add(handles.root);
   scene.add(pickRoot);
   const picker = createPicker({ canvas, root: pickRoot, camera: () => active });
 
@@ -101,6 +111,18 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
   const ndc = new Vector2();
   const floor = new Plane(new Vector3(0, 1, 0), 0);
   const floorHit = new Vector3();
+  // ページ座標から active のカメラのレイを raycaster に入れる。canvas が大きさ 0 なら false
+  function setRay(pageX: number, pageY: number): boolean {
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return false;
+    ndc.set(
+      ((pageX - window.scrollX - rect.left) / rect.width) * 2 - 1,
+      1 - ((pageY - window.scrollY - rect.top) / rect.height) * 2,
+    );
+    active.updateMatrixWorld();
+    raycaster.setFromCamera(ndc, active);
+    return true;
+  }
   return {
     camera,
     orthoCamera,
@@ -112,20 +134,23 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
     pickPoint(pageX, pageY) {
       const hit = picker.pick(pageX, pageY);
       if (hit !== null) return hit.point;
-      const rect = canvas.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) return null;
-      ndc.set(
-        ((pageX - window.scrollX - rect.left) / rect.width) * 2 - 1,
-        1 - ((pageY - window.scrollY - rect.top) / rect.height) * 2,
-      );
-      active.updateMatrixWorld();
-      raycaster.setFromCamera(ndc, active);
+      if (!setRay(pageX, pageY)) return null;
       if (raycaster.ray.intersectPlane(floor, floorHit) === null) return null;
       return [floorHit.x, floorHit.y, floorHit.z];
     },
     pick: picker.pick,
     pickRoot,
     setHighlight: objects.setHighlight,
+    setPreviewStyle: objects.setPreviewStyle,
+    setHandles: handles.set,
+    rayAt(pageX, pageY) {
+      if (!setRay(pageX, pageY)) return null;
+      const { origin, direction } = raycaster.ray;
+      return {
+        origin: [origin.x, origin.y, origin.z],
+        direction: [direction.x, direction.y, direction.z],
+      };
+    },
     sync: objects.sync,
     update: objects.update,
     render() {

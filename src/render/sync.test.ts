@@ -70,3 +70,34 @@ describe('createSceneSync のピッキングの目印とハイライト（S1-16�
     expect(materialOf(sync.root, 'gear_2').emissive.getHex()).not.toBe(0);
   });
 });
+
+describe('仮の部品の見た目（S1-17）', () => {
+  const layout = resolveLayout(demoScene);
+
+  it('ghost は半透明、invalid は赤。ハイライトより優先し、null で戻る。シャフトのモーターにも効く', () => {
+    const sync = createSceneSync();
+    sync.sync(demoScene, layout);
+    sync.setHighlight({ selected: 'gear_1', hovered: null });
+    sync.setPreviewStyle({ ids: new Set(['gear_1', 'shaft_1']), ghost: true, invalid: false });
+    const ghost = materialOf(sync.root, 'gear_1');
+    expect(ghost.transparent).toBe(true);
+    expect(ghost.opacity).toBeLessThan(1);
+    expect(materialOf(sync.root, 'motor_1').transparent).toBe(true);
+    expect(materialOf(sync.root, 'gear_2').transparent).toBe(false);
+
+    sync.setPreviewStyle({ ids: new Set(['gear_1']), ghost: false, invalid: true });
+    const invalid = materialOf(sync.root, 'gear_1');
+    expect(invalid.transparent).toBe(false);
+    expect(invalid.color.r).toBeGreaterThan(invalid.color.g * 2);
+
+    sync.setPreviewStyle({ ids: new Set(['gear_1']), ghost: true, invalid: true });
+    const both = materialOf(sync.root, 'gear_1');
+    expect(both.transparent).toBe(true);
+    expect(both.color.r).toBeGreaterThan(both.color.g * 2);
+
+    sync.setPreviewStyle(null);
+    const back = materialOf(sync.root, 'gear_1');
+    expect(back.transparent).toBe(false);
+    expect(back.emissive.getHex()).not.toBe(0); // 選択のハイライトに戻る
+  });
+});
