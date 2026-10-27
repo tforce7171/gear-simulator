@@ -36,6 +36,12 @@ depends: [S1-27]
 - エラーの位置 `path`（`'gears.gear_1.teeth'` の形）は core/scene の検証関数が返す。S1-03 の `SceneError` に `path` を足す。
 - ファイルが 5 MB を超えたら読まずに `too-large`。
 
+### S1-27 で済んでいること
+- `src/core/io/save-file.ts` に `SaveFile`・`CURRENT_SAVE_VERSION`・`toSaveFile`・`parseSaveFileObject` がある。`parseSaveFileObject` は今 `{ ok: true, file } | { ok: false, error: { code: string } }` を返し、`code` は `'not-gear-simulator'`・`'invalid-version'`・`'unsupported-version'`・`'invalid-scene'` の 4 種類（このタスクの `SaveFileErrorCode` と同じ名前）。結果の型を `ParseResult`（`migratedFrom` つき）に広げ、`validateScene` の例外を受ける仮の `try` を形の確認に置き換える。
+- 呼んでいるのは `src/app/restore.ts`（自動保存の復元。失敗はトースト `storage.restoreFailed`）と `src/app/works.ts` の作品を開く（失敗はトースト `storage.openFailed` でシーンは変えない）。どちらも `parsed.file.scene` を使うだけなので、結果の型を広げても変えなくてよい。
+- IndexedDB は `src/storage/db.ts`（データベース `gear-simulator`・バージョン 1、ストア `autosave` のキー `'current'`）。壊れた自動保存のテストで直接書くときは、ページが開いた後（`isReady` の後）に `indexedDB.open('gear-simulator', 1)` で同じストアに `put(値, 'current')` する。自動保存のデバウンスは 1 秒なので、書いた後に `loadScene` などでシーンを変えなければ上書きされない。
+- 「いま開いている作品」は `AppState.currentWork`。インポートで「なしにする」のは `store.dispatch({ type: 'setCurrentWork', work: null })`。エクスポートのファイル名には `currentWork.name` を使う。
+
 ## 範囲外
 - URL での共有（要件で作らない）
 - ドラッグ＆ドロップでのインポート（作らない）
