@@ -47,6 +47,7 @@ depends: [S1-14, S1-24, S1-25]
   export function serializeSettings(settings: Settings): string;
   ```
   - `Settings` は `AppState.settings` の型（design.md §7）。各タスクが足した項目（入力デバイス・2 本指スクロール S1-14、テーマ・品質 S1-24、ミュート S1-25）に言語を足して、design.md §7 の形にそろえる。
+  - S1-14 の時点では `Settings` と初期値 `DEFAULT_SETTINGS` は `src/app/store.ts` にあり、`inputDevice` の型は `src/input/wheel.ts` の `InputDeviceSetting`、`trackpadScroll` は `TrackpadScroll` を使っている。`core` は `input` を import できないので、`src/core/settings.ts` に移すときは文字列の共用体を `core` 側で定義し、`input/wheel.ts` と `app/store.ts` がそれを使う形に直す。
 - `src/storage/settings-storage.ts`
   ```ts
   export function loadSettings(storage: Storage | undefined, defaults: Settings): Settings;

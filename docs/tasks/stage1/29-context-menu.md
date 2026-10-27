@@ -56,7 +56,7 @@ depends: [S1-14, S1-20, S1-23]
   ```
 - `src/ui/context-menu/`: メニューの表示と操作。要素に `data-testid="context-menu"`、項目に `data-action`
 - 辞書のキー（日・英）: 各項目の表示名
-- `__gearSim` に追加（S1-14 で同等のものを作っていればそれを使う）
+- `__gearSim` に追加（S1-14 で同等のものを作っていればそれを使う）。S1-14 では `setWatchMode(on)` だけ足し、読むものは作っていない（眺めるモードの状態は `AppState.view.watchMode`。ストアのアクションは `{ type: 'setWatchMode', on }`）
   ```ts
   getView(): { infoOverlay: boolean; watchMode: boolean };
   ```
