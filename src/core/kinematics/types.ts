@@ -20,3 +20,9 @@ export interface MotionState {
 export function emptyMotion(): MotionState {
   return { angles: {}, omegas: {}, locks: [], backDriven: [] };
 }
+
+// 手で回しているシャフトと、その目標の角度（rad）。無限に強い手として角度を拘束する（S1-07、S1-21）
+export interface HandConstraint {
+  readonly shaftId: ShaftId;
+  readonly angle: number;
+}
