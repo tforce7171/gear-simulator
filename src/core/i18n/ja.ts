@@ -26,6 +26,14 @@ export const ja = {
   'properties.empty': '部品を選ぶと、ここに設定が出ます',
   // トースト（S1-15）
   'toast.close': '閉じる',
+  // 軸の目印（S1-14）。球の title と aria-label
+  'gizmo.label': '視点の切り替え',
+  'gizmo.front': '前から見る（テンキー 1）',
+  'gizmo.back': '後ろから見る（Ctrl+テンキー 1）',
+  'gizmo.right': '右から見る（テンキー 3）',
+  'gizmo.left': '左から見る（Ctrl+テンキー 3）',
+  'gizmo.top': '上から見る（テンキー 7）',
+  'gizmo.bottom': '下から見る（Ctrl+テンキー 7）',
 } as const;
 
 export type MessageKey = keyof typeof ja;

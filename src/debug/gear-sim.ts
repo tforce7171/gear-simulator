@@ -1,4 +1,6 @@
 // window.__gearSim（開発用・テスト用ビルドのみ。design.md §10）
+
+import type { Settings } from '../app/store';
 import type { Command } from '../core/edit/commands';
 import type { Lang } from '../core/i18n';
 import type { MotionState } from '../core/kinematics/types';
@@ -6,6 +8,8 @@ import type { Layout } from '../core/layout/types';
 import type { Vec3 } from '../core/math/vec3';
 import type { Scene } from '../core/scene/types';
 import type { CameraPose } from '../input/camera';
+import type { ViewName } from '../input/views';
+import type { InputDevice } from '../input/wheel';
 
 export interface GearSimDebug {
   /** 最初のフレームを描いたら true */
@@ -33,6 +37,14 @@ export interface GearSimDebug {
   setCamera(pose: Pick<CameraPose, 'position' | 'target'>): void;
   /** 最後のコンテキストメニューの要求（右クリックしたページ座標）。まだ無ければ null */
   getLastContextRequest(): { x: number; y: number } | null;
+  /** 今使っている入力デバイス（判別した、または設定で固定した。S1-14） */
+  getInputDevice(): InputDevice;
+  /** 設定の一部を書き換える（S1-14。S1-30 で設定画面からも同じ経路を使う） */
+  updateSettings(patch: Partial<Settings>): void;
+  /** 眺めるモードの ON/OFF（S1-14） */
+  setWatchMode(on: boolean): void;
+  /** 軸の目印の球の中心のページ座標（S1-14） */
+  getGizmoTargets(): Array<{ view: ViewName; x: number; y: number }>;
 }
 
 declare global {

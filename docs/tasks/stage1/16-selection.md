@@ -12,6 +12,7 @@ depends: [S1-11, S1-13, S1-15]
 
 ## 範囲
 - レイキャストによるピッキング。当たった物を次の優先順位で 1 つ返す: ハンドル（S1-17・S1-19）＞ 候補（S1-18）＞ 歯車 ＞ モーター ＞ シャフト。ハンドルと候補はこのタスクではまだ無いが、優先順位の仕組みはここで作る
+  - レイキャストのカメラは `Renderer.activeCamera()`（S1-14 で平行投影のカメラに切り替わるようになった。`Renderer.camera` は透視投影のカメラだけを指す）
 - S1-13 の `hitTest` を、このピッキングに差し替える（何かに当たれば「部品の上」）。差し替え口は `CameraInput.setHitTest((pageX, pageY) => boolean)`（`src/input/camera.ts`）。経路が `'app'` のポインター（部品の上の左ボタン）はカメラが無視するので、クリックの受け取り手はこのタスクで canvas に付ける。F の寄る先は `createCameraInput` の `getSelection` に `AppState.selection` を渡して有効にする（`main.ts`）
 - 選択
   - 左クリック（`DRAG_THRESHOLD_PX` 未満の移動で離す）した部品を選ぶ。選択は 1 つだけ（複数選択は扱わない。`AppState.selection` は `string | null`。design.md §7）

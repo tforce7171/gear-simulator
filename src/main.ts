@@ -6,7 +6,13 @@ import { boundsOf } from './core/layout/bounds';
 import { installGearSim } from './debug/gear-sim';
 import { type ContextRequest, createCameraInput } from './input/camera';
 import { createKeyboard } from './input/keyboard';
-import { createRenderer, INITIAL_CAMERA_POSITION, INITIAL_CAMERA_TARGET } from './render/renderer';
+import { createAxisGizmo } from './render/axis-gizmo';
+import {
+  createRenderer,
+  INITIAL_CAMERA_POSITION,
+  INITIAL_CAMERA_TARGET,
+  ORTHO_FRUSTUM_HEIGHT,
+} from './render/renderer';
 import { createUiShell } from './ui/shell';
 
 const root = document.querySelector<HTMLElement>('#root');
@@ -32,6 +38,9 @@ const renderer = createRenderer(canvas);
 const keyboard = createKeyboard(window);
 const cameraInput = createCameraInput({
   camera: renderer.camera,
+  orthoCamera: renderer.orthoCamera,
+  orthoFrustumHeight: ORTHO_FRUSTUM_HEIGHT,
+  setProjection: renderer.setProjection,
   canvas,
   keyboard,
   boundsOf: (ids) => {
@@ -40,7 +49,11 @@ const cameraInput = createCameraInput({
   },
   pickPoint: renderer.pickPoint,
   initialPose: { position: INITIAL_CAMERA_POSITION, target: INITIAL_CAMERA_TARGET },
+  getSettings: () => store.getState().settings,
+  isWatching: () => store.getState().view.watchMode,
 });
+// 右下の軸の目印（S1-14）。球をクリックすると、その軸の側から見る
+const gizmo = createAxisGizmo(shell.gizmoSlot, (v) => cameraInput.setView(v));
 // コンテキストメニューの中身は S1-29。それまではテスト用に最後の要求だけ覚えておく
 let lastContextRequest: ContextRequest | null = null;
 cameraInput.onContextRequest((request) => {
@@ -51,6 +64,9 @@ const view = {
   ...renderer,
   render() {
     cameraInput.update();
+    const active = cameraInput.activeCamera();
+    active.updateMatrixWorld();
+    gizmo.update(active);
     renderer.render();
   },
 };
@@ -71,6 +87,10 @@ installGearSim({
   getCamera: () => cameraInput.getPose(),
   setCamera: (pose) => cameraInput.setPose(pose, false),
   getLastContextRequest: () => lastContextRequest,
+  getInputDevice: () => cameraInput.getInputDevice(),
+  updateSettings: (patch) => store.dispatch({ type: 'updateSettings', patch }),
+  setWatchMode: (on) => store.dispatch({ type: 'setWatchMode', on }),
+  getGizmoTargets: () => gizmo.targets(),
 });
 
 startLoop({

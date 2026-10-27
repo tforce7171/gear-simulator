@@ -3,7 +3,9 @@ import {
   Box3,
   MathUtils,
   Matrix4,
+  type OrthographicCamera,
   type PerspectiveCamera,
+  Plane,
   Quaternion,
   Raycaster,
   Sphere,
@@ -17,9 +19,26 @@ import { length, scale, sub, type Vec3 } from '../core/math/vec3';
 import { fitDistance } from './camera-fit';
 import type { Keyboard } from './keyboard';
 import { exceedsDragThreshold, type PointerRoute, routePointerDown } from './pointer-route';
+import {
+  anglesForView,
+  nearestAngle,
+  orthoHeightForDistance,
+  type ViewName,
+  viewFromKey,
+} from './views';
+import { watchAzimuthDelta } from './watch';
+import {
+  createWheelClassifier,
+  decideWheelAction,
+  type InputDevice,
+  type InputDeviceSetting,
+  type TrackpadScroll,
+} from './wheel';
 
 // カメラ操作（S1-13）。camera-controls を包み、マウスのボタンの割り当て（要件 §7.1）は自前の
-// ポインター入力から rotate / truck を呼んで作る。ホイールのズームは camera-controls の dollyToCursor に任せる
+// ポインター入力から rotate / truck を呼んで作る。
+// S1-14: ホイール（マウス・トラックパッドの判別、ピンチ、2 本指スクロール）、Safari の gesture、
+// テンキーの視点の切り替え、透視投影と平行投影の切り替え、眺めるモードの周回も自前で行う
 
 CameraControls.install({
   THREE: {
@@ -39,11 +58,21 @@ CameraControls.install({
 const MIN_DISTANCE = 5;
 const MAX_DISTANCE = 3000;
 
+export type Projection = 'perspective' | 'orthographic';
+
 export interface CameraPose {
   position: Vec3;
   target: Vec3;
-  projection: 'perspective' | 'orthographic';
+  projection: Projection;
 }
+
+// 入力の設定（AppState.settings のうちカメラが使う項目。S1-14）
+export interface CameraInputSettings {
+  readonly inputDevice: InputDeviceSetting;
+  readonly trackpadScroll: TrackpadScroll;
+}
+
+const DEFAULT_INPUT_SETTINGS: CameraInputSettings = { inputDevice: 'auto', trackpadScroll: 'pan' };
 
 // ページ座標の点が部品（歯車・ハンドル・候補）の上か。S1-16 が本物のピッキングに差し替える
 export type HitTest = (pageX: number, pageY: number) => boolean;
@@ -55,6 +84,11 @@ export interface ContextRequest {
 
 export interface CameraInputDeps {
   readonly camera: PerspectiveCamera;
+  // 平行投影のカメラ（S1-14）。見える高さ = orthoFrustumHeight / zoom
+  readonly orthoCamera: OrthographicCamera;
+  readonly orthoFrustumHeight: number;
+  // 描くカメラを切り替える（render/renderer.ts の setProjection）
+  readonly setProjection: (projection: Projection) => void;
   readonly canvas: HTMLCanvasElement;
   readonly keyboard: Keyboard;
   // 部品の範囲（ids を省略すると全部品。core/layout/bounds.ts の boundsOf を今のシーンで呼ぶ）
@@ -64,6 +98,10 @@ export interface CameraInputDeps {
   // 選択中の部品（F で寄る先）。S1-16 で AppState.selection を渡す。省略すると常に未選択
   readonly getSelection?: () => string | null;
   readonly initialPose: Pick<CameraPose, 'position' | 'target'>;
+  // 入力デバイスと 2 本指スクロールの割り当て（AppState.settings）。省略すると初期値
+  readonly getSettings?: () => CameraInputSettings;
+  // 眺めるモードか（AppState.view.watchMode）。省略すると常に false
+  readonly isWatching?: () => boolean;
 }
 
 export interface CameraInput {
@@ -75,6 +113,15 @@ export interface CameraInput {
   dollyToPoint(world: Vec3): void; // その点を注視点にし、距離を半分にして寄る
   getPose(): CameraPose; // 今の（移っている途中ならその時点の）視点
   setPose(pose: Pick<CameraPose, 'position' | 'target'>, animate?: boolean): void;
+  // 注視点と距離を保ったまま、決まった方向から見る（なめらかに移る。S1-14）
+  setView(view: ViewName): void;
+  // 透視投影と平行投影を切り替える。注視点のあたりの見かけの大きさを保つ（S1-14）
+  toggleProjection(): void;
+  getProjection(): Projection;
+  // 今使っている（判別した、または設定で固定した）入力デバイス（S1-14）
+  getInputDevice(): InputDevice;
+  // 今描いているカメラ（軸の目印が向きを合わせるのに使う）
+  activeCamera(): PerspectiveCamera | OrthographicCamera;
   update(): void; // 毎フレーム、描く前に呼ぶ
   dispose(): void;
 }
@@ -102,19 +149,40 @@ export function createCameraInput(deps: CameraInputDeps): CameraInput {
   controls.mouseButtons.left = ACTION.NONE;
   controls.mouseButtons.middle = ACTION.NONE;
   controls.mouseButtons.right = ACTION.NONE;
-  controls.mouseButtons.wheel = ACTION.DOLLY;
+  // ホイールも自前で解釈する（マウスとトラックパッドの判別のため。S1-14）
+  controls.mouseButtons.wheel = ACTION.NONE;
   controls.touches.one = ACTION.NONE;
   controls.touches.two = ACTION.NONE;
   controls.touches.three = ACTION.NONE;
-  controls.dollyToCursor = true;
+  controls.dollyToCursor = false;
   controls.minDistance = MIN_DISTANCE;
   controls.maxDistance = MAX_DISTANCE;
+  // 平行投影の zoom は見える高さから決める（orthoZoomFor）。その範囲を妨げないように広げる
+  controls.minZoom = 1e-4;
+  controls.maxZoom = 1e4;
 
   let hitTest: HitTest = noHit;
   const contextListeners = new Set<(e: ContextRequest) => void>();
   let drag: Drag | null = null;
   let spaceHeld = false;
   let lastTime: number | null = null;
+  let projection: Projection = 'perspective';
+  const classify = createWheelClassifier();
+  let detectedDevice: InputDevice = 'mouse';
+  // Safari のピンチ（gesturestart〜gestureend）の最中。前回の scale
+  let gestureScale: number | null = null;
+  // 最後にユーザーがカメラを操作した時刻（performance.now()）。眺めるモードを止めるのに使う
+  let lastUserInputMs: number | null = null;
+  const markUserInput = (): void => {
+    lastUserInputMs = performance.now();
+  };
+  const settings = (): CameraInputSettings => deps.getSettings?.() ?? DEFAULT_INPUT_SETTINGS;
+  const fovY = (): number => MathUtils.degToRad(camera.getEffectiveFOV());
+  const active = (): PerspectiveCamera | OrthographicCamera =>
+    projection === 'perspective' ? camera : deps.orthoCamera;
+  // 平行投影で、透視投影の距離 distance と同じ見かけの大きさになる zoom
+  const orthoZoomFor = (distance: number): number =>
+    deps.orthoFrustumHeight / orthoHeightForDistance(distance, fovY());
 
   const tmpPosition = new Vector3();
   const tmpTarget = new Vector3();
@@ -146,6 +214,7 @@ export function createCameraInput(deps: CameraInputDeps): CameraInput {
   // 注視点を point にし、今の向きのまま distance だけ離れた所へなめらかに移る
   function lookFrom(point: Vec3, distance: number): void {
     const dir = viewDirection();
+    if (projection === 'orthographic') void controls.zoomTo(orthoZoomFor(distance), true);
     setPose(
       {
         position: [
@@ -166,8 +235,7 @@ export function createCameraInput(deps: CameraInputDeps): CameraInput {
       (box.min[2] + box.max[2]) / 2,
     ];
     const radius = length(sub(box.max, box.min)) / 2;
-    const fovY = MathUtils.degToRad(camera.getEffectiveFOV());
-    lookFrom(center, Math.max(fitDistance(radius, fovY, camera.aspect), MIN_DISTANCE));
+    lookFrom(center, Math.max(fitDistance(radius, fovY(), camera.aspect), MIN_DISTANCE));
   }
 
   function fitAll(): void {
@@ -189,10 +257,95 @@ export function createCameraInput(deps: CameraInputDeps): CameraInput {
 
   // 注視点までの距離で、画面の縦 1 ピクセルが何 mm にあたるか
   function worldPerPixel(): number {
-    const distance = camera.position.distanceTo(controls.getTarget(tmpTarget, false));
-    const fovY = MathUtils.degToRad(camera.getEffectiveFOV());
     const height = Math.max(canvas.clientHeight, 1);
-    return (2 * distance * Math.tan(fovY / 2)) / height;
+    if (projection === 'orthographic') {
+      const ortho = deps.orthoCamera;
+      return (ortho.top - ortho.bottom) / ortho.zoom / height;
+    }
+    const distance = camera.position.distanceTo(controls.getTarget(tmpTarget, false));
+    return orthoHeightForDistance(distance, fovY()) / height;
+  }
+
+  const raycaster = new Raycaster();
+  const ndc = new Vector2();
+  const plane = new Plane();
+  const planeHit = new Vector3();
+  const tmpNormal = new Vector3();
+
+  // ページ座標の点の下にある、注視点を通って視線に垂直な平面上の点。求まらなければ注視点
+  function pointOnTargetPlane(pageX: number, pageY: number, target: Vec3, dir: Vec3): Vec3 {
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return target;
+    ndc.set(
+      ((pageX - window.scrollX - rect.left) / rect.width) * 2 - 1,
+      1 - ((pageY - window.scrollY - rect.top) / rect.height) * 2,
+    );
+    const cam = active();
+    cam.updateMatrixWorld();
+    raycaster.setFromCamera(ndc, cam);
+    plane.setFromNormalAndCoplanarPoint(tmpNormal.set(...dir), tmpTarget.set(...target));
+    if (raycaster.ray.intersectPlane(plane, planeHit) === null) return target;
+    return [planeHit.x, planeHit.y, planeHit.z];
+  }
+
+  // 距離（平行投影なら見える高さ）を factor 倍にする。カーソルの下の点は画面上で動かない
+  function zoomAt(factor: number, pageX: number, pageY: number, animate: boolean): void {
+    const { position, target } = endPose();
+    const offset = sub(position, target);
+    const distance = length(offset);
+    if (distance === 0 || !Number.isFinite(factor) || factor <= 0) return;
+    const nextDistance = MathUtils.clamp(distance * factor, MIN_DISTANCE, MAX_DISTANCE);
+    const ratio = nextDistance / distance;
+    const cursor = pointOnTargetPlane(pageX, pageY, target, scale(offset, 1 / distance));
+    // cursor を中心に ratio 倍する（cursor を通る視線はそのまま）
+    const nextTarget: Vec3 = [
+      cursor[0] + (target[0] - cursor[0]) * ratio,
+      cursor[1] + (target[1] - cursor[1]) * ratio,
+      cursor[2] + (target[2] - cursor[2]) * ratio,
+    ];
+    if (projection === 'orthographic') void controls.zoomTo(orthoZoomFor(nextDistance), animate);
+    setPose(
+      {
+        position: [
+          nextTarget[0] + offset[0] * ratio,
+          nextTarget[1] + offset[1] * ratio,
+          nextTarget[2] + offset[2] * ratio,
+        ],
+        target: nextTarget,
+      },
+      animate,
+    );
+  }
+
+  function setView(view: ViewName): void {
+    markUserInput();
+    const { azimuth, polar } = anglesForView(view);
+    // 遠回りしないように、今の方位角に近い同じ向きへ回る。上・下は今の方位角によらず方位角 0
+    // （画面の右が +X）にそろえる
+    controls.normalizeRotations();
+    void controls.rotateTo(nearestAngle(controls.azimuthAngle, azimuth), polar, true);
+  }
+
+  function setProjectionMode(next: Projection): void {
+    if (next === projection) return;
+    const { position, target } = endPose();
+    const distance = length(sub(position, target));
+    projection = next;
+    controls.stop();
+    // 注視点のあたりの見かけの大きさを保つ: 平行投影の見える高さ = 透視投影のその距離で見える高さ。
+    // 距離は平行投影でも同じ値を保つので、戻すときは zoom を 1 にするだけ
+    const nextCamera = active();
+    nextCamera.position.copy(controls.camera.position);
+    nextCamera.quaternion.copy(controls.camera.quaternion);
+    controls.camera = nextCamera;
+    void controls.zoomTo(next === 'orthographic' ? orthoZoomFor(distance) : 1, false);
+    deps.setProjection(next);
+    controls.update(0);
+  }
+
+  function getInputDevice(): InputDevice {
+    const setting = settings().inputDevice;
+    return setting === 'auto' ? detectedDevice : setting;
   }
 
   function applyDrag(route: Drag['route'], dx: number, dy: number): void {
@@ -220,6 +373,7 @@ export function createCameraInput(deps: CameraInputDeps): CameraInput {
     if (route === 'none' || route === 'app') return;
     // 中ボタンの自動スクロールを止める
     if (e.button === 1) e.preventDefault();
+    markUserInput();
     drag = {
       pointerId: e.pointerId,
       button: e.button,
@@ -270,7 +424,70 @@ export function createCameraInput(deps: CameraInputDeps): CameraInput {
   const onDoubleClick = (e: MouseEvent): void => {
     if (e.button !== 0) return;
     const point = deps.pickPoint(e.pageX, e.pageY);
-    if (point !== null) dollyToPoint(point);
+    if (point !== null) {
+      markUserInput();
+      dollyToPoint(point);
+    }
+  };
+
+  const onWheel = (e: WheelEvent): void => {
+    e.preventDefault();
+    // Safari のピンチは gesture* で扱う（同じ操作の ctrlKey 付きの wheel で二重にズームしない）
+    if (gestureScale !== null && e.ctrlKey) return;
+    const sample = {
+      deltaX: e.deltaX,
+      deltaY: e.deltaY,
+      deltaMode: e.deltaMode,
+      ctrlKey: e.ctrlKey,
+      timeStamp: e.timeStamp,
+    };
+    const { inputDevice, trackpadScroll } = settings();
+    if (inputDevice === 'auto') detectedDevice = classify(sample);
+    const device = getInputDevice();
+    const action = decideWheelAction(sample, device, trackpadScroll);
+    markUserInput();
+    switch (action.kind) {
+      case 'zoom':
+        // マウスのホイールは 1 目盛りが大きいので、なめらかに移る。ピンチは連続なのでそのまま
+        zoomAt(action.factor, e.pageX, e.pageY, device === 'mouse' && !e.ctrlKey);
+        break;
+      case 'pan':
+        // 内容がスクロールのように逆へ動く（ドラッグで (−dx, −dy) 動かしたのと同じ）
+        applyDrag('camera-pan', -action.dx, -action.dy);
+        break;
+      case 'rotate':
+        applyDrag('camera-rotate', -action.dx, -action.dy);
+        break;
+    }
+  };
+
+  // Safari のピンチ。scale は gesturestart からの累積の倍率（>1 で指を広げた = 近づく）
+  interface GestureLike extends UIEvent {
+    scale?: number;
+    pageX?: number;
+    pageY?: number;
+  }
+  const onGestureStart = (event: Event): void => {
+    event.preventDefault();
+    gestureScale = (event as GestureLike).scale ?? 1;
+    markUserInput();
+  };
+  const onGestureChange = (event: Event): void => {
+    event.preventDefault();
+    const e = event as GestureLike;
+    const scaleNow = e.scale ?? 1;
+    if (gestureScale !== null && scaleNow > 0 && gestureScale > 0) {
+      const rect = canvas.getBoundingClientRect();
+      const x = e.pageX ?? rect.left + window.scrollX + rect.width / 2;
+      const y = e.pageY ?? rect.top + window.scrollY + rect.height / 2;
+      zoomAt(gestureScale / scaleNow, x, y, false);
+    }
+    gestureScale = scaleNow;
+    markUserInput();
+  };
+  const onGestureEnd = (event: Event): void => {
+    event.preventDefault();
+    gestureScale = null;
   };
 
   const onBlur = (): void => {
@@ -283,6 +500,10 @@ export function createCameraInput(deps: CameraInputDeps): CameraInput {
   canvas.addEventListener('pointercancel', onPointerCancel);
   canvas.addEventListener('contextmenu', onContextMenu);
   canvas.addEventListener('dblclick', onDoubleClick);
+  canvas.addEventListener('wheel', onWheel, { passive: false });
+  canvas.addEventListener('gesturestart', onGestureStart);
+  canvas.addEventListener('gesturechange', onGestureChange);
+  canvas.addEventListener('gestureend', onGestureEnd);
   window.addEventListener('blur', onBlur);
 
   const unbind = [
@@ -302,13 +523,48 @@ export function createCameraInput(deps: CameraInputDeps): CameraInput {
       { key: 'f' },
       {
         onDown: () => {
+          markUserInput();
           const selection = deps.getSelection?.() ?? null;
           if (selection === null) fitAll();
           else fitTo([selection]);
         },
       },
     ),
-    keyboard.bind({ key: 'Home' }, { onDown: fitAll }),
+    keyboard.bind(
+      { key: 'Home' },
+      {
+        onDown: (e) => {
+          // NumLock が切れているとテンキー 7 も key が 'Home' になる。テンキーは視点の切り替えに使う
+          if (e.code.startsWith('Numpad')) return;
+          markUserInput();
+          fitAll();
+        },
+      },
+    ),
+    // テンキー 1/3/7（Ctrl・Cmd で反対側）で決まった方向から見る（S1-14）
+    ...['Numpad1', 'Numpad3', 'Numpad7'].flatMap((code) =>
+      [false, true].map((ctrl) =>
+        keyboard.bind(
+          { code, ctrl },
+          {
+            onDown: (e) => {
+              const view = viewFromKey(e.code, e.ctrlKey || e.metaKey);
+              if (view !== null) setView(view);
+            },
+          },
+        ),
+      ),
+    ),
+    // テンキー 5 で透視投影と平行投影を切り替える（S1-14）
+    keyboard.bind(
+      { code: 'Numpad5' },
+      {
+        onDown: () => {
+          markUserInput();
+          setProjectionMode(projection === 'perspective' ? 'orthographic' : 'perspective');
+        },
+      },
+    ),
   ];
 
   return {
@@ -328,14 +584,27 @@ export function createCameraInput(deps: CameraInputDeps): CameraInput {
       return {
         position: toVec3(controls.getPosition(tmpPosition, false)),
         target: toVec3(controls.getTarget(tmpTarget, false)),
-        projection: 'perspective',
+        projection,
       };
     },
     setPose,
+    setView,
+    toggleProjection() {
+      setProjectionMode(projection === 'perspective' ? 'orthographic' : 'perspective');
+    },
+    getProjection: () => projection,
+    getInputDevice,
+    activeCamera: active,
     update() {
       const now = performance.now();
       const dt = lastTime === null ? 0 : Math.min((now - lastTime) / 1000, 0.1);
       lastTime = now;
+      // ドラッグしている間は操作中（眺めるモードを止める）
+      if (drag !== null) markUserInput();
+      if (deps.isWatching?.() === true) {
+        const delta = watchAzimuthDelta(dt, now, lastUserInputMs);
+        if (delta > 0) void controls.rotate(delta, 0, false);
+      }
       controls.update(dt);
     },
     dispose() {
@@ -346,6 +615,10 @@ export function createCameraInput(deps: CameraInputDeps): CameraInput {
       canvas.removeEventListener('pointercancel', onPointerCancel);
       canvas.removeEventListener('contextmenu', onContextMenu);
       canvas.removeEventListener('dblclick', onDoubleClick);
+      canvas.removeEventListener('wheel', onWheel);
+      canvas.removeEventListener('gesturestart', onGestureStart);
+      canvas.removeEventListener('gesturechange', onGestureChange);
+      canvas.removeEventListener('gestureend', onGestureEnd);
       window.removeEventListener('blur', onBlur);
       controls.dispose();
     },

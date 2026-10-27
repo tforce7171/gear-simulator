@@ -1,7 +1,7 @@
 ---
 id: S1-14
 title: カメラ（応用）
-status: todo
+status: done
 depends: [S1-13, S1-15]
 ---
 
@@ -97,42 +97,42 @@ Mac のトラックパッドでも自然に操作でき、決まった方向か�
   ```
 
 ## 受け入れ条件
-- [ ] トラックパッドのピンチでズーム、2 本指スクロールで平行移動する。マウスのホイールは S1-13 のままズームする
-- [ ] 設定でデバイスを固定でき、2 本指スクロールの割り当てを変えられる
-- [ ] テンキー 1/3/7（Ctrl で反対側）と軸の目印のクリックで、6 方向の視点に切り替わる
-- [ ] テンキー 5 で透視投影と平行投影が切り替わり、見かけの大きさがほぼ変わらない
-- [ ] 眺めるモードで自動でゆっくり周回し、操作中は止まる
+- [x] トラックパッドのピンチでズーム、2 本指スクロールで平行移動する。マウスのホイールは S1-13 のままズームする
+- [x] 設定でデバイスを固定でき、2 本指スクロールの割り当てを変えられる
+- [x] テンキー 1/3/7（Ctrl で反対側）と軸の目印のクリックで、6 方向の視点に切り替わる
+- [x] テンキー 5 で透視投影と平行投影が切り替わり、見かけの大きさがほぼ変わらない
+- [x] 眺めるモードで自動でゆっくり周回し、操作中は止まる
 
 ## テストケース
 ### Vitest
-- [ ] `createWheelClassifier`
+- [x] `createWheelClassifier`
   - `{ deltaX: 0, deltaY: 100, deltaMode: 0 }` を 5 回 → すべて `'mouse'`
   - `{ deltaX: 0, deltaY: 3, deltaMode: 1 }` → `'mouse'`
   - `{ deltaX: 1.5, deltaY: 4.25, deltaMode: 0 }` → `'trackpad'`
   - トラックパッドと判別した直後（100ms 後）に `{ deltaX: 0, deltaY: 60, deltaMode: 0 }` → `'trackpad'` のまま（慣性の途中）
   - 同じものを 600ms 空けて → `'mouse'` に戻る
   - トラックパッドの最中でも `deltaMode: 1` が来たら → `'mouse'`
-- [ ] `decideWheelAction`
+- [x] `decideWheelAction`
   - `ctrlKey: true, deltaY: -10` → zoom で factor < 1。`deltaY: +10` → factor > 1。`-10` と `+10` の factor の積が 1
   - マウス、`deltaY: 100` → zoom で factor > 1。`deltaMode: 1, deltaY: 3` も factor > 1
   - トラックパッド、`scroll: 'pan'`、`deltaX: 5, deltaY: 7` → `{ kind: 'pan', dx: 5, dy: 7 }`（符号の向きはテストで決めて固定する）
   - トラックパッド、`scroll: 'orbit'` → rotate
-- [ ] `viewFromKey`: `('Numpad1', false)` → front、`('Numpad1', true)` → back、`('Numpad3', false)` → right、`('Numpad7', true)` → bottom、`('Digit1', false)` → null
-- [ ] `poseForView`: target `[10, 0, 0]`、distance 100 で front → position `[10, 0, 100]`、up `[0, 1, 0]`。top → position `[10, 100, 0]`、up `[0, 0, -1]`。right → position `[110, 0, 0]`。6 方向すべてで position と target の距離が 100
-- [ ] `orthoHeightForDistance` と `distanceForOrthoHeight` が互いに逆関数になる（往復で `toBeCloseTo`）
-- [ ] `watchAzimuthDelta`: 入力なしで dt 0.5 → `WATCH_AZIMUTH_SPEED * 0.5`。最後の入力から 1000ms → 0。2000ms 以上 → 再び正の値
+- [x] `viewFromKey`: `('Numpad1', false)` → front、`('Numpad1', true)` → back、`('Numpad3', false)` → right、`('Numpad7', true)` → bottom、`('Digit1', false)` → null
+- [x] `poseForView`: target `[10, 0, 0]`、distance 100 で front → position `[10, 0, 100]`、up `[0, 1, 0]`。top → position `[10, 100, 0]`、up `[0, 0, -1]`。right → position `[110, 0, 0]`。6 方向すべてで position と target の距離が 100
+- [x] `orthoHeightForDistance` と `distanceForOrthoHeight` が互いに逆関数になる（往復で `toBeCloseTo`）
+- [x] `watchAzimuthDelta`: 入力なしで dt 0.5 → `WATCH_AZIMUTH_SPEED * 0.5`。最後の入力から 1000ms → 0。2000ms 以上 → 再び正の値
 ### Playwright（`e2e/camera-advanced.spec.ts`）
 準備: `e2e/fixtures/two-gears.json` を読み込み、`setCamera` で決まった視点にする。トラックパッドの入力は `page.evaluate` で `canvas.dispatchEvent(new WheelEvent('wheel', { deltaX, deltaY, deltaMode: 0, ctrlKey, clientX, clientY, bubbles: true, cancelable: true }))` として送る。
-- [ ] `deltaX: 3.5, deltaY: 7.25` を数回 → `getInputDevice()` が `'trackpad'`、`target` が動き、注視点からの距離は変わらない（平行移動）
-- [ ] `ctrlKey: true, deltaY: -20` → 距離が縮む
-- [ ] `updateSettings({ trackpadScroll: 'orbit' })` のあと同じスクロール → `target` は変わらず `position` が変わる
-- [ ] `updateSettings({ inputDevice: 'mouse' })` のあと `deltaX: 3.5, deltaY: 7.25` → `getInputDevice()` が `'mouse'`、距離が変わる（ズーム）
-- [ ] `page.mouse.wheel(0, 100)` → `'mouse'` と判別され、距離が増える
-- [ ] `page.keyboard.press('Numpad7')` → 移り終わった後（`expect.poll`）、`position − target` が +Y 方向（正規化して `[0, 1, 0]` に近い）。距離は押す前と同じ
-- [ ] `Control+Numpad1` → `position − target` が −Z 方向
-- [ ] `getGizmoTargets()` の `'right'` の位置をクリック → `position − target` が +X 方向
-- [ ] `Numpad5` → `getCamera().projection` が `'orthographic'`。2 つの歯車の中心の `projectToScreen` の間隔が、切り替え前と 10% 以内。もう一度押すと `'perspective'` に戻る
-- [ ] `setWatchMode(true)` → 1 秒後、`position` の方位角（XZ 平面上の角度）が変わり、`target`、距離、`position` の高さは変わらない。`setWatchMode(false)` → その後 500ms は方位角が変わらない
+- [x] `deltaX: 3.5, deltaY: 7.25` を数回 → `getInputDevice()` が `'trackpad'`、`target` が動き、注視点からの距離は変わらない（平行移動）
+- [x] `ctrlKey: true, deltaY: -20` → 距離が縮む
+- [x] `updateSettings({ trackpadScroll: 'orbit' })` のあと同じスクロール → `target` は変わらず `position` が変わる
+- [x] `updateSettings({ inputDevice: 'mouse' })` のあと `deltaX: 3.5, deltaY: 7.25` → `getInputDevice()` が `'mouse'`、距離が変わる（ズーム）
+- [x] `page.mouse.wheel(0, 100)` → `'mouse'` と判別され、距離が増える
+- [x] `page.keyboard.press('Numpad7')` → 移り終わった後（`expect.poll`）、`position − target` が +Y 方向（正規化して `[0, 1, 0]` に近い）。距離は押す前と同じ
+- [x] `Control+Numpad1` → `position − target` が −Z 方向
+- [x] `getGizmoTargets()` の `'right'` の位置をクリック → `position − target` が +X 方向
+- [x] `Numpad5` → `getCamera().projection` が `'orthographic'`。2 つの歯車の中心の `projectToScreen` の間隔が、切り替え前と 10% 以内。もう一度押すと `'perspective'` に戻る
+- [x] `setWatchMode(true)` → 1 秒後、`position` の方位角（XZ 平面上の角度）が変わり、`target`、距離、`position` の高さは変わらない。`setWatchMode(false)` → その後 500ms は方位角が変わらない
 
 ## 人が手で確かめる項目
 - Mac のトラックパッド（Chrome と Safari）で、ピンチと 2 本指スクロールが自然に効き、慣性スクロールの途中でズームに化けない
@@ -142,6 +142,6 @@ Mac のトラックパッドでも自然に操作でき、決まった方向か�
 - 平行投影でズームしたあと透視投影に戻しても、見え方が飛ばない
 
 ## 完了の条件
-- [ ] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
-- [ ] design.md と後続のタスク資料に、必要な変更を反映した（§7 の AppState の項目と `__gearSim` の API が design.md と合っているか確かめる）
-- [ ] `status: done` にしてコミットした
+- [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
+- [x] design.md と後続のタスク資料に、必要な変更を反映した（§7 の AppState の項目と `__gearSim` の API が design.md と合っているか確かめる）
+- [x] `status: done` にしてコミットした

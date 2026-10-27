@@ -24,4 +24,12 @@ export const en = {
   'properties.title': 'Properties',
   'properties.empty': 'Select a part to see its settings here',
   'toast.close': 'Close',
+  // Axis gizmo (S1-14)
+  'gizmo.label': 'View directions',
+  'gizmo.front': 'View from front (Numpad 1)',
+  'gizmo.back': 'View from back (Ctrl+Numpad 1)',
+  'gizmo.right': 'View from right (Numpad 3)',
+  'gizmo.left': 'View from left (Ctrl+Numpad 3)',
+  'gizmo.top': 'View from top (Numpad 7)',
+  'gizmo.bottom': 'View from bottom (Ctrl+Numpad 7)',
 } satisfies Record<MessageKey, string>;
