@@ -1,7 +1,7 @@
 ---
 id: S1-02
 title: インボリュート歯形の生成と形状データの共有
-status: todo
+status: doing
 depends: [S1-01]
 ---
 
@@ -84,29 +84,29 @@ depends: [S1-01]
   - 中心にシャフトを通す穴を開けるかどうかは任せる（開けるなら半径は S1-04 のシャフトの太さに合わせる）
 
 ## 受け入れ条件
-- [ ] 大きさ S/M/L それぞれの最小・最大の歯数で、輪郭が作れる（例外にならない、自己交差しない）
-- [ ] 同じキーで `acquire` すると同じ `BufferGeometry` が返り、すべて `release` すると `dispose` される
-- [ ] `src/core/geometry/` は three を import していない（S1-01 の規則で確かめられる）
+- [x] 大きさ S/M/L それぞれの最小・最大の歯数で、輪郭が作れる（例外にならない、自己交差しない）
+- [x] 同じキーで `acquire` すると同じ `BufferGeometry` が返り、すべて `release` すると `dispose` される
+- [x] `src/core/geometry/` は three を import していない（S1-01 の規則で確かめられる）
 
 ## テストケース
 ### Vitest
-- [ ] `spurDimensions(1, 12)` → `pitchRadius 6`、`baseRadius ≈ 5.638156`、`addendumRadius 7`、`dedendumRadius 4.75`
-- [ ] `spurDimensions(3, 40)` → `pitchRadius 60`、`baseRadius ≈ 56.381557`、`addendumRadius 63`、`dedendumRadius 56.25`
-- [ ] `involuteFn(PRESSURE_ANGLE) ≈ 0.0149044`
-- [ ] `toothHalfAngleAt(1, 12, 6) ≈ π/24`（ピッチ円上の歯厚は半ピッチ）。`toothHalfAngleAt(1, 12, 7) ≈ 0.0443499`、`toothHalfAngleAt(1, 80, 41) ≈ 0.0097432`、`toothHalfAngleAt(2, 20, 22) ≈ 0.0315855`（歯先が尖っていない = 正）
-- [ ] `spurOutline(1, 12)`
+- [x] `spurDimensions(1, 12)` → `pitchRadius 6`、`baseRadius ≈ 5.638156`、`addendumRadius 7`、`dedendumRadius 4.75`
+- [x] `spurDimensions(3, 40)` → `pitchRadius 60`、`baseRadius ≈ 56.381557`、`addendumRadius 63`、`dedendumRadius 56.25`
+- [x] `involuteFn(PRESSURE_ANGLE) ≈ 0.0149044`
+- [x] `toothHalfAngleAt(1, 12, 6) ≈ π/24`（ピッチ円上の歯厚は半ピッチ）。`toothHalfAngleAt(1, 12, 7) ≈ 0.0443499`、`toothHalfAngleAt(1, 80, 41) ≈ 0.0097432`、`toothHalfAngleAt(2, 20, 22) ≈ 0.0315855`（歯先が尖っていない = 正）
+- [x] `spurOutline(1, 12)`
   - 全点の半径が `[4.75, 7]` に入る（誤差 1e-9）。最大の半径は 7、最小は 4.75
   - 符号付き面積が正（反時計回り）
   - 点数が 12 の倍数で、点 i を 2π/12 回すと点 i + 点数/12 に一致する（12 回対称）
   - y を反転した点の集合が元の集合と一致する（x 軸について対称）
   - 歯面の点（半径が `max(r_b, r_f)` 以上 `r_a` 未満で、歯先・歯底の円弧上でない点）の極角の絶対値が、最寄りの歯の中心線から `toothHalfAngleAt(1, 12, 半径)` に一致する（誤差 1e-9）
   - 自己交差しない（全ての辺の組で交差判定）
-- [ ] `spurOutline(1, 80)`（`r_f > r_b` の場合）: 全点の半径が `[38.75, 41]` に入り、歯面の最も内側の点の半径が 38.75（基礎円 37.588 ではない）
-- [ ] `spurOutline(1, 12)` の 0 番目の歯: 基礎円より内側の点（半径 < 5.638156）は極角が `±toothHalfAngleAt(1, 12, r_b) ≈ ±0.145805` の直線上にある（半径方向の簡略化）
-- [ ] 全ての大きさの最小・最大の歯数（S 12/80、M 12/60、L 12/40）で、自己交差しない・半径の範囲に入る
-- [ ] `gearShapeKey('spur', 'S', 12) === 'spur:S:12'`、`'spur:M:12'` とは異なる
-- [ ] `buildSpurGeometry('M', 20)`（node 環境で three を使う）: バウンディングボックスの z が `[−4, 4]`、x・y の絶対値の最大が歯先円半径 22 以下（誤差 1e-6）で 22 に近い
-- [ ] `createGeometryCache()`: `acquire('spur','S',12)` を 2 回 → 同じインスタンス、`size() === 1`。`acquire('spur','S',13)` → 別のインスタンス、`size() === 2`。`'S',12` を 2 回 `release` → その geometry の `dispose` が呼ばれ（`dispose` イベントで確認）、`size() === 1`
+- [x] `spurOutline(1, 80)`（`r_f > r_b` の場合）: 全点の半径が `[38.75, 41]` に入り、歯面の最も内側の点の半径が 38.75（基礎円 37.588 ではない）
+- [x] `spurOutline(1, 12)` の 0 番目の歯: 基礎円より内側の点（半径 < 5.638156）は極角が `±toothHalfAngleAt(1, 12, r_b) ≈ ±0.145804` の直線上にある（半径方向の簡略化）
+- [x] 全ての大きさの最小・最大の歯数（S 12/80、M 12/60、L 12/40）で、自己交差しない・半径の範囲に入る
+- [x] `gearShapeKey('spur', 'S', 12) === 'spur:S:12'`、`'spur:M:12'` とは異なる
+- [x] `buildSpurGeometry('M', 20)`（node 環境で three を使う）: バウンディングボックスの z が `[−4, 4]`、x・y の絶対値の最大が歯先円半径 22 以下（誤差 1e-6）で 22 に近い
+- [x] `createGeometryCache()`: `acquire('spur','S',12)` を 2 回 → 同じインスタンス、`size() === 1`。`acquire('spur','S',13)` → 別のインスタンス、`size() === 2`。`'S',12` を 2 回 `release` → その geometry の `dispose` が呼ばれ（`dispose` イベントで確認）、`size() === 1`
 ### Playwright
 - なし（描画は S1-04 で確かめる）
 
@@ -114,6 +114,6 @@ depends: [S1-01]
 - なし（見た目は S1-04 のスクリーンショットで確かめる）
 
 ## 完了の条件
-- [ ] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
-- [ ] design.md と後続のタスク資料に、必要な変更を反映した（2D 輪郭の向きの取り決め「0 番目の歯が +x、反時計回り」を design.md §2 か §5 に書く）
-- [ ] `status: done` にしてコミットした
+- [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
+- [x] design.md と後続のタスク資料に、必要な変更を反映した（2D 輪郭の向きの取り決め「0 番目の歯が +x、反時計回り」を design.md §2 か §5 に書く）
+- [x] `status: done` にしてコミットした
