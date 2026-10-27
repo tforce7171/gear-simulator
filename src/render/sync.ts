@@ -1,10 +1,13 @@
 import {
   BoxGeometry,
+  Color,
   CylinderGeometry,
   Group,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
+  Quaternion,
+  Vector3,
 } from 'three';
 import type { MotionState } from '../core/kinematics/types';
 import type { Layout } from '../core/layout/types';
@@ -23,6 +26,13 @@ import type {
 import { placeOnAxis } from './frame';
 import { createGeometryCache, type GeometryCache } from './gear-geometry';
 import { setPickTarget } from './picking';
+import {
+  lockGlowIntensity,
+  lockShakeAngle,
+  NO_WARNINGS,
+  shakeSeedOf,
+  type WarningParts,
+} from './warning-effects';
 
 // 仮の見た目の寸法（mm）。形と質感は S1-24 で整える
 const SHAFT_RADIUS = 1.5;
@@ -44,6 +54,17 @@ const INVALID_COLOR = 0xe0403a;
 const INVALID_EMISSIVE = 0x801010;
 const GHOST_OPACITY = 0.45;
 
+// ロック（S1-22）は赤の発光を脈打たせ、干渉は一定の赤の発光にする（脈打つかどうかで見分ける）。
+// 仮の部品の invalid（色そのものが赤）とは、色を変えずに発光だけ赤くすることで見分ける
+const LOCK_EMISSIVE = 0xff2a1a;
+const LOCK_INTENSITY_MIN = 0.15;
+const LOCK_INTENSITY_MAX = 1;
+const INTERFERE_EMISSIVE = 0xe02a20;
+const INTERFERE_INTENSITY = 0.6;
+// ロック・干渉と選択（マウス）が重なったら、色（albedo）を選択の水色に寄せる割合
+const WARNING_SELECTED_TINT = 0.65;
+const WARNING_HOVERED_TINT = 0.3;
+
 // 仮の部品の見た目。ids の部品（シャフトならそのモーターも）に効く。ハイライトより優先する
 export interface PreviewStyle {
   readonly ids: ReadonlySet<string>;
@@ -57,9 +78,31 @@ export interface Highlight {
   readonly hovered: string | null;
 }
 
-type MaterialLevel = 'none' | 'hovered' | 'selected' | 'ghost' | 'invalid' | 'ghostInvalid';
+type Emphasis = 'none' | 'hovered' | 'selected';
+type Warning = 'locked' | 'interfering';
+type WarningLevel = `${Warning}-${Emphasis}`;
+type MaterialLevel = Emphasis | 'ghost' | 'invalid' | 'ghostInvalid' | WarningLevel;
 
 type MaterialSet = Record<MaterialLevel, MeshStandardMaterial>;
+
+const EMPHASES: readonly Emphasis[] = ['none', 'hovered', 'selected'];
+const EMPHASIS_TINT: Readonly<Record<Emphasis, number>> = {
+  none: 0,
+  hovered: WARNING_HOVERED_TINT,
+  selected: WARNING_SELECTED_TINT,
+};
+
+function warningOf(
+  base: MeshStandardMaterial,
+  warning: Warning,
+  emphasis: Emphasis,
+): MeshStandardMaterial {
+  const m = base.clone();
+  m.color.lerp(new Color(SELECTED_EMISSIVE), EMPHASIS_TINT[emphasis]);
+  m.emissive.setHex(warning === 'locked' ? LOCK_EMISSIVE : INTERFERE_EMISSIVE);
+  m.emissiveIntensity = warning === 'locked' ? LOCK_INTENSITY_MAX : INTERFERE_INTENSITY;
+  return m;
+}
 
 function ghostOf(material: MeshStandardMaterial): MeshStandardMaterial {
   const ghost = material.clone();
@@ -80,6 +123,12 @@ function materialSet(base: MeshStandardMaterial): MaterialSet {
   invalid.color.setHex(INVALID_COLOR);
   invalid.emissive.setHex(INVALID_EMISSIVE);
   invalid.emissiveIntensity = 1;
+  const warnings = {} as Record<WarningLevel, MeshStandardMaterial>;
+  for (const warning of ['locked', 'interfering'] as const) {
+    for (const emphasis of EMPHASES) {
+      warnings[`${warning}-${emphasis}`] = warningOf(base, warning, emphasis);
+    }
+  }
   return {
     none: base,
     hovered,
@@ -87,7 +136,21 @@ function materialSet(base: MeshStandardMaterial): MaterialSet {
     ghost: ghostOf(base),
     invalid,
     ghostInvalid: ghostOf(invalid),
+    ...warnings,
   };
+}
+
+// ロックの材質の発光の強さを、今の時刻の脈に合わせる
+function pulseLocked(set: MaterialSet, timeSec: number): void {
+  const intensity =
+    LOCK_INTENSITY_MIN + (LOCK_INTENSITY_MAX - LOCK_INTENSITY_MIN) * lockGlowIntensity(timeSec);
+  for (const emphasis of EMPHASES) set[`locked-${emphasis}`].emissiveIntensity = intensity;
+}
+
+function sameSet(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const id of a) if (!b.has(id)) return false;
+  return true;
 }
 
 interface GearEntry {
@@ -101,21 +164,26 @@ interface ShaftEntry {
   span: readonly [number, number];
   object: Mesh;
   proxy: Mesh; // 見えない太めの当たり判定（object の子）
+  base: Quaternion; // 置いたときの向き（ロックの震えはこれに足す）
 }
 
 interface MotorEntry {
   motor: Motor;
   object: Mesh;
+  base: Quaternion;
 }
 
 export interface SceneSync {
   readonly root: Group;
   sync(scene: Scene, layout: Layout): void;
-  update(motion: MotionState, layout: Layout): void;
+  // 回転角と、ロックの震え・光（timeSec は秒。S1-22）
+  update(motion: MotionState, layout: Layout, timeSec?: number): void;
   // 選択とマウスを乗せた部品を光らせる（S1-16）
   setHighlight(highlight: Highlight): void;
   // 編集中の仮の部品の見た目（S1-17）。null で戻す
   setPreviewStyle(style: PreviewStyle | null): void;
+  // ロック中・干渉中の部品（S1-22）。中身が変わったときだけ材質を選び直す
+  setWarnings(warnings: WarningParts): void;
   gearCount(): number;
 }
 
@@ -141,6 +209,7 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
   const pickProxyMaterial = new MeshBasicMaterial({ visible: false });
   let highlight: Highlight = { selected: null, hovered: null };
   let preview: PreviewStyle | null = null;
+  let warnings: WarningParts = NO_WARNINGS;
 
   const gears = new Map<GearId, GearEntry>();
   const shafts = new Map<ShaftId, ShaftEntry>();
@@ -215,7 +284,7 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
         object.add(proxy);
         setPickTarget(object, 'shaft', shaft.id);
         root.add(object);
-        entry = { shaft, span: placed.span, object, proxy };
+        entry = { shaft, span: placed.span, object, proxy, base: new Quaternion() };
         shafts.set(shaft.id, entry);
       }
       const mid = (placed.span[0] + placed.span[1]) / 2;
@@ -224,6 +293,7 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
         add(placed.origin, scale(axisVector(placed.axis), mid)),
         placed.axis,
       );
+      entry.base.copy(entry.object.quaternion);
     }
   }
 
@@ -242,7 +312,7 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
         const object = new Mesh(motorGeometries[motor.size], motorMaterials.none);
         setPickTarget(object, 'motor', motor.id);
         root.add(object);
-        entry = { motor, object };
+        entry = { motor, object, base: new Quaternion() };
         motors.set(motor.id, entry);
       }
       // シャフトの負側の端のさらに外に置く（仮。S1-24 で整える）
@@ -252,17 +322,26 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
         add(placed.origin, scale(axisVector(placed.axis), along)),
         placed.axis,
       );
+      entry.base.copy(entry.object.quaternion);
     }
   }
 
-  function levelOf(id: string): MaterialLevel {
-    if (preview?.ids.has(id) === true) {
+  // ids のどれかに当てはまれば効く（モーターは自分とそのシャフト）。
+  // 優先順位: 仮の部品の見た目 → ロック → 干渉（どちらも選択・マウスと組み合わせる）→ 選択 → マウス
+  function levelOf(...ids: string[]): MaterialLevel {
+    const any = (has: (id: string) => boolean): boolean => ids.some(has);
+    if (preview !== null && any((id) => preview?.ids.has(id) === true)) {
       if (preview.ghost) return preview.invalid ? 'ghostInvalid' : 'ghost';
       if (preview.invalid) return 'invalid';
     }
-    if (id === highlight.selected) return 'selected';
-    if (id === highlight.hovered) return 'hovered';
-    return 'none';
+    const emphasis: Emphasis = any((id) => id === highlight.selected)
+      ? 'selected'
+      : any((id) => id === highlight.hovered)
+        ? 'hovered'
+        : 'none';
+    if (any((id) => warnings.locked.has(id))) return `locked-${emphasis}`;
+    if (any((id) => warnings.interfering.has(id))) return `interfering-${emphasis}`;
+    return emphasis;
   }
 
   // 作り直した部品にも効くように、sync と setHighlight のたびに全部品の材質を選び直す
@@ -271,9 +350,22 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
     for (const [id, entry] of shafts) entry.object.material = shaftMaterials[levelOf(id)];
     // モーターはシャフトとして選ばれるので、シャフトと同じに光らせる（仮の部品の見た目も同じ）
     for (const entry of motors.values()) {
-      const own = levelOf(entry.motor.id);
-      entry.object.material = motorMaterials[own === 'none' ? levelOf(entry.motor.shaftId) : own];
+      entry.object.material = motorMaterials[levelOf(entry.motor.id, entry.motor.shaftId)];
     }
+  }
+
+  // ロック中なら軸まわりの小さなゆれ（rad）。描画だけに加える
+  const shakeOf = (id: string, timeSec: number): number =>
+    warnings.locked.has(id) ? lockShakeAngle(timeSec, shakeSeedOf(id)) : 0;
+  const shaken = new Quaternion();
+  const zAxis = new Vector3(0, 0, 1);
+  function shake(object: Mesh, base: Quaternion, angle: number): void {
+    if (angle === 0) {
+      object.quaternion.copy(base);
+      return;
+    }
+    shaken.setFromAxisAngle(zAxis, angle);
+    object.quaternion.copy(base).multiply(shaken);
   }
 
   return {
@@ -297,11 +389,29 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
       preview = style;
       applyHighlight();
     },
-    update(motion, layout) {
+    setWarnings(next) {
+      if (
+        sameSet(next.locked, warnings.locked) &&
+        sameSet(next.interfering, warnings.interfering)
+      ) {
+        return;
+      }
+      warnings = { locked: new Set(next.locked), interfering: new Set(next.interfering) };
+      applyHighlight();
+    },
+    update(motion, layout, timeSec = 0) {
       for (const [id, entry] of gears) {
         const placed = layout.gears[id];
         if (placed === undefined) continue;
-        entry.body.rotation.z = placed.basePhase + (motion.angles[entry.gear.shaftId] ?? 0);
+        entry.body.rotation.z =
+          placed.basePhase + (motion.angles[entry.gear.shaftId] ?? 0) + shakeOf(id, timeSec);
+      }
+      for (const [id, entry] of shafts) shake(entry.object, entry.base, shakeOf(id, timeSec));
+      for (const [id, entry] of motors) shake(entry.object, entry.base, shakeOf(id, timeSec));
+      if (warnings.locked.size > 0) {
+        pulseLocked(gearMaterials, timeSec);
+        pulseLocked(shaftMaterials, timeSec);
+        pulseLocked(motorMaterials, timeSec);
       }
     },
     gearCount: () => gears.size,

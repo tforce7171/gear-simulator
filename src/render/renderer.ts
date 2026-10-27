@@ -156,6 +156,7 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
     pickRoot,
     setHighlight: objects.setHighlight,
     setPreviewStyle: objects.setPreviewStyle,
+    setWarnings: objects.setWarnings,
     setHandles: handles.set,
     setCandidates: candidates.set,
     setReattachRings: reattach.set,
@@ -168,8 +169,8 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
       };
     },
     sync: objects.sync,
-    update(motion, layout) {
-      objects.update(motion, layout);
+    update(motion, layout, timeSec) {
+      objects.update(motion, layout, timeSec);
       candidates.update(motion);
     },
     render() {

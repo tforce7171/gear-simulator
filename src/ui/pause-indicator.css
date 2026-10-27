@@ -1,0 +1,22 @@
+/* 一時停止中の表示（S1-22）。描画領域の上部中央 */
+.gs-pause-indicator {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  z-index: 5;
+  padding: 4px 14px;
+  border: 1px solid #4a505b;
+  border-radius: 999px;
+  background: rgba(42, 46, 53, 0.88);
+  color: #e4e7ec;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  pointer-events: none;
+  user-select: none;
+}
+
+.gs-pause-indicator[hidden] {
+  display: none;
+}

@@ -278,3 +278,55 @@ describe('手の拘束（S1-21）', () => {
     expect(store.getState().sim.hand).toBe(null);
   });
 });
+
+describe('一時停止（S1-22）', () => {
+  it('最初は false。togglePause で切り替わり、購読者に知らせる', () => {
+    const store = createStore(demoScene);
+    expect(store.getState().sim.paused).toBe(false);
+    const listener = vi.fn();
+    store.subscribe(listener);
+    store.dispatch({ type: 'togglePause' });
+    expect(store.getState().sim.paused).toBe(true);
+    expect(listener).toHaveBeenCalledTimes(1);
+    store.dispatch({ type: 'togglePause' });
+    expect(store.getState().sim.paused).toBe(false);
+  });
+
+  it('一時停止すると ω がすぐ 0 になり、戻すとつり合いの解に戻る。シーンと履歴は変わらない', () => {
+    const store = createStore(demoScene);
+    const { scene, history } = store.getState();
+    const running = store.getState().motion.omegas.shaft_1 ?? 0;
+    store.dispatch({ type: 'togglePause' });
+    expect(store.getState().motion.omegas).toEqual({ shaft_1: 0, shaft_2: 0 });
+    expect(store.getState().scene).toBe(scene);
+    expect(store.getState().history).toBe(history);
+    store.dispatch({ type: 'togglePause' });
+    expect(store.getState().motion.omegas.shaft_1).toBeCloseTo(running, 9);
+  });
+
+  it('一時停止中の Undo は一時停止を変えない', () => {
+    const store = createStore(demoScene);
+    store.dispatch({ type: 'togglePause' });
+    store.dispatch({ type: 'undo' });
+    expect(store.getState().sim.paused).toBe(true);
+    expect(store.getState().scene).toBe(demoScene);
+  });
+
+  it('一時停止中に編集・読み込みをしても止まったまま解く', () => {
+    const store = createStore(emptyScene(), { ids: createSequentialIdGenerator() });
+    store.dispatch({ type: 'togglePause' });
+    store.dispatch({ type: 'loadScene', scene: demoScene });
+    expect(store.getState().sim.paused).toBe(true);
+    expect(store.getState().motion.omegas).toEqual({ shaft_1: 0, shaft_2: 0 });
+    store.dispatch({
+      type: 'command',
+      command: {
+        type: 'addRootShaft',
+        axis: 'y',
+        origin: [100, 35, 0],
+        gear: { size: 'M', teeth: 20 },
+      },
+    });
+    expect(Object.values(store.getState().motion.omegas).every((w) => w === 0)).toBe(true);
+  });
+});

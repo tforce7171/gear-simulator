@@ -46,7 +46,7 @@ depends: [S1-01, S1-02, S1-03, S1-04, S1-05, S1-06, S1-07, S1-08, S1-09, S1-10, 
 | `theme-wood-mesh-closeup` | 木製、かみ合いの拡大 | 同上 |
 | `theme-brass-low` | 真鍮、軽量 | `updateSettings({ quality: 'low' })`、全体 |
 | `lock-red` | ロック中の赤い表示 | `lock-opposed.json`、ロックした後 |
-| `interference-warning` | 干渉の赤い警告 | S1-22 のフィクスチャ |
+| `interference-warning` | 干渉の赤い警告 | S1-22 のフィクスチャ（`overlap.json`。S1-22 は `screenshots/interference.png` として撮っている） |
 | `info-overlay-on` | 情報表示 ON | シーン A、情報表示 ON |
 | `ui-ja` | 日本語の UI | S1-15 の `ui-ja` を、歯車を 1 枚選んでプロパティパネルを出した状態に撮り直す。設定画面を開いた状態の `ui-ja-settings` も撮る |
 | `ui-en` | 英語の UI | 同上（`ui-en`、`ui-en-settings`） |
@@ -55,7 +55,7 @@ depends: [S1-01, S1-02, S1-03, S1-04, S1-05, S1-06, S1-07, S1-08, S1-09, S1-10, 
 
 - 画面の大きさは 1280×800 にそろえる。
 - 自動の判定は「真っ黒・真っ白でない」とコンソールエラー 0 件だけ（design.md §10）。
-- 撮る前に一時停止（Space）して回転を止め、カメラの動きが終わるのを待つ（見比べやすくするため。画像の比較はしない）。
+- 撮る前に一時停止（Space）して回転を止め、カメラの動きが終わるのを待つ（見比べやすくするため。画像の比較はしない）。ただし `lock-red` は一時停止しない（一時停止中は `stepMotion` が `locks = []` を返し、ロックの赤い表示が消えるため。S1-22。`lock-opposed.json` はロックして回らないので止める必要もない）。
 
 ### 性能の計測（`scripts/perf.ts`）
 - 実行: `pnpm perf`。`vite build --mode e2e` → `vite preview --mode e2e` を起動し、Playwright の Chromium を **画面ありで、実際の GPU で**（SwiftShader を使わず）開く。垂直同期と fps の上限を外す（`--disable-gpu-vsync`、`--disable-frame-rate-limit`）ので、60fps を超えた余裕も見える。

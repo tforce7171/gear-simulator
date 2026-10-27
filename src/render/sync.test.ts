@@ -1,8 +1,10 @@
 import type { Mesh, MeshStandardMaterial, Object3D } from 'three';
 import { describe, expect, it } from 'vitest';
 import { demoScene } from '../app/demo-scene';
+import { initialMotionState } from '../core/kinematics/motion';
 import { resolveLayout } from '../core/layout/resolve';
 import { createSceneSync } from './sync';
+import { LOCK_SHAKE_AMPLITUDE } from './warning-effects';
 
 // userData の pickKind・pickId を持つ物を探す
 function findTarget(root: Object3D, id: string): Object3D | undefined {
@@ -99,5 +101,98 @@ describe('仮の部品の見た目（S1-17）', () => {
     const back = materialOf(sync.root, 'gear_1');
     expect(back.transparent).toBe(false);
     expect(back.emissive.getHex()).not.toBe(0); // 選択のハイライトに戻る
+  });
+});
+
+describe('ロックと干渉の表示（S1-22）', () => {
+  const layout = resolveLayout(demoScene);
+  const motion = initialMotionState();
+  const warnings = (locked: string[], interfering: string[]) => ({
+    locked: new Set(locked),
+    interfering: new Set(interfering),
+  });
+  const isRed = (m: MeshStandardMaterial): boolean =>
+    m.emissive.r > 0.5 && m.emissive.r > m.emissive.g * 3 && m.emissive.r > m.emissive.b * 3;
+
+  it('ロック中の部品は赤く光り、その強さが時間で変わる（脈打つ）', () => {
+    const sync = createSceneSync();
+    sync.sync(demoScene, layout);
+    sync.setWarnings(warnings(['gear_1', 'shaft_1', 'motor_1'], []));
+    const intensities = new Set<number>();
+    for (const t of [0, 0.1, 0.25, 0.4]) {
+      sync.update(motion, layout, t);
+      const m = materialOf(sync.root, 'gear_1');
+      expect(isRed(m)).toBe(true);
+      intensities.add(Math.round(m.emissiveIntensity * 1000));
+    }
+    expect(intensities.size).toBeGreaterThan(1);
+    expect(isRed(materialOf(sync.root, 'shaft_1'))).toBe(true);
+    expect(isRed(materialOf(sync.root, 'motor_1'))).toBe(true);
+    expect(materialOf(sync.root, 'gear_2').emissive.getHex()).toBe(0);
+  });
+
+  it('干渉している部品は一定の赤。時間で変わらない', () => {
+    const sync = createSceneSync();
+    sync.sync(demoScene, layout);
+    sync.setWarnings(warnings([], ['gear_2']));
+    sync.update(motion, layout, 0);
+    const a = materialOf(sync.root, 'gear_2').emissiveIntensity;
+    expect(isRed(materialOf(sync.root, 'gear_2'))).toBe(true);
+    sync.update(motion, layout, 0.25);
+    expect(materialOf(sync.root, 'gear_2').emissiveIntensity).toBe(a);
+  });
+
+  it('震えは描画だけ。振幅は LOCK_SHAKE_AMPLITUDE 以内で、運動の状態は変えない', () => {
+    const sync = createSceneSync();
+    sync.sync(demoScene, layout);
+    const body = (id: string) => {
+      const target = findTarget(sync.root, id);
+      const mesh = target?.children[0];
+      if (mesh === undefined) throw new Error(`${id} が無い`);
+      return mesh;
+    };
+    const m = { ...motion, angles: { shaft_1: 0.3, shaft_2: 0 } };
+    const frozen = JSON.stringify(m);
+    sync.update(m, layout, 0.1);
+    const still = body('gear_1').rotation.z;
+    sync.setWarnings(warnings(['gear_1', 'shaft_1'], []));
+    const values = new Set<number>();
+    for (const t of [0.1, 0.113, 0.127, 0.15]) {
+      sync.update(m, layout, t);
+      const d = body('gear_1').rotation.z - still;
+      expect(Math.abs(d)).toBeLessThanOrEqual(LOCK_SHAKE_AMPLITUDE + 1e-12);
+      values.add(Math.round(d * 1e6));
+    }
+    expect(values.size).toBeGreaterThan(1);
+    expect(JSON.stringify(m)).toBe(frozen);
+    sync.setWarnings(warnings([], []));
+    sync.update(m, layout, 0.2);
+    expect(body('gear_1').rotation.z).toBeCloseTo(still, 12);
+  });
+
+  it('選択と同時でも見分けられる。ロックは干渉より優先、仮の部品の見た目はさらに優先', () => {
+    const sync = createSceneSync();
+    sync.sync(demoScene, layout);
+    sync.setHighlight({ selected: 'gear_1', hovered: null });
+    const selectedOnly = materialOf(sync.root, 'gear_1');
+    sync.setWarnings(warnings(['gear_1', 'gear_2'], []));
+    sync.update(motion, layout, 0);
+    const lockedSelected = materialOf(sync.root, 'gear_1');
+    const lockedOnly = materialOf(sync.root, 'gear_2');
+    expect(isRed(lockedSelected)).toBe(true);
+    expect(lockedSelected).not.toBe(selectedOnly);
+    // 選択中は色（albedo）を水色に寄せる。ロックだけの部品とは色で見分けられる
+    expect(lockedSelected.color.b).toBeGreaterThan(lockedOnly.color.b);
+    expect(lockedSelected.color.b).toBeGreaterThan(lockedSelected.color.r);
+
+    // 干渉にも入っていればロックを優先（脈打つ）
+    sync.setWarnings({ locked: new Set(['gear_2']), interfering: new Set(['gear_2']) });
+    sync.update(motion, layout, 0);
+    const a = materialOf(sync.root, 'gear_2').emissiveIntensity;
+    sync.update(motion, layout, 0.25);
+    expect(materialOf(sync.root, 'gear_2').emissiveIntensity).not.toBe(a);
+
+    sync.setPreviewStyle({ ids: new Set(['gear_2']), ghost: true, invalid: false });
+    expect(materialOf(sync.root, 'gear_2').transparent).toBe(true);
   });
 });

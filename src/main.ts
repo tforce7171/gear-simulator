@@ -8,8 +8,9 @@ import { boundsOf } from './core/layout/bounds';
 import { resolveLayout } from './core/layout/resolve';
 import { installGearSim } from './debug/gear-sim';
 import { type ContextRequest, createCameraInput } from './input/camera';
-import { createKeyboard } from './input/keyboard';
+import { createKeyboard, isTypingTarget } from './input/keyboard';
 import { createSelectionInput } from './input/selection-input';
+import { createSpaceTapDetector } from './input/space-tap';
 import { createAxisGizmo } from './render/axis-gizmo';
 import {
   createRenderer,
@@ -17,7 +18,9 @@ import {
   INITIAL_CAMERA_TARGET,
   ORTHO_FRUSTUM_HEIGHT,
 } from './render/renderer';
+import { warningParts } from './render/warning-effects';
 import { createPalette } from './ui/palette';
+import { createPauseIndicator } from './ui/pause-indicator';
 import { createProperties } from './ui/properties';
 import { createUiShell } from './ui/shell';
 
@@ -160,6 +163,31 @@ keyboard.bind(
   { key: 'z', ctrl: true, shift: true },
   { onDown: () => store.dispatch({ type: 'redo' }), allowRepeat: true },
 );
+// Space の押して離す: 全モーターの一時停止を切り替える（S1-22）。押している間にカメラのドラッグ
+// （Space+ドラッグの平行移動）があった、または長く押していたときは切り替えない。押している間の
+// 平行移動は camera.ts が同じキーで受け取る
+const spaceTap = createSpaceTapDetector();
+keyboard.bind(
+  { key: ' ' },
+  {
+    onDown: (e) => {
+      spaceTap({ type: 'keydown', repeat: e.repeat, timeMs: e.timeStamp });
+    },
+    onUp: (e) => {
+      // テキストの入力中は文字の入力に任せる。それ以外（ボタンにフォーカスがあるときなど）は、
+      // 離したときのボタンの押下も止める（押したときは keyboard.ts が止める）
+      if (isTypingTarget(e.target)) return;
+      e.preventDefault();
+      if (spaceTap({ type: 'keyup', timeMs: e.timeStamp }) === 'tap') {
+        store.dispatch({ type: 'togglePause' });
+      }
+    },
+    allowRepeat: true,
+  },
+);
+cameraInput.onDragStart(() => {
+  spaceTap({ type: 'drag' });
+});
 // R: 起点を置くドラッグ中は仮の部品の向き、それ以外は選んだ起点（detached）のシャフトの向き（S1-17）
 keyboard.bind({ key: 'r' }, { onDown: () => interactions.rotate() });
 // 部品パレット（S1-17）: 歯車の大きさと、床へドラッグして置く起点のシャフト
@@ -173,6 +201,9 @@ const palette = createPalette({
   onRootDragCancel: () => interactions.cancelRootDrag(),
 });
 store.subscribe(() => palette.refresh());
+// 一時停止中の表示（S1-22）。描画領域の上部中央
+const pauseIndicator = createPauseIndicator(shell.canvasHost);
+store.subscribe((state) => pauseIndicator.setPaused(state.sim.paused));
 // プロパティパネル（S1-20）: 選択・シーン（Undo を含む）・言語が変わるたびに作り直す
 const properties = createProperties({
   setContent: shell.properties.setContent,
@@ -242,6 +273,12 @@ installGearSim({
   getCandidates: () =>
     interactions.candidates().map((c, index) => ({ index, kind: c.kind, center: c.center })),
   getHand: () => store.getState().sim.hand,
+  isPaused: () => store.getState().sim.paused,
+  getWarningParts: () => {
+    const { scene, motion } = store.getState();
+    const { locked, interfering } = warningParts(scene, layoutOf(scene), motion);
+    return { locked: [...locked].sort(), interfering: [...interfering].sort() };
+  },
 });
 
 startLoop({

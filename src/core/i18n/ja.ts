@@ -71,6 +71,8 @@ export const ja = {
   'properties.motor.remove': '外す',
   // トースト（S1-15）
   'toast.close': '閉じる',
+  // 一時停止中の表示（S1-22）
+  'sim.paused': '一時停止中（Space で再開）',
   // 軸の目印（S1-14）。球の title と aria-label
   'gizmo.label': '視点の切り替え',
   'gizmo.front': '前から見る（テンキー 1）',

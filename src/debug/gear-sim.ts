@@ -66,6 +66,13 @@ export interface GearSimDebug {
   getCandidates(): Array<{ index: number; kind: CandidateKind; center: Vec3 }>;
   /** 手で回しているシャフトと目標の角度（S1-21）。手で回していなければ null */
   getHand(): HandConstraint | null;
+  /** 全モーターの一時停止中か（S1-22。Space の押して離すで切り替わる） */
+  isPaused(): boolean;
+  /**
+   * ロック中・干渉中として表示している部品の ID（S1-22。どちらも昇順）。ロックはその成分の
+   * 歯車・シャフト・モーター、干渉は組に含まれる部品で、ロック中のものは interfering に入れない
+   */
+  getWarningParts(): { locked: string[]; interfering: string[] };
 }
 
 declare global {
