@@ -3,6 +3,7 @@ import {
   Color,
   DirectionalLight,
   GridHelper,
+  OrthographicCamera,
   PerspectiveCamera,
   Plane,
   Raycaster,
@@ -23,8 +24,20 @@ const GRID_DIVISIONS = 40; // 10 mm 刻み
 export const INITIAL_CAMERA_POSITION: Vec3 = [40, 75, 70];
 export const INITIAL_CAMERA_TARGET: Vec3 = [9, 18, 0];
 
+// 平行投影のカメラの視錐台の縦の幅（zoom 1 のとき。見える高さ = ORTHO_FRUSTUM_HEIGHT / zoom。S1-14）
+export const ORTHO_FRUSTUM_HEIGHT = 100;
+// 平行投影は注視点の手前の部品も写すように、near をカメラの後ろまで広げる
+const ORTHO_NEAR = -5000;
+const ORTHO_FAR = 10000;
+
+export type Projection = 'perspective' | 'orthographic';
+
 export interface Renderer extends SceneView {
-  readonly camera: PerspectiveCamera;
+  readonly camera: PerspectiveCamera; // 透視投影のカメラ
+  readonly orthoCamera: OrthographicCamera; // 平行投影のカメラ（S1-14）
+  // 描く・写す・ピッキングに使うカメラを切り替える（S1-14）
+  setProjection(projection: Projection): void;
+  activeCamera(): PerspectiveCamera | OrthographicCamera;
   readonly canvas: HTMLCanvasElement;
   // ページ座標の点の下にあるもの: 部品に当たればその点、なければ床（y = 0）との交点、どちらも無ければ null
   pickPoint(pageX: number, pageY: number): Vec3 | null;
@@ -48,6 +61,11 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
   const camera = new PerspectiveCamera(45, 1, 1, 5000);
   camera.position.set(...INITIAL_CAMERA_POSITION);
   camera.lookAt(...INITIAL_CAMERA_TARGET);
+  const half = ORTHO_FRUSTUM_HEIGHT / 2;
+  const orthoCamera = new OrthographicCamera(-half, half, half, -half, ORTHO_NEAR, ORTHO_FAR);
+  orthoCamera.position.copy(camera.position);
+  orthoCamera.quaternion.copy(camera.quaternion);
+  let active: PerspectiveCamera | OrthographicCamera = camera;
 
   const objects = createSceneSync();
   scene.add(objects.root);
@@ -60,6 +78,9 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
     renderer.setSize(width, height, false);
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
+    orthoCamera.left = (-ORTHO_FRUSTUM_HEIGHT * camera.aspect) / 2;
+    orthoCamera.right = (ORTHO_FRUSTUM_HEIGHT * camera.aspect) / 2;
+    orthoCamera.updateProjectionMatrix();
   }
   new ResizeObserver(resize).observe(canvas);
   resize();
@@ -71,6 +92,11 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
   const floorHit = new Vector3();
   return {
     camera,
+    orthoCamera,
+    setProjection(projection) {
+      active = projection === 'perspective' ? camera : orthoCamera;
+    },
+    activeCamera: () => active,
     canvas,
     pickPoint(pageX, pageY) {
       const rect = canvas.getBoundingClientRect();
@@ -79,8 +105,8 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
         ((pageX - window.scrollX - rect.left) / rect.width) * 2 - 1,
         1 - ((pageY - window.scrollY - rect.top) / rect.height) * 2,
       );
-      camera.updateMatrixWorld();
-      raycaster.setFromCamera(ndc, camera);
+      active.updateMatrixWorld();
+      raycaster.setFromCamera(ndc, active);
       const hit = raycaster.intersectObject(objects.root, true)[0];
       if (hit !== undefined) return [hit.point.x, hit.point.y, hit.point.z];
       if (raycaster.ray.intersectPlane(floor, floorHit) === null) return null;
@@ -89,12 +115,12 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
     sync: objects.sync,
     update: objects.update,
     render() {
-      renderer.render(scene, camera);
+      renderer.render(scene, active);
     },
     projectToScreen(world) {
       // 描く前（setCamera の直後など）でも今のカメラで写す
-      camera.updateMatrixWorld();
-      projected.set(world[0], world[1], world[2]).project(camera);
+      active.updateMatrixWorld();
+      projected.set(world[0], world[1], world[2]).project(active);
       const rect = canvas.getBoundingClientRect();
       return {
         x: rect.left + window.scrollX + ((projected.x + 1) / 2) * rect.width,
