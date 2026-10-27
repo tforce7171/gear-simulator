@@ -1,7 +1,7 @@
 ---
 id: S1-16
 title: 選択、ピッキング、Esc、Delete
-status: todo
+status: doing
 depends: [S1-11, S1-13, S1-15]
 ---
 

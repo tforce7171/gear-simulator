@@ -37,7 +37,7 @@
 | [S1-13](stage1/13-camera-basic.md) | カメラ（基本） | S1-04 | done |
 | [S1-14](stage1/14-camera-advanced.md) | カメラ（応用） | S1-13, S1-15 | done |
 | [S1-15](stage1/15-ui-shell.md) | 画面の骨組み | S1-04, S1-12 | done |
-| [S1-16](stage1/16-selection.md) | 選択、ピッキング、Esc、Delete | S1-11, S1-13, S1-15 | todo |
+| [S1-16](stage1/16-selection.md) | 選択、ピッキング、Esc、Delete | S1-11, S1-13, S1-15 | doing |
 | [S1-17](stage1/17-root-shaft-placement.md) | 起点のシャフトを置く | S1-16 | todo |
 | [S1-18](stage1/18-grow-gears.md) | 候補の表示とクリックで歯車を生やす | S1-10, S1-16 | todo |
 | [S1-19](stage1/19-handles.md) | 外周の角度の円弧ハンドル、シャフト上の位置のドラッグ | S1-18 | todo |
