@@ -59,29 +59,29 @@ depends: [S1-10, S1-16]
 - `e2e/fixtures/one-root-motor.json`: 上に加えて、A のシャフトに中のモーター（30 rpm、正の向き、ON）
 
 ## 受け入れ条件
-- [ ] 歯車を選ぶと候補が出て、選択を外すと消える
-- [ ] 外周の候補をクリックすると、新しいシャフトと歯車が親にかみ合う位置に置かれる
-- [ ] 同じ軸の候補をクリックすると、親のシャフトに、パレットで選んだ大きさの歯車が通る
-- [ ] 生やした歯車が選ばれ、そのまま次を生やせる
-- [ ] 生やした直後に干渉は無い。Undo 1 回で消える
+- [x] 歯車を選ぶと候補が出て、選択を外すと消える
+- [x] 外周の候補をクリックすると、新しいシャフトと歯車が親にかみ合う位置に置かれる
+- [x] 同じ軸の候補をクリックすると、親のシャフトに、パレットで選んだ大きさの歯車が通る
+- [x] 生やした歯車が選ばれ、そのまま次を生やせる
+- [x] 生やした直後に干渉は無い。Undo 1 回で消える
 
 ## テストケース
 ### Vitest
-- [ ] `growSpec`: 親が中・25 歯で `'perimeter'`、パレットが大 → `{ size: 'M', teeth: 20 }`
-- [ ] `growSpec`: 親が中・25 歯で `'coaxial'`、パレットが大 → `{ size: 'L', teeth: 16 }`
-- [ ] `growSpec`: 親が小で `'perimeter'` → `{ size: 'S', teeth: 30 }`
+- [x] `growSpec`: 親が中・25 歯で `'perimeter'`、パレットが大 → `{ size: 'M', teeth: 20 }`
+- [x] `growSpec`: 親が中・25 歯で `'coaxial'`、パレットが大 → `{ size: 'L', teeth: 16 }`
+- [x] `growSpec`: 親が小で `'perimeter'` → `{ size: 'S', teeth: 30 }`
 ### Playwright（`e2e/grow.spec.ts`）
 準備: `one-root.json` を読み込み、斜め上から見下ろす視点にする。候補の位置は `getCandidates()` の `center` を `projectToScreen` して得る。
-- [ ] 何も選んでいない → `getCandidates()` が空
-- [ ] A をクリック → `'perimeter'` と `'coaxial'` の候補がそれぞれ 1 つ以上ある
-- [ ] `'perimeter'` の候補をクリック → 歯車が 2 枚、シャフトが 2 本。新しいシャフトは `placement.kind: 'mesh'`、`parentGearId: A`、`childGearId` が新しい歯車。新しい歯車は `size: 'M'`、`teeth: 20`。`getLayout().meshes` に A と新しい歯車の組（`source: 'tree'`）がある。2 つの中心の距離が 40（ピッチ円半径の和）。`getLayout().interferences` が空。`getSelection()` が新しい歯車で、`getCandidates()` は新しい歯車の候補になっている
-- [ ] Ctrl+Z → 歯車 1 枚、シャフト 1 本に戻る
-- [ ] パレットで「大」を選び、A を選んで `'coaxial'` の候補をクリック → A のシャフトに `size: 'L'`、`teeth: 16` の歯車が増え、シャフトは増えない。`offset` が −12 か 8（A の面に接する両側。design.md §4 の `offset` の定義で、どちらも `AXIAL_SNAP` の倍数）
-- [ ] 外周の候補を 3 回続けてクリックしていく（毎回、新しく選ばれた歯車の候補から 1 つ）→ 4 枚の鎖になり、`interferences` が空
-- [ ] 候補の上で左ドラッグ → 歯車は増えず、`getCamera()` が変わる
-- [ ] `one-root-motor.json` で外周に 1 つ生やす → 新しいシャフトの `getMotion().omegas` が、A のシャフトの ω（π rad/s）の −1 倍（`toBeCloseTo`）
+- [x] 何も選んでいない → `getCandidates()` が空
+- [x] A をクリック → `'perimeter'` と `'coaxial'` の候補がそれぞれ 1 つ以上ある
+- [x] `'perimeter'` の候補をクリック → 歯車が 2 枚、シャフトが 2 本。新しいシャフトは `placement.kind: 'mesh'`、`parentGearId: A`、`childGearId` が新しい歯車。新しい歯車は `size: 'M'`、`teeth: 20`。`getLayout().meshes` に A と新しい歯車の組（`source: 'tree'`）がある。2 つの中心の距離が 40（ピッチ円半径の和）。`getLayout().interferences` が空。`getSelection()` が新しい歯車で、`getCandidates()` は新しい歯車の候補になっている
+- [x] Ctrl+Z → 歯車 1 枚、シャフト 1 本に戻る
+- [x] パレットで「大」を選び、A を選んで `'coaxial'` の候補をクリック → A のシャフトに `size: 'L'`、`teeth: 16` の歯車が増え、シャフトは増えない。`offset` が −12 か 8（A の面に接する両側。design.md §4 の `offset` の定義で、どちらも `AXIAL_SNAP` の倍数）
+- [x] 外周の候補を 3 回続けてクリックしていく（毎回、新しく選ばれた歯車の候補から 1 つ）→ 4 枚の鎖になり、`interferences` が空
+- [x] 候補の上で左ドラッグ → 歯車は増えず、`getCamera()` が変わる
+- [x] `one-root-motor.json` で外周に 1 つ生やす → 新しいシャフトの `getMotion().omegas` が、A のシャフトの ω（π rad/s）の −1 倍（`toBeCloseTo`）
 ### Playwright（見た目）
-- [ ] 候補が出ている場面のスクリーンショットを `screenshots/candidates.png` に保存する。真っ黒・真っ白でないこと
+- [x] 候補が出ている場面のスクリーンショットを `screenshots/candidates.png` に保存する。真っ黒・真っ白でないこと
 
 ## 人が手で確かめる項目
 - 候補が実物の歯車と見分けられ、かつ置いた後の様子が想像できる見た目である
@@ -89,6 +89,6 @@ depends: [S1-10, S1-16]
 - 生やした歯車の位相が親と合っていて、歯がめり込んで見えない
 
 ## 完了の条件
-- [ ] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
-- [ ] design.md と後続のタスク資料に、必要な変更を反映した（§10 の `__gearSim` の API）
+- [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
+- [x] design.md と後続のタスク資料に、必要な変更を反映した（§10 の `__gearSim` の API）
 - [ ] `status: done` にしてコミットした
