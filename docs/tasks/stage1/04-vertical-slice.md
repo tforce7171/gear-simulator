@@ -1,7 +1,7 @@
 ---
 id: S1-04
 title: 最小の縦通し: 固定シーンを描画して回す
-status: doing
+status: done
 depends: [S1-03]
 ---
 
@@ -71,30 +71,30 @@ core → app → render → 画面 → `window.__gearSim` → Playwright の一�
 - `e2e/fixtures/two-spur.json`（上の固定シーンと同じもの。`loadScene` で読む用）
 
 ## 受け入れ条件
-- [ ] `pnpm dev` で、12 歯と 24 歯の平歯車がかみ合って回るのが見える（12 歯が反時計回り（上から見て）、24 歯がその半分の速さで逆向き）
-- [ ] 歯がかみ合った位置で重ならずに回り続ける（位相が合っている）
-- [ ] `src/core` は three を import していない
+- [x] `pnpm dev` で、12 歯と 24 歯の平歯車がかみ合って回るのが見える（12 歯が反時計回り（上から見て）、24 歯がその半分の速さで逆向き）
+- [x] 歯がかみ合った位置で重ならずに回り続ける（位相が合っている）
+- [x] `src/core` は three を import していない
 
 ## テストケース
 ### Vitest
-- [ ] 暫定の `resolveLayout(固定シーン)`: `gear_1.center ≈ [0, 22, 0]`、`gear_2.center ≈ [18, 22, 0]`、`shafts.shaft_2.origin ≈ [18, 20, 0]`、`shafts.shaft_2.axis === 'y'`、`gear_2.basePhase ≡ π/24`（`2π/24` を法として）、`gear_1.pitchRadius === 6`、`meshes` が `[{ a: 'gear_1', b: 'gear_2', source: 'tree' }]`
-- [ ] 暫定の運動: 固定シーンで `dt = 0.5` を 1 回 → `omegas.shaft_1 ≈ 2π`、`omegas.shaft_2 ≈ −π`、`angles.shaft_1 ≈ π`、`angles.shaft_2 ≈ −π/2`
-- [ ] 暫定の運動: モーターを `on: false` にしたシーン → 全ての ω が 0
-- [ ] 暫定の運動: モーターの `direction: -1`、`rpm 30` → `omegas.shaft_1 ≈ −π`、`omegas.shaft_2 ≈ π/2`
-- [ ] ストア: `subscribe` した関数が `dispatch` のたびに呼ばれ、解除後は呼ばれない
+- [x] 暫定の `resolveLayout(固定シーン)`: `gear_1.center ≈ [0, 22, 0]`、`gear_2.center ≈ [18, 22, 0]`、`shafts.shaft_2.origin ≈ [18, 20, 0]`、`shafts.shaft_2.axis === 'y'`、`gear_2.basePhase ≡ π/24`（`2π/24` を法として）、`gear_1.pitchRadius === 6`、`meshes` が `[{ a: 'gear_1', b: 'gear_2', source: 'tree' }]`
+- [x] 暫定の運動: 固定シーンで `dt = 0.5` を 1 回 → `omegas.shaft_1 ≈ 2π`、`omegas.shaft_2 ≈ −π`、`angles.shaft_1 ≈ π`、`angles.shaft_2 ≈ −π/2`
+- [x] 暫定の運動: モーターを `on: false` にしたシーン → 全ての ω が 0
+- [x] 暫定の運動: モーターの `direction: -1`、`rpm 30` → `omegas.shaft_1 ≈ −π`、`omegas.shaft_2 ≈ π/2`
+- [x] ストア: `subscribe` した関数が `dispatch` のたびに呼ばれ、解除後は呼ばれない
 ### Playwright
-- [ ] `e2e/vertical-slice.spec.ts`: `/` を開いて `isReady()` を待つ → `getScene()` が固定シーンに等しい → `getMotion().angles.shaft_1` を読み、0.5 秒以上待ってもう一度読むと増えている
-- [ ] 同じ spec: `getMotion().omegas` の `shaft_2 / shaft_1 ≈ −0.5`（12 歯と 24 歯）。`shaft_1 ≈ 2π`（60rpm）
-- [ ] `loadScene` で `two-spur.json` の 24 歯を 36 歯に変えたシーンを読む → `getLayout().gears.gear_2.center ≈ [24, 22, 0]`、`omegas.shaft_2 / omegas.shaft_1 ≈ −1/3`
-- [ ] `projectToScreen(getLayout().gears.gear_1.center)` がキャンバスの内側の座標を返す
+- [x] `e2e/vertical-slice.spec.ts`: `/` を開いて `isReady()` を待つ → `getScene()` が固定シーンに等しい → `getMotion().angles.shaft_1` を読み、0.5 秒以上待ってもう一度読むと増えている
+- [x] 同じ spec: `getMotion().omegas` の `shaft_2 / shaft_1 ≈ −0.5`（12 歯と 24 歯）。`shaft_1 ≈ 2π`（60rpm）
+- [x] `loadScene` で `two-spur.json` の 24 歯を 36 歯に変えたシーンを読む → `getLayout().gears.gear_2.center ≈ [24, 22, 0]`、`omegas.shaft_2 / omegas.shaft_1 ≈ −1/3`
+- [x] `projectToScreen(getLayout().gears.gear_1.center)` がキャンバスの内側の座標を返す
 ### Playwright（見た目）
-- [ ] `e2e/visual/two-spur.spec.ts`: 固定シーン → `captureScene(page, 'two-spur')`（真っ黒・真っ白でない）
+- [x] `e2e/visual/two-spur.spec.ts`: 固定シーン → `captureScene(page, 'two-spur')`（真っ黒・真っ白でない）
 
 ## 人が手で確かめる項目
 - 歯が重ならずにかみ合って見えること（`screenshots/two-spur.png` と `pnpm dev`）
 - 歯形がインボリュートらしく見えること、歯の向きの取り違え（裏返し）がないこと
 
 ## 完了の条件
-- [ ] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
-- [ ] design.md と後続のタスク資料に、必要な変更を反映した（`__gearSim` に足した API が design.md §10 と合っているか確かめる。暫定の `resolveLayout`・運動を置き換える担当が S1-09・S1-07 であることを、それぞれの資料で確かめる）
-- [ ] `status: done` にしてコミットした
+- [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
+- [x] design.md と後続のタスク資料に、必要な変更を反映した（`__gearSim` に足した API が design.md §10 と合っているか確かめる。暫定の `resolveLayout`・運動を置き換える担当が S1-09・S1-07 であることを、それぞれの資料で確かめる）
+- [x] `status: done` にしてコミットした
