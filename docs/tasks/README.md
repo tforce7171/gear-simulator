@@ -33,7 +33,7 @@
 | [S1-09](stage1/09-layout-tree.md) | 配置の木構造 | S1-03, S1-08 | done |
 | [S1-10](stage1/10-candidates.md) | 生やす候補の列挙 | S1-08, S1-09 | done |
 | [S1-11](stage1/11-edit-commands-history.md) | 編集コマンドと Undo/Redo | S1-09 | done |
-| [S1-12](stage1/12-i18n.md) | 日本語と英語の切り替えの仕組み | S1-01 | doing |
+| [S1-12](stage1/12-i18n.md) | 日本語と英語の切り替えの仕組み | S1-01 | done |
 | [S1-13](stage1/13-camera-basic.md) | カメラ（基本） | S1-04 | todo |
 | [S1-14](stage1/14-camera-advanced.md) | カメラ（応用） | S1-13, S1-15 | todo |
 | [S1-15](stage1/15-ui-shell.md) | 画面の骨組み | S1-04, S1-12 | todo |
