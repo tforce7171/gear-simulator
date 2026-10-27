@@ -1,7 +1,7 @@
 ---
 id: S1-26
 title: 音（空間）
-status: todo
+status: doing
 depends: [S1-13, S1-25]
 ---
 
