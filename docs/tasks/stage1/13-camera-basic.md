@@ -1,7 +1,7 @@
 ---
 id: S1-13
 title: カメラ（基本）
-status: todo
+status: doing
 depends: [S1-04]
 ---
 
