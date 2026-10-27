@@ -1,7 +1,7 @@
 ---
 id: S1-19
 title: 外周の角度の円弧ハンドル、シャフト上の位置のドラッグ
-status: todo
+status: done
 depends: [S1-18]
 ---
 
@@ -95,47 +95,47 @@ depends: [S1-18]
 - `e2e/fixtures/reattach.json`: 縦軸の起点のシャフト A（原点 `[0, 35, 0]`、中・20 歯、中のモーター 30 rpm・`direction: 1`・ON）と、`detached` のシャフト D（`placement.origin [100, 35, 0]`、`placement.axis 'y'`）に中・20 歯の P（`offset` 0）。P の外周に子 Q（中・20 歯、`angle` 0）
 
 ## 受け入れ条件
-- [ ] `mesh` のシャフトの歯車を選ぶと円弧ハンドルが出て、親の周りを連続的に動かせる。Shift で 15° 単位になる
-- [ ] 円弧ハンドルは、別の歯車とちょうどかみ合う角度に吸着し、ループを作れる
-- [ ] 動かせる歯車を選ぶと軸方向のハンドルが出て、4 mm の格子で動かせる
-- [ ] 浮いたシャフトを本体ドラッグで別の歯車の外周候補へ運んで離すと付け直され、その先もついてくる
-- [ ] 動かした歯車の先の歯車がすべてついてきて、かみ合ったままである
-- [ ] 新たな干渉を生む位置では赤くなり、離すと最後の干渉の無い位置で止まる
-- [ ] どの操作も Undo 1 回で戻る
+- [x] `mesh` のシャフトの歯車を選ぶと円弧ハンドルが出て、親の周りを連続的に動かせる。Shift で 15° 単位になる
+- [x] 円弧ハンドルは、別の歯車とちょうどかみ合う角度に吸着し、ループを作れる
+- [x] 動かせる歯車を選ぶと軸方向のハンドルが出て、4 mm の格子で動かせる
+- [x] 浮いたシャフトを本体ドラッグで別の歯車の外周候補へ運んで離すと付け直され、その先もついてくる
+- [x] 動かした歯車の先の歯車がすべてついてきて、かみ合ったままである
+- [x] 新たな干渉を生む位置では赤くなり、離すと最後の干渉の無い位置で止まる
+- [x] どの操作も Undo 1 回で戻る
 
 ## テストケース
 ### Vitest
-- [ ] `angleAroundAxis`: S1-09 の定義で角度 0 になる向きの点 → 0、正の向きに 90° 回した点 → π/2。軸 x・y・z のそれぞれで、S1-09 で `angle: θ` として置いた子の中心を渡すと θ が返る（`resolveLayout` との往復）
-- [ ] `unwrapDelta(3.0, -3.0)` → 約 `2π − 6`（正の小さい値）。`unwrapDelta(-3.0, 3.0)` → 負の小さい値。`unwrapDelta(0.1, 0.3)` → 0.2
-- [ ] `snapAngle(0.27, π/12)` → π/12
-- [ ] `closestParamOnLine`: 直線が y 軸、レイが `[10, 5, 0]` から `[-1, 0, 0]` の向き → 5。直線と平行なレイ → null
-- [ ] `axialOffsetFromDrag(8, 5.9)` → 12。`(8, 6.1)` → 16。`(8, -1.9)` → 8。`(8, -2.1)` → 4。`(0, 4.1)` → 4（中の歯車でも 4 mm 単位）
-- [ ] `meshSnapAngles`（親の中心が原点、軸 `'y'`、半径 40、子のピッチ円半径 20）
+- [x] `angleAroundAxis`: S1-09 の定義で角度 0 になる向きの点 → 0、正の向きに 90° 回した点 → π/2。軸 x・y・z のそれぞれで、S1-09 で `angle: θ` として置いた子の中心を渡すと θ が返る（`resolveLayout` との往復）
+- [x] `unwrapDelta(3.0, -3.0)` → 約 `2π − 6`（正の小さい値）。`unwrapDelta(-3.0, 3.0)` → 負の小さい値。`unwrapDelta(0.1, 0.3)` → 0.2
+- [x] `snapAngle(0.27, π/12)` → π/12
+- [x] `closestParamOnLine`: 直線が y 軸、レイが `[10, 5, 0]` から `[-1, 0, 0]` の向き → 5。直線と平行なレイ → null
+- [x] `axialOffsetFromDrag(8, 5.9)` → 12。`(8, 6.1)` → 16。`(8, -1.9)` → 8。`(8, -2.1)` → 4。`(0, 4.1)` → 4（中の歯車でも 4 mm 単位）
+- [x] `meshSnapAngles`（親の中心が原点、軸 `'y'`、半径 40、子のピッチ円半径 20）
   - 相手が `[40, 0, 0]`（`+X`、S1-09 の定義で角度 π/2 の向き）、ピッチ円半径 20 → π/2 ± π/3 の 2 つ（π/6 と 5π/6）
   - 相手が `[80, 0, 0]` → π/2 の 1 つ（接する場合）
   - 相手が `[100, 0, 0]` → `[]`（届かない）
   - 相手が `[40, 12, 0]`（軸方向にずれている）→ 面に射影して `[40, 0, 0]` と同じ結果
   - 相手の中心が親の軸上（`[0, 8, 0]`）→ `[]`（どの角度でも距離が一致する退化した場合なので、吸着先を出さないと決める）
-- [ ] `nearestSnapAngle`: 吸着の角度 `[π/6]`、range 5° → `π/6 + 0.05` は π/6、`π/6 + 0.1` は null。吸着の角度 `[0.01]` で `2π − 0.02` → 0.01（折り返し）。2 つの候補があれば近いほう
-- [ ] `meshSnapTargets`: `arc-loop.json` 相当のシーンで B のシャフト → T だけ（親 A は除く）。T を小の歯車にしたシーン → `[]`。T の `offset` を 8 にしたシーン（歯幅が重ならない）→ `[]`。T の軸を `'x'` にしたシーン → `[]`。B の先に子 B2 があっても、B2 は相手にならない
-- [ ] `reattachCandidates`: `reattach.json` 相当のシーンで D → `parentGearId` が A の候補がある（8 方向のうち、付け直したシーンで新たな干渉ができないもの）。`parentGearId` が P や Q の候補は無い（循環）。A を小の歯車にしたシーン → `[]`（同じ大きさの歯車が無い）。A の外周の候補のうち、Q が A に重なる角度のものは無い。`root` のシャフトを渡す → `[]`
-- [ ] 候補を `reattachShaft` で適用したシーン → D が `{ kind: 'mesh', parentGearId: A, childGearId: P }`、`resolveLayout` で A と P の中心距離 40、P と Q の中心距離 40 のまま
+- [x] `nearestSnapAngle`: 吸着の角度 `[π/6]`、range 5° → `π/6 + 0.05` は π/6、`π/6 + 0.1` は null。吸着の角度 `[0.01]` で `2π − 0.02` → 0.01（折り返し）。2 つの候補があれば近いほう
+- [x] `meshSnapTargets`: `arc-loop.json` 相当のシーンで B のシャフト → T だけ（親 A は除く）。T を小の歯車にしたシーン → `[]`。T の `offset` を 8 にしたシーン（歯幅が重ならない）→ `[]`。T の軸を `'x'` にしたシーン → `[]`。B の先に子 B2 があっても、B2 は相手にならない
+- [x] `reattachCandidates`: `reattach.json` 相当のシーンで D → `parentGearId` が A の候補がある（8 方向のうち、付け直したシーンで新たな干渉ができないもの）。`parentGearId` が P や Q の候補は無い（循環）。A を小の歯車にしたシーン → `[]`（同じ大きさの歯車が無い）。A の外周の候補のうち、Q が A に重なる角度のものは無い。`root` のシャフトを渡す → `[]`
+- [x] 候補を `reattachShaft` で適用したシーン → D が `{ kind: 'mesh', parentGearId: A, childGearId: P }`、`resolveLayout` で A と P の中心距離 40、P と Q の中心距離 40 のまま
 ### Playwright（`e2e/handles.spec.ts`）
 準備: 上から見下ろす視点（`setCamera` で `position: [0, 400, 0.001]`、`target: [0, 0, 0]` など）。ハンドルの位置は `getHandles()` を `projectToScreen` して得る。円弧のドラッグは、親の中心の画面上の位置のまわりに、10 段階に分けて `mouse.move` する。
-- [ ] `chain-three.json` で B を選ぶ → `getHandles()` に B のシャフトの `'arc'` があり、B の `'axial'` は無い
-- [ ] `'arc'` をつかんで親 A のまわりに 45° 分ドラッグ → B のシャフトの `angle` の変化量の絶対値が π/4 に近い（誤差 0.05 rad）。A と B の中心距離は 40 のまま。C の中心も動き、B と C の中心距離も 40 のまま。`getLayout().meshes` に A-B、B-C がある
-- [ ] 続けて Ctrl+Z → `angle` が元に戻る
-- [ ] Shift を押しながら 50° 分ドラッグ → 変化量が π/12 の整数倍
-- [ ] `arc-blocked.json` で B を選び、`'arc'` を D の側へ 90° 分ドラッグして離す → `getLayout().interferences` が空。途中で D とちょうどかみ合う角度を通るので、B の `angle` は 0 から D の側へ π/6 動いた値（誤差 1e-6）で止まり、`getLayout().meshes` に B-D（`source: 'contact'`）がある
-- [ ] `arc-loop.json` → 最初は `getMotion().locks` が空で、3 枚とも回っている。B を選び、`'arc'` を T の側へ 30° 分ドラッグして離す → B の `angle` の変化量の絶対値が π/6（誤差 1e-6。吸着した値）。B と T の中心距離が 40（`MESH_DISTANCE_EPS` 以内）、`getLayout().meshes` に B-T（`source: 'contact'`）があり、`interferences` が空。`getMotion().locks` に `reason: 'contradiction'` のロックがあり、3 本のシャフトを含む。Ctrl+Z → ロックが解ける
-- [ ] `stacked.json` で E を選ぶ → `'axial'` がある。横から見る視点（`position: [0, 35, 400]`）で `'axial'` を上へ 40px ドラッグ → E の `offset` が 8 より大きく、4 の倍数。F の中心の y も同じだけ動き、E と F はかみ合ったまま
-- [ ] E の `'axial'` を下へ大きくドラッグ（A に重なる所まで）して離す → `interferences` が空で、E は A に重ならない位置で止まっている
-- [ ] Esc でドラッグをやめる → シーンが変わらない
-- [ ] `reattach.json` で P を選び、P の中心から、A の中心の `+X` 側 40 mm の点（A の外周の候補の位置。`getLayout` から求める）の画面上の位置へ、10 段階に分けてドラッグして離す → D の `placement` が `{ kind: 'mesh', parentGearId: A, childGearId: P }`。A と P の中心距離 40、P と Q の中心距離 40、`getLayout().meshes` に A-P と P-Q（どちらも `source: 'tree'`）。D の ω（`getMotion().omegas`）が −π、Q のシャフトの ω が π。`getCamera()` は変わらない
-- [ ] 続けて Ctrl+Z → D が `detached` に戻り、P と Q の中心が元の位置に戻る
-- [ ] P を選び、何もない所（候補から離れた所）へドラッグして離す → シーンが変わらない。Esc でやめたときも同じ
-- [ ] P を選び、Q の外周（Q の中心の `+X` 側 40 mm）へドラッグして離す → シーンが変わらない（循環になるので候補が無い）
-- [ ] P を選ばずに P の上で左ドラッグ → 付け直しではなく手で回す（S1-21 が done なら P のシャフトの角度が変わる。まだならシーンが変わらないことだけ確かめる）
+- [x] `chain-three.json` で B を選ぶ → `getHandles()` に B のシャフトの `'arc'` があり、B の `'axial'` は無い
+- [x] `'arc'` をつかんで親 A のまわりに 45° 分ドラッグ → B のシャフトの `angle` の変化量の絶対値が π/4 に近い（誤差 0.05 rad）。A と B の中心距離は 40 のまま。C の中心も動き、B と C の中心距離も 40 のまま。`getLayout().meshes` に A-B、B-C がある
+- [x] 続けて Ctrl+Z → `angle` が元に戻る
+- [x] Shift を押しながら 50° 分ドラッグ → 変化量が π/12 の整数倍
+- [x] `arc-blocked.json` で B を選び、`'arc'` を D の側へ 90° 分ドラッグして離す → `getLayout().interferences` が空。途中で D とちょうどかみ合う角度を通るので、B の `angle` は 0 から D の側へ π/6 動いた値（誤差 1e-6）で止まり、`getLayout().meshes` に B-D（`source: 'contact'`）がある
+- [x] `arc-loop.json` → 最初は `getMotion().locks` が空で、3 枚とも回っている。B を選び、`'arc'` を T の側へ 30° 分ドラッグして離す → B の `angle` の変化量の絶対値が π/6（誤差 1e-6。吸着した値）。B と T の中心距離が 40（`MESH_DISTANCE_EPS` 以内）、`getLayout().meshes` に B-T（`source: 'contact'`）があり、`interferences` が空。`getMotion().locks` に `reason: 'contradiction'` のロックがあり、3 本のシャフトを含む。Ctrl+Z → ロックが解ける
+- [x] `stacked.json` で E を選ぶ → `'axial'` がある。横から見る視点（`position: [0, 35, 400]`）で `'axial'` を上へ 40px ドラッグ → E の `offset` が 8 より大きく、4 の倍数。F の中心の y も同じだけ動き、E と F はかみ合ったまま
+- [x] E の `'axial'` を下へ大きくドラッグ（A に重なる所まで）して離す → `interferences` が空で、E は A に重ならない位置で止まっている
+- [x] Esc でドラッグをやめる → シーンが変わらない
+- [x] `reattach.json` で P を選び、P の中心から、A の中心の `+X` 側 40 mm の点（A の外周の候補の位置。`getLayout` から求める）の画面上の位置へ、10 段階に分けてドラッグして離す → D の `placement` が `{ kind: 'mesh', parentGearId: A, childGearId: P }`。A と P の中心距離 40、P と Q の中心距離 40、`getLayout().meshes` に A-P と P-Q（どちらも `source: 'tree'`）。D の ω（`getMotion().omegas`）が −π、Q のシャフトの ω が π。`getCamera()` は変わらない
+- [x] 続けて Ctrl+Z → D が `detached` に戻り、P と Q の中心が元の位置に戻る
+- [x] P を選び、何もない所（候補から離れた所）へドラッグして離す → シーンが変わらない。Esc でやめたときも同じ
+- [x] P を選び、Q の外周（Q の中心の `+X` 側 40 mm）へドラッグして離す → シーンが変わらない（循環になるので候補が無い）
+- [x] P を選ばずに P の上で左ドラッグ → 付け直しではなく手で回す（S1-21 が done なら P のシャフトの角度が変わる。まだならシーンが変わらないことだけ確かめる）
 ### Playwright（見た目）
 - なし（S1-31 でまとめる）
 
@@ -147,6 +147,6 @@ depends: [S1-18]
 - 付け直しのドラッグで、候補の場所と付け直した後の様子がわかる
 
 ## 完了の条件
-- [ ] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
-- [ ] design.md と後続のタスク資料に、必要な変更を反映した（§10 の `__gearSim` の API）
-- [ ] `status: done` にしてコミットした
+- [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
+- [x] design.md と後続のタスク資料に、必要な変更を反映した（§10 の `__gearSim` の API）
+- [x] `status: done` にしてコミットした

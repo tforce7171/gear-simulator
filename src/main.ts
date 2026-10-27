@@ -70,6 +70,8 @@ const interactions = createInteractions({
   setPreviewStyle: renderer.setPreviewStyle,
   setHandles: renderer.setHandles,
   setCandidates: renderer.setCandidates,
+  setReattachRings: renderer.setReattachRings,
+  projectToScreen: (world) => renderer.projectToScreen(world),
 });
 // 描くシーン（ドラッグ中は仮のシーン）と、そのハンドルを描画に渡す
 const syncDisplay = (): void => {
@@ -83,18 +85,31 @@ const pickAt = (x: number, y: number) => {
   syncDisplay();
   return renderer.pick(x, y);
 };
+// 部品の本体（候補・ハンドルを除く）。候補の陰にある本体を調べる（S1-19）
+const BODY_KINDS = ['gear', 'motor', 'shaft'] as const;
+const bodyAt = (x: number, y: number) => {
+  syncDisplay();
+  return renderer.pick(x, y, BODY_KINDS);
+};
 // 部品・ハンドルの上の左ボタンはカメラを回さない。候補の上は左クリックだけアプリが受け取り、
-// 左ドラッグはカメラの回転にする（候補は手で回せないため。S1-18）
+// 左ドラッグはカメラの回転にする（候補は手で回せないため。S1-18）。ただし、選んでいる detached の
+// シャフトの本体が候補の陰にあれば、左ドラッグは付け直しにする（S1-19）
 cameraInput.setHitTest((x, y) => {
   const hit = pickAt(x, y);
   if (hit === null) return 'none';
-  return hit.kind === 'candidate' ? 'click-only' : 'app';
+  if (hit.kind !== 'candidate') return 'app';
+  return interactions.isReattachBody(bodyAt(x, y)) ? 'app' : 'click-only';
 });
 
-// ハンドルの上の左ボタン（経路 'app'）でハンドルのドラッグを始める（S1-17）
+// 経路 'app' の左ボタン: ハンドルの上ならハンドルのドラッグ（S1-17・S1-19）、選んでいる detached の
+// シャフトの本体なら付け直しのドラッグ（S1-19）。S1-21 の手で回すも、ここから始める
 cameraInput.onAppPointerDown((e) => {
   const hit = pickAt(e.pageX, e.pageY);
-  if (hit?.kind === 'handle') interactions.beginHandleDrag(e, hit.id);
+  if (hit?.kind === 'handle') {
+    interactions.beginHandleDrag(e, hit.id);
+    return;
+  }
+  interactions.pressBody(e, bodyAt(e.pageX, e.pageY));
 });
 
 // 選択（S1-16）。左クリックで当たった部品を選び（モーターはそのシャフト）、何もない所なら外す。

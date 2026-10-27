@@ -55,8 +55,8 @@ export interface GearSimDebug {
   /** 選択を置き換える。null で外す。シーンに無い ID は null と同じ（S1-16） */
   select(id: string | null): void;
   /**
-   * 今出ているハンドル（S1-17。'arc'・'axial' は S1-19）。position はドラッグを始めるのに適した点
-   * （projectToScreen して押す）。targetId は move・height ではシャフト
+   * 今出ているハンドル（S1-17・S1-19）。position はドラッグを始めるのに適した点
+   * （projectToScreen して押す）。targetId は move・height・arc ではシャフト、axial では歯車
    */
   getHandles(): Array<{ kind: HandleKind; targetId: string; position: Vec3 }>;
   /**

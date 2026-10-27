@@ -36,8 +36,9 @@ function pickTargetOf(object: Object3D): { kind: PickKind; id: string } | null {
 }
 
 export interface Picker {
-  // 画面座標（CSS ピクセル、canvas 基準でなくページ基準）の下の部品。優先順位は choosePick
-  pick(pageX: number, pageY: number): PickHit | null;
+  // 画面座標（CSS ピクセル、canvas 基準でなくページ基準）の下の部品。優先順位は choosePick。
+  // kinds を渡すと、その種類だけを調べる（S1-19: 候補の陰の部品の本体を調べる）
+  pick(pageX: number, pageY: number, kinds?: readonly PickKind[]): PickHit | null;
 }
 
 export interface PickerDeps {
@@ -50,7 +51,7 @@ export function createPicker(deps: PickerDeps): Picker {
   const raycaster = new Raycaster();
   const ndc = new Vector2();
   return {
-    pick(pageX, pageY) {
+    pick(pageX, pageY, kinds) {
       const rect = deps.canvas.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) return null;
       ndc.set(
@@ -65,7 +66,7 @@ export function createPicker(deps: PickerDeps): Picker {
       const hits: Array<{ kind: PickKind; id: string; distance: number; point: Vec3 }> = [];
       for (const hit of raycaster.intersectObject(deps.root, true)) {
         const target = pickTargetOf(hit.object);
-        if (target === null) continue;
+        if (target === null || (kinds !== undefined && !kinds.includes(target.kind))) continue;
         hits.push({
           ...target,
           distance: hit.distance,

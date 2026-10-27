@@ -308,7 +308,7 @@ interface Settings {
 - 各欄は、それを使うタスクで足していく（上の型は段階 1 の完成形）。S1-14 で `view.watchMode`・`settings.inputDevice`・`settings.trackpadScroll` を足した（`src/app/store.ts` の `ViewState`・`Settings`。初期値は `DEFAULT_VIEW`・`DEFAULT_SETTINGS`）。ストアのアクションは `updateSettings { patch }`（値が `undefined` の項目は変えない）と `setWatchMode { on }`。どちらも値が変わらなければ購読者に知らせない。`loadScene` と編集コマンドは `view`・`settings` を保つ。
 - シーンの変更は、必ず `core/edit` のコマンドを通す（Undo の履歴に積まれる）。コマンドの一覧と引数は S1-11 の資料が正。選択・カメラ・設定はシーンに含めない。
 - `offset` が `AXIAL_SNAP` の倍数であることは、シーンの検証（S1-03）とコマンドの引数チェック（S1-11）で強制する。
-- **部品の上での左ドラッグ**: 選択中の detached シャフトの本体なら付け直し（S1-19）、それ以外は手で回す（S1-21）。
+- **部品の上での左ドラッグ**: 選択中の detached シャフトの本体なら付け直し（S1-19）、それ以外は手で回す（S1-21）。選択中の detached シャフトの本体が候補（S1-18）の陰にあるときも、左ボタンは `'app'`（付け直し）にする（S1-19）。
 - `reattachShaft` は、子の歯車の `offset` が 0 になるように、そのシャフト上の全歯車の `offset` を同じ量だけずらす（S1-11）。
 - **編集コマンド**（S1-11。`src/core/edit/commands.ts` の `applyCommand(scene, command, { ids })`）: 入力のシーンを変えずに新しいシーンを返し、変わらない部分（コレクション・部品）は元の参照を使い回す。何も変わらなければ同じシーンの参照を返す。失敗は例外にせず `{ ok: false, error: { code: 'notFound' | 'invalidValue' | 'notAllowed', message } }`。成功の `created` は新しく作った部品の ID（作った順。例: `addRootShaft` は `[シャフト, 歯車]`）。成功したシーンは必ず `validateScene` を通る。コマンドの一覧:
   - `addRootShaft { axis, origin, gear: { size, teeth } }`、`growGear { mode: 'perimeter', parentGearId, angle, teeth }`（親と同じ大きさ・`offset 0` の歯車と `mesh` のシャフト）、`growGear { mode: 'coaxial', shaftId, offset, size, teeth }`
@@ -352,10 +352,16 @@ interface Settings {
   - 部品パレットの中身は `src/ui/palette.ts`（`createPalette`）。大きさのボタン `data-testid="palette-size-<S|M|L>"`（`role="radio"`、選んでいるものは `aria-checked="true"`）と、起点のシャフトの項目 `palette-root-shaft`。項目のドラッグは項目に `setPointerCapture` して受ける。
   - 編集の操作は `src/app/interactions.ts` の `createInteractions` にまとめる（起点を置くドラッグ、ハンドルのドラッグ、R、Esc）。ドラッグ中の仮のシーンは `displayScene()` で、`startLoop` の `displayScene`（`LoopDeps`。運動はストアのシーンで進め、描くのだけ仮のシーン）と `main.ts` の `pickAt` がこれを描く。置く前の仮の部品の ID は `__ghost_shaft`・`__ghost_gear`。描画領域の上かどうかは `document.elementFromPoint` が canvas か（パネル・軸の目印の上は外）。
   - 仮の部品の見た目は `Renderer.setPreviewStyle({ ids, ghost, invalid } | null)`（`render/sync.ts` の `PreviewStyle`）。`ghost` は半透明、`invalid` は赤（色そのものを赤にする。選択の水色より優先）。ハンドルのドラッグで新たな干渉を生む位置では、動く部品（`movedParts`: そのシャフトとその先のシャフト・歯車・モーター）を赤くする。
-  - ハンドル: 一覧は `src/input/handle-drag.ts` の `listHandles(scene, layout, selection)`（`HandleSpec { kind, targetId, position }`）、描画は `src/render/handles.ts`（`Renderer.setHandles(handles, activeId)`。奥行きを無視して最後に重ねて描く）。ピッキングの ID は `handlePickId` = `'<kind>:<targetId>'`。種類ごとの「レイ → 編集コマンド」は `HANDLE_DRAGS`、形は `HANDLE_BUILDERS` に登録する（S1-19 が `'arc'`・`'axial'` を足す）。ドラッグの共通の振る舞いは `startHandleDrag(scene, handle, startRay)` のセッション（`update(ray)` / `state()` = `{ scene, invalid }` / `finish()` = 確定するコマンドか null）。新たな干渉の判定は `src/core/layout/interference-diff.ts` の `newInterferences(before, after)`。
+  - ハンドル: 一覧は `src/input/handle-drag.ts` の `listHandles(scene, layout, selection)`（`HandleSpec { kind, targetId, position, frame? }`）、描画は `src/render/handles.ts`（`Renderer.setHandles(handles, activeId)`。奥行きを無視して最後に重ねて描く）。ピッキングの ID は `handlePickId` = `'<kind>:<targetId>'`。種類ごとの「レイ → 編集コマンド」は `HANDLE_DRAGS`、形は `HANDLE_BUILDERS` に登録する（S1-19 が `'arc'`・`'axial'` を足す）。ドラッグの共通の振る舞いは `startHandleDrag(scene, handle, startRay)` のセッション（`update(ray)` / `state()` = `{ scene, invalid }` / `finish()` = 確定するコマンドか null）。新たな干渉の判定は `src/core/layout/interference-diff.ts` の `newInterferences(before, after)`。
   - 位置のハンドルは原点の真下の床（`[x, 0, z]`）、高さのハンドルは同じ縦の線の上で、シャフトの部品の最も低い所の 6 mm 下（10 mm より下にはしない）。どちらもドラッグ開始時からの移動量を原点に足して `GRID_SNAP` に吸着する（高さは 0 以上）。レイの計算は `src/input/placement.ts`（`intersectRayPlane`・`closestHeightOnVerticalLine`・`snap`・`rootHeight`・`nextAxis`・`rootPlacementCommand`）。`Renderer.rayAt(pageX, pageY)` が `activeCamera()` のレイを返す。
   - `CameraInput.onAppPointerDown(listener)`: 経路が `'app'` の pointerdown を知らせる（Alt・Space の付いた左ボタンはカメラの経路なので来ない）。`main.ts` はハンドルに当たればハンドルのドラッグを始める（S1-21 の手で回すも、ここから始める）。ハンドルのクリックでは選択を変えない。
   - キー: R → 起点を置くドラッグ中は仮の部品の向き、それ以外は選んでいる `root`・`detached` のシャフト（またはその上の歯車）の `setShaftAxis`（`mesh` のシャフトでは何もしない）。Esc → ドラッグ中ならやめて元に戻す（選択は外さない）。そうでなければ選択を外す。ドラッグ中に Undo などでシーンが変わったら、ハンドルのドラッグはやめる。
+- **円弧・軸方向のハンドルと付け直し**（S1-19）:
+  - `listHandles` の並びは move → height → arc → axial。`'arc'`（`targetId` は `mesh` のシャフト）は `mesh` のシャフトかその上の歯車を選んでいるとき、`'axial'`（`targetId` は歯車）は歯車を選んでいて、それが `mesh` のシャフトの `childGearId` でないとき（`root`・`detached` のシャフトの歯車にも出る）。`HandleSpec.frame`（`{ center, axis, radius, angle }`。`position = center + radialDirection(axis, angle) × radius`）が描画の形を決める。円弧は親の中心・半径 = 中心距離 + 子の歯先円半径 + `ARC_HANDLE_GAP`（8 mm）・今の角度、矢印は歯車の中心・歯先円半径 + `AXIAL_HANDLE_GAP`（6 mm）・その歯車に生やした子の向きから最も離れた外周の 8 方向の 1 つ。
+  - ドラッグの計算の純粋関数は `src/input/handle-math.ts`（`angleAroundAxis`・`unwrapDelta`・`snapAngle`・`closestParamOnLine`・`axialOffsetFromDrag`・`meshSnapAngles`・`nearestSnapAngle`・`crossedSnapAngles`、`ARC_MESH_SNAP` = 5°）。かみ合いへの吸着の相手は `src/core/layout/mesh-snap.ts` の `meshSnapTargets`。
+  - `HANDLE_DRAGS` の関数は `(ray, input: DragInput) => Command | Command[] | null`。`DragInput` は `{ shift?, screen?: { pointer, project } }`（Shift の 15° 単位と、面を真横から見ているときの画面上の角度に使う）。配列は「通ってきた途中の値 → 今の値」で、セッションは順に評価して最後の干渉の無い値を覚える（円弧は 1 回の移動で吸着の範囲を飛び越えても、通ってきたかみ合いの角度で止まる）。`startHandleDrag(scene, handle, startRay, startInput?)`、`session.update(ray, input?)`。動いて見える部品は `handleMovedParts`（axial はその歯車と、その歯車に生やしたシャフトとその先）。
+  - 付け直し: 候補は `src/app/reattach.ts` の `reattachCandidates`（`reattachCommand`・`applyReattach`）。`Interactions.pressBody(e, body)` が選択中の detached シャフトの本体（シャフト・その上の歯車・モーター）の pointerdown で待ち始め、`DRAG_THRESHOLD_PX` 以上動いたら候補を列挙する。子の中心を画面に写した点から `REATTACH_PICK_PX`（24px）以内で最も近い候補を強調し、付け直した仮のシーンを `displayScene()` にして動く部品を半透明（`PreviewStyle.ghost`）にする。離すと `reattachShaft`、候補の無い所・Esc では何もしない。ドラッグ中は候補（S1-18）を隠し、`isDragging()` が真。
+  - 描画: `Renderer.setReattachRings(rings, highlighted)`（`src/render/handles.ts` の `createReattachView`。ピッキングしない半透明の輪）。`Renderer.pick(x, y, kinds?)` は `kinds` を渡すとその種類だけを調べる（`main.ts` の `bodyAt` が、候補の陰の部品の本体を調べるのに使う）。`createInteractions` の依存に `setReattachRings` と `projectToScreen` を足した。
 - **生やす候補**（S1-18）:
   - 生やす歯車の大きさと歯数は `src/app/grow.ts` の `growSpec(parent, kind, paletteSize)`（外周は親と同じ大きさ、同じ軸はパレットの大きさ。歯数はどちらも `DEFAULT_TEETH[大きさ]`）。`candidatesFor(scene, selection, paletteSize)` が選択中の歯車の `listGrowCandidates` を返し（選択が無い・シャフトなら `[]`）、`growCommand(candidate)` が `growGear` にそのまま変換する。`candidateSpec(scene, candidate)` は表示用の `CandidateSpec`。
   - 候補の一覧は `Interactions.candidates()`（`src/app/interactions.ts`）。シーン・選択・パレットの大きさが変わったときだけ列挙し直し、同じ間は同じ参照を返す。ドラッグ中（起点を置く・ハンドル）は `[]`（S1-21 は手で回している間もここで `[]` にする）。`grow(index)` は `command { growGear, selectCreated: true }` を投げる（生やした歯車が選ばれ、続けて次の候補が出る）。
@@ -433,7 +439,7 @@ interface GearSimDebug {
   pick(x: number, y: number): PickHit | null; // ページ座標の下の部品（優先順位つき。S1-16）
   select(id: string | null): void;   // 選択を置き換える。null で外す。シーンに無い ID は null と同じ（S1-16）
   // 今出ているハンドル。position はドラッグを始めるのに適した点（projectToScreen して押す）。
-  // move・height の targetId はシャフト（S1-17）。'arc'・'axial' は S1-19
+  // move・height・arc の targetId はシャフト、axial の targetId は歯車（S1-17・S1-19）
   getHandles(): Array<{ kind: 'move' | 'height' | 'arc' | 'axial'; targetId: string; position: Vec3 }>;
   // 今表示している候補（S1-18）。center は仮の歯車の中心のワールド座標。
   // index は一覧の番号で、pick の結果（kind: 'candidate'）の id は String(index)
@@ -459,7 +465,8 @@ API はタスクで必要になった時点で足していく。足したらこ�
 | S1-13 | `getCamera` / `setCamera` / `getLastContextRequest`（済） |
 | S1-14 | `getInputDevice` / `updateSettings` / `setWatchMode` / `getGizmoTargets`（済） |
 | S1-16 | `getSelection` / `pick` / `select`（済） |
-| S1-17 | `getHandles`（済。`'arc'`・`'axial'` は S1-19） |
+| S1-17 | `getHandles`（済。`'arc'`・`'axial'` は S1-19 で済） |
+| S1-19 | `getHandles` が `'arc'`（`targetId` はシャフト）と `'axial'`（`targetId` は歯車）も返す（済。新しい関数は足していない） |
 | S1-18 | `getCandidates`（済） |
 | S1-21 | `getHand` |
 | S1-22 | `isPaused` / `getWarningParts` |
