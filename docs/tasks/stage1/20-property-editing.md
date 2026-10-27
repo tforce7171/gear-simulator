@@ -1,7 +1,7 @@
 ---
 id: S1-20
 title: プロパティの編集（歯数、モーター）
-status: todo
+status: doing
 depends: [S1-07, S1-16]
 ---
 
