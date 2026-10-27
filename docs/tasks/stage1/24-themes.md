@@ -70,7 +70,7 @@ depends: [S1-04]
   export function nextTheme(theme: ThemeId): ThemeId; // ツールバーのボタンで使う
   ```
 - `src/render/themes.ts`: テーマごとのマテリアルの値と、テーマ・品質の適用（マテリアルの差し替え、影・解像度・環境マップの切り替え）
-- 辞書のキー（日・英）: テーマ名、品質名。ツールバーのボタン名（`toolbar.theme`・`toolbar.theme.tooltip`）は S1-15 で足し済み。UI の配色は `src/ui/shell.css` の `:root` の CSS 変数（`--gs-*`）にまとめてある（トーストは `src/ui/toast.css`）
+- 辞書のキー（日・英）: テーマ名、品質名。ツールバーのボタン名（`toolbar.theme`・`toolbar.theme.tooltip`）は S1-15 で足し済み。ボタンは `UiShell.toolbar.button('theme')` で受け取り、動作を付けて `disabled = false` にする。UI の配色は `src/ui/shell.css` の `:root` の CSS 変数（`--gs-*`）にまとめてある（トーストは `src/ui/toast.css`）
 - `__gearSim` に追加
   ```ts
   getRenderInfo(): { theme: ThemeId; quality: Quality; shadowMapEnabled: boolean; pixelRatio: number; textures: number };

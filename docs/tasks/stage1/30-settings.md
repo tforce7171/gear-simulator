@@ -53,7 +53,7 @@ depends: [S1-14, S1-24, S1-25]
   export function saveSettings(storage: Storage | undefined, settings: Settings): void;
   ```
 - `src/ui/settings-dialog.ts`: 設定画面。要素に `data-testid="settings-dialog"`、各項目に `data-setting="<フィールド名>"`
-- 辞書のキー（日・英）: 画面の題名、各項目名と選択肢、保存できなかったときの文言
+- 辞書のキー（日・英）: 画面の題名、各項目名と選択肢、保存できなかったときの文言。ツールバーのボタン名（`toolbar.settings`・`toolbar.settings.tooltip`）は S1-15 で足し済み。ボタンは `UiShell.toolbar.button('settings')` で受け取り、動作を付けて `disabled = false` にする。
 - `__gearSim` に追加（変更は S1-14 の `updateSettings` を使う）
   ```ts
   getSettings(): Settings;

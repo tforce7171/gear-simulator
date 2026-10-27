@@ -70,7 +70,7 @@ depends: [S1-11, S1-15]
   };
   ```
 - `src/ui/` に保存ダイアログ、作品一覧ダイアログ（エラーの表示は S1-15 のトーストを使う）。主な要素に `data-testid`（`save-dialog`、`works-dialog`、`work-card`、`work-open`、`work-rename`、`work-delete`）
-- 辞書のキー（日・英）: ボタン、ダイアログ、空の一覧、確認、エラーの文言
+- 辞書のキー（日・英）: ダイアログ、空の一覧、確認、エラーの文言。ツールバーのボタン名（`toolbar.save`・`toolbar.save.tooltip`・`toolbar.works`・`toolbar.works.tooltip`）は S1-15 で足し済み。ボタンは `UiShell.toolbar.button('save')`・`button('works')` で受け取り、動作を付けて `disabled = false` にする。
 - `__gearSim` に追加
   ```ts
   getStorageStatus(): { lastAutosaveAt: number | null; pendingAutosave: boolean; currentWorkId: string | null };
