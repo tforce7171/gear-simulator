@@ -156,4 +156,4 @@ ID は S1-03 の `createSequentialIdGenerator()`。下の「基本のシーン�
 ## 完了の条件
 - [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
 - [x] design.md と後続のタスク資料に、必要な変更を反映した（`Command` の一覧・削除と付け直しの規則・`coalesceKey` を design.md §7 に書く。`__gearSim` に足した API が §10 と合っているか確かめる。S1-16・S1-17・S1-20・S1-27 の資料のコマンド名がこれと合っているか確かめる）
-- [ ] `status: done` にしてコミットした
+- [x] `status: done` にしてコミットした
