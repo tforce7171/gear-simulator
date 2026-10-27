@@ -450,3 +450,115 @@ describe('solveMotion', () => {
     expect(m.omegas[A]).toBeCloseTo(-4 * PI, DIGITS);
   });
 });
+
+// S1-21 の資料のテストケース（手で回す）
+describe('stepMotion: 手で回す（S1-21）', () => {
+  // A(20)–B(40)。モーターは引数で
+  const pair2040 = (motors: readonly MotorSpec[] = []): Setup => ({
+    scene: makeScene(
+      [A, B],
+      [
+        ['gear_a', A, 20],
+        ['gear_b', B, 40],
+      ],
+      motors,
+    ),
+    layout: layoutOf([tree('gear_a', 'gear_b')]),
+  });
+
+  it('20 歯側を目標 +π/2 → 20 歯側 π/2、40 歯側 −π/4。ω は角度の変化 / dt', () => {
+    const dt = 0.05;
+    const m = step(pair2040(), motion({ [A]: 0, [B]: 0 }), dt, {
+      hand: { shaftId: A, angle: PI / 2 },
+    });
+    expect(m.angles[A]).toBeCloseTo(PI / 2, DIGITS);
+    expect(m.angles[B]).toBeCloseTo(-PI / 4, DIGITS);
+    expect(m.omegas[A]).toBeCloseTo(PI / 2 / dt, DIGITS);
+    expect(m.omegas[B]).toBeCloseTo(-PI / 4 / dt, DIGITS);
+  });
+
+  it('目標を 10 ステップで 0 → π → 各ステップで、つかんだシャフトの角度が目標に一致する', () => {
+    const s = pair2040();
+    let m = initialMotionState();
+    for (let i = 1; i <= 10; i++) {
+      const target = (PI * i) / 10;
+      m = step(s, m, 1 / 60, { hand: { shaftId: A, angle: target } });
+      expect(m.angles[A]).toBeCloseTo(target, DIGITS);
+      expect(m.angles[B]).toBeCloseTo(-target / 2, DIGITS);
+    }
+  });
+
+  it('モーター付き（direction 1）のシャフトを負の向きに回すと backDriven、正なら入らない', () => {
+    const s = pair2040([['motor_a', A, 'S', 60, 1]]);
+    const neg = step(s, motion({ [A]: 0, [B]: 0 }), 0.1, { hand: { shaftId: A, angle: -0.3 } });
+    expect(neg.backDriven).toEqual(['motor_a']);
+    const pos = step(s, motion({ [A]: 0, [B]: 0 }), 0.1, { hand: { shaftId: A, angle: 0.3 } });
+    expect(pos.backDriven).toEqual([]);
+  });
+
+  it('別の連結成分のモーターは、手の有無で ω が変わらない', () => {
+    const scene = makeScene(
+      [A, B, C],
+      [
+        ['gear_a', A, 20],
+        ['gear_b', B, 40],
+        ['gear_c', C, 20],
+      ],
+      [['motor_c', C, 'S', 60, 1]],
+      [A, C],
+    );
+    const layout = layoutOf([tree('gear_a', 'gear_b')]);
+    const prev = motion({ [A]: 0, [B]: 0, [C]: 0 });
+    const without = stepMotion(scene, layout, prev, 0.1);
+    const withHand = stepMotion(scene, layout, prev, 0.1, { hand: { shaftId: A, angle: 1 } });
+    expect(withHand.omegas[C]).toBeCloseTo(without.omegas[C] as number, DIGITS);
+    expect(withHand.angles[C]).toBeCloseTo(without.angles[C] as number, DIGITS);
+  });
+
+  it('手を外した次のステップ → ω は無負荷回転数、角度は手を外す直前から続く', () => {
+    const s = pair2040([['motor_a', A, 'S', 60, 1]]);
+    let m = initialMotionState();
+    for (const angle of [0, -0.2, -0.4]) m = step(s, m, 0.1, { hand: { shaftId: A, angle } });
+    const released = step(s, m, 0.1);
+    expect(released.omegas[A]).toBeCloseTo(2 * PI, DIGITS);
+    expect(released.omegas[B]).toBeCloseTo(-PI, DIGITS);
+    expect(released.angles[A]).toBeCloseTo(-0.4 + 0.2 * PI, DIGITS);
+    expect(released.angles[B]).toBeCloseTo(0.2 - 0.1 * PI, DIGITS);
+    expect(released.backDriven).toEqual([]);
+  });
+
+  it('stalemate のシーン → 手で回すと角度が変わり locks が空。手を外すと stalemate が戻る', () => {
+    const s = stalematePair();
+    const locked = step(s, initialMotionState(), 0.1);
+    expect(locked.locks.map((l) => l.reason)).toEqual(['stalemate']);
+    const held = step(s, locked, 0.1, { hand: { shaftId: A, angle: 0.7 } });
+    expect(held.angles[A]).toBeCloseTo(0.7, DIGITS);
+    expect(held.locks).toEqual([]);
+    const released = step(s, held, 0.1);
+    expect(released.locks.map((l) => l.reason)).toEqual(['stalemate']);
+    expect(released.angles[A]).toBeCloseTo(0.7, DIGITS);
+    expect(released.omegas).toEqual({ [A]: 0, [B]: 0 });
+  });
+
+  it('三角形のロック（A にモーター）→ 手の目標を変えても角度は変わらず contradiction が残る', () => {
+    const s = triangle([['motor_a', A, 'S', 60, 1]]);
+    let m = step(s, initialMotionState(), 0.1);
+    expect(m.locks.map((l) => l.reason)).toEqual(['contradiction']);
+    for (const angle of [0.3, 0.6, 0.9]) {
+      m = step(s, m, 0.1, { hand: { shaftId: A, angle } });
+      expect(m.angles).toEqual({ [A]: 0, [B]: 0, [C]: 0 });
+      expect(m.locks.map((l) => l.reason)).toEqual(['contradiction']);
+      expect(m.locks[0]?.shaftIds).toEqual([A, B, C]);
+    }
+  });
+
+  it('一時停止（paused: true）でも手の拘束が効く', () => {
+    const s = pair2040([['motor_a', A, 'S', 60, 1]]);
+    const m = step(s, motion({ [A]: 0, [B]: 0 }), 0.1, {
+      paused: true,
+      hand: { shaftId: A, angle: PI / 2 },
+    });
+    expect(m.angles[A]).toBeCloseTo(PI / 2, DIGITS);
+    expect(m.angles[B]).toBeCloseTo(-PI / 4, DIGITS);
+  });
+});

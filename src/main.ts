@@ -103,14 +103,16 @@ cameraInput.setHitTest((x, y) => {
 });
 
 // 経路 'app' の左ボタン: ハンドルの上ならハンドルのドラッグ（S1-17・S1-19）、選んでいる detached の
-// シャフトの本体なら付け直しのドラッグ（S1-19）。S1-21 の手で回すも、ここから始める
+// シャフトの本体なら付け直しのドラッグ（S1-19）、それ以外の部品の本体なら手で回す（S1-21）
 cameraInput.onAppPointerDown((e) => {
   const hit = pickAt(e.pageX, e.pageY);
   if (hit?.kind === 'handle') {
     interactions.beginHandleDrag(e, hit.id);
     return;
   }
-  interactions.pressBody(e, bodyAt(e.pageX, e.pageY));
+  const body = bodyAt(e.pageX, e.pageY);
+  if (interactions.pressBody(e, body)) return;
+  interactions.pressHand(e, body);
 });
 
 // 選択（S1-16）。左クリックで当たった部品を選び（モーターはそのシャフト）、何もない所なら外す。
@@ -134,7 +136,8 @@ createSelectionInput({
     hoverPoint = point;
   },
 });
-// Esc: ドラッグ中ならやめて元に戻す（S1-17）。それ以外は選択を外す
+// Esc: ドラッグ中ならやめて元に戻す（S1-17）。手で回している最中なら回すのを終える（S1-21）。
+// それ以外は選択を外す
 const unselect = (): void => {
   if (interactions.cancel()) return;
   store.dispatch({ type: 'select', id: null });
@@ -238,6 +241,7 @@ installGearSim({
       .map((h) => ({ kind: h.kind, targetId: h.targetId, position: h.position })),
   getCandidates: () =>
     interactions.candidates().map((c, index) => ({ index, kind: c.kind, center: c.center })),
+  getHand: () => store.getState().sim.hand,
 });
 
 startLoop({

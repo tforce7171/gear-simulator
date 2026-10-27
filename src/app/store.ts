@@ -8,7 +8,7 @@ import {
   undo,
 } from '../core/edit/history';
 import { initialMotionState, solveMotion } from '../core/kinematics/motion';
-import type { MotionState } from '../core/kinematics/types';
+import type { HandConstraint, MotionState } from '../core/kinematics/types';
 import { resolveLayout } from '../core/layout/resolve';
 import type { Layout } from '../core/layout/types';
 import { createRandomIdGenerator, type IdGenerator } from '../core/scene/ids';
@@ -34,6 +34,13 @@ export interface ViewState {
 
 export const DEFAULT_VIEW: ViewState = { watchMode: false };
 
+// 運動の入力（design.md §7 の AppState.sim）。保存せず、Undo の対象にしない。paused は S1-22 で足す
+export interface SimState {
+  readonly hand: HandConstraint | null; // 手で回しているシャフトと目標の角度（S1-21）。回していなければ null
+}
+
+export const DEFAULT_SIM: SimState = { hand: null };
+
 // 部品パレットで選んでいるもの（design.md §7 の AppState.palette。S1-17）。S2-05 で種類を足す
 export interface PaletteState {
   readonly size: SizeKey; // 起点を置く・同じ軸に生やす歯車の大きさ
@@ -47,6 +54,7 @@ export interface AppState {
   readonly history: History; // Undo/Redo の履歴（S1-11）
   readonly selection: string | null; // 選択中の歯車かシャフト。1 つだけ（S1-16）
   readonly motion: MotionState;
+  readonly sim: SimState; // S1-21
   readonly view: ViewState; // S1-14
   readonly settings: Settings; // S1-14
   readonly palette: PaletteState; // S1-17
@@ -83,6 +91,8 @@ export interface Store {
   subscribe(listener: (state: AppState) => void): () => void; // 解除する関数を返す
   // 毎フレームの運動の更新。購読者には知らせない（毎フレーム呼ばれるため）
   setMotion(motion: MotionState): void;
+  // 手の拘束（S1-21）。ポインターが動くたびに呼ばれるので、購読者には知らせない
+  setHand(hand: HandConstraint | null): void;
 }
 
 // シーンを読み込んだ直後の運動: 角度は 0、ω・ロック・負けたモーターは今のシーンから求めた値
@@ -120,6 +130,7 @@ function reduce(state: AppState, action: AppAction, ids: IdGenerator): AppState 
         ...state,
         scene: action.scene,
         history: emptyHistory(),
+        sim: { ...state.sim, hand: null },
         motion: initialMotion(action.scene, resolveLayout(action.scene)),
       };
     case 'command': {
@@ -170,6 +181,7 @@ export function createStore(scene: Scene, options: StoreOptions = {}): Store {
     history: emptyHistory(),
     selection: null,
     motion: initialMotion(scene, resolveLayout(scene)),
+    sim: DEFAULT_SIM,
     view: DEFAULT_VIEW,
     settings: DEFAULT_SETTINGS,
     palette: DEFAULT_PALETTE,
@@ -192,6 +204,10 @@ export function createStore(scene: Scene, options: StoreOptions = {}): Store {
     },
     setMotion(motion) {
       state = { ...state, motion };
+    },
+    setHand(hand) {
+      if (hand === state.sim.hand) return;
+      state = { ...state, sim: { ...state.sim, hand } };
     },
   };
 }

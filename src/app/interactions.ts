@@ -5,6 +5,7 @@ import { newInterferences } from '../core/layout/interference-diff';
 import { resolveLayout } from '../core/layout/resolve';
 import type { Vec3 } from '../core/math/vec3';
 import type { Axis, Scene } from '../core/scene/types';
+import { grabTarget, type HandRotateSession, startHandRotate } from '../input/hand-rotate';
 import {
   type DragInput,
   type HandleDragSession,
@@ -36,6 +37,7 @@ import type { Store } from './store';
 // ドラッグ中は履歴に積まない仮のシーン（displayScene）を描かせ、離したら 1 つの編集コマンドで確定する。
 // 生やす候補（S1-18）: 歯車を選んでいる間は候補を出し、クリックした候補で growGear を実行する。
 // 付け直し（S1-19）: 選んでいる detached のシャフトの本体を左ドラッグして、別の歯車の外周の候補の上で離す
+// 手で回す（S1-21）: それ以外の部品の本体の左ドラッグで、そのシャフトを手の角度に拘束する（AppState.sim.hand）
 
 // 置く前の仮の部品の ID（シーンの ID と重ならない）
 export const GHOST_SHAFT_ID = '__ghost_shaft';
@@ -83,13 +85,16 @@ export interface Interactions {
   // 部品の本体の上の 'app' の pointerdown。付け直しのドラッグを待ち始めたら true（S1-19。
   // DRAG_THRESHOLD_PX 以上動いたら始まり、それまでに離せばクリックのまま）
   pressBody(e: PointerEvent, body: { kind: PickKind; id: string } | null): boolean;
+  // 部品の本体の上の 'app' の pointerdown で、pressBody が false だったとき。手で回すのを待ち始めたら true
+  // （S1-21。DRAG_THRESHOLD_PX 以上動いたら回し始め、それまでに離せばクリックのまま）
+  pressHand(e: PointerEvent, body: { kind: PickKind; id: string; point: Vec3 } | null): boolean;
   // R キー
   rotate(): void;
-  // Esc キー。ドラッグをやめたら true（選択は外さない）
+  // Esc キー。ドラッグをやめたら true（選択は外さない）。手で回している最中なら回すのを終える
   cancel(): boolean;
   // 何かをドラッグしている途中か
   isDragging(): boolean;
-  // 今出している生やす候補（S1-18）。選択が歯車でない・ドラッグ中は []。
+  // 今出している生やす候補（S1-18）。選択が歯車でない・ドラッグ中・手で回している間は []。
   // 選択・シーン・パレットの大きさが変わったときだけ列挙し直す（同じ間は同じ参照）
   candidates(): readonly GrowCandidate[];
   // マウスを乗せた候補の番号（濃く表示する）。無ければ null
@@ -125,6 +130,18 @@ interface ReattachDrag {
   } | null;
 }
 
+interface HandDrag {
+  pointerId: number;
+  down: { x: number; y: number };
+  startScene: Scene;
+  session: HandRotateSession;
+  // DRAG_THRESHOLD_PX 以上動いたら true（回し始める）
+  active: boolean;
+}
+
+// 手で回している間のカーソル
+const GRABBING_CURSOR = 'grabbing';
+
 const NO_RINGS: readonly ReattachRing[] = [];
 
 const ghostIds = (kind: 'shaft' | 'gear' | 'motor'): string =>
@@ -135,6 +152,7 @@ export function createInteractions(deps: InteractionsDeps): Interactions {
   let rootDrag: RootDrag | null = null;
   let handleDrag: HandleDrag | null = null;
   let reattachDrag: ReattachDrag | null = null;
+  let handDrag: HandDrag | null = null;
   let style: PreviewStyle | null = null;
   let styleKey = '';
   let hoveredCandidate: number | null = null;
@@ -155,7 +173,12 @@ export function createInteractions(deps: InteractionsDeps): Interactions {
     list: readonly GrowCandidate[];
     specs: readonly CandidateSpec[];
   } {
-    if (rootDrag !== null || handleDrag !== null || reattachDrag?.active != null) {
+    if (
+      rootDrag !== null ||
+      handleDrag !== null ||
+      reattachDrag?.active != null ||
+      handDrag?.active === true
+    ) {
       return NO_CANDIDATES;
     }
     const { scene, selection, palette } = store.getState();
@@ -266,7 +289,34 @@ export function createInteractions(deps: InteractionsDeps): Interactions {
       candidate === undefined ? null : applyReattach(drag.startScene, drag.shaftId, candidate);
   }
 
+  function endHandDrag(): void {
+    const drag = handDrag;
+    if (drag === null) return;
+    handDrag = null;
+    if (canvas.hasPointerCapture(drag.pointerId)) canvas.releasePointerCapture(drag.pointerId);
+    if (drag.active) canvas.style.cursor = '';
+    // 角度はそのまま。次のフレームからつり合いの速度で回る
+    store.setHand(null);
+  }
+
+  // 手で回す: しきい値を超えたら回し始め、目標の角度（押した位置が基準）をストアに入れる
+  function moveHand(drag: HandDrag, e: PointerEvent): void {
+    const point = { x: e.pageX, y: e.pageY };
+    if (!drag.active) {
+      if (!exceedsDragThreshold(drag.down, point)) return;
+      drag.active = true;
+      canvas.style.cursor = GRABBING_CURSOR;
+    }
+    const ray = deps.rayAt(point.x, point.y);
+    if (ray !== null) drag.session.update(ray, dragInput(e));
+    store.setHand({ shaftId: drag.session.shaftId, angle: drag.session.target() });
+  }
+
   const onPointerMove = (e: PointerEvent): void => {
+    if (handDrag !== null && e.pointerId === handDrag.pointerId) {
+      moveHand(handDrag, e);
+      return;
+    }
     if (reattachDrag !== null && e.pointerId === reattachDrag.pointerId) {
       moveReattach(reattachDrag, { x: e.pageX, y: e.pageY });
       return;
@@ -277,6 +327,11 @@ export function createInteractions(deps: InteractionsDeps): Interactions {
   };
   const onPointerUp = (e: PointerEvent): void => {
     if (e.button !== 0) return;
+    if (handDrag !== null && e.pointerId === handDrag.pointerId) {
+      if (handDrag.active) moveHand(handDrag, e);
+      endHandDrag();
+      return;
+    }
     if (reattachDrag !== null && e.pointerId === reattachDrag.pointerId) {
       moveReattach(reattachDrag, { x: e.pageX, y: e.pageY });
       endReattachDrag(true);
@@ -290,6 +345,7 @@ export function createInteractions(deps: InteractionsDeps): Interactions {
   const onPointerCancel = (e: PointerEvent): void => {
     if (handleDrag !== null && e.pointerId === handleDrag.pointerId) endHandleDrag(false);
     if (reattachDrag !== null && e.pointerId === reattachDrag.pointerId) endReattachDrag(false);
+    if (handDrag !== null && e.pointerId === handDrag.pointerId) endHandDrag();
   };
   canvas.addEventListener('pointermove', onPointerMove);
   canvas.addEventListener('pointerup', onPointerUp);
@@ -300,6 +356,8 @@ export function createInteractions(deps: InteractionsDeps): Interactions {
   store.subscribe((state) => {
     if (handleDrag !== null && state.scene !== handleDrag.session.startScene) endHandleDrag(false);
     if (reattachDrag !== null && state.scene !== reattachDrag.startScene) endReattachDrag(false);
+    // 手で回している間にシーンが変わったら（Undo・読み込みなど）、回すのを終える
+    if (handDrag !== null && state.scene !== handDrag.startScene) endHandDrag();
     if (rootDrag !== null) updateRoot(null);
   });
 
@@ -328,6 +386,8 @@ export function createInteractions(deps: InteractionsDeps): Interactions {
   }
 
   function handles(): HandleSpec[] {
+    // 手で回している間はハンドルを隠す（S1-21）
+    if (handDrag?.active === true) return [];
     const scene = displayScene();
     return listHandles(scene, resolveLayout(scene), store.getState().selection);
   }
@@ -374,6 +434,7 @@ export function createInteractions(deps: InteractionsDeps): Interactions {
     beginRootDrag(pageX, pageY) {
       endHandleDrag(false);
       endReattachDrag(false);
+      endHandDrag();
       rootDrag = { axis: 'y', last: null, preview: null };
       updateRoot({ x: pageX, y: pageY });
     },
@@ -393,7 +454,9 @@ export function createInteractions(deps: InteractionsDeps): Interactions {
       rootDrag = null;
     },
     beginHandleDrag(e, handleId) {
-      if (rootDrag !== null || handleDrag !== null || reattachDrag !== null) return false;
+      if (rootDrag !== null || handleDrag !== null || reattachDrag !== null || handDrag !== null) {
+        return false;
+      }
       const handle = handles().find((h) => handlePickId(h) === handleId);
       const ray = deps.rayAt(e.pageX, e.pageY);
       if (handle === undefined || ray === null) return false;
@@ -414,7 +477,9 @@ export function createInteractions(deps: InteractionsDeps): Interactions {
     },
     isReattachBody: (body) => reattachShaftFor(body) !== null,
     pressBody(e, body) {
-      if (rootDrag !== null || handleDrag !== null || reattachDrag !== null) return false;
+      if (rootDrag !== null || handleDrag !== null || reattachDrag !== null || handDrag !== null) {
+        return false;
+      }
       const shaftId = reattachShaftFor(body);
       if (shaftId === null) return false;
       reattachDrag = {
@@ -423,6 +488,35 @@ export function createInteractions(deps: InteractionsDeps): Interactions {
         shaftId,
         startScene: store.getState().scene,
         active: null,
+      };
+      try {
+        canvas.setPointerCapture(e.pointerId);
+      } catch {
+        // 捕捉できなくても、キャンバスの上でのドラッグは動く
+      }
+      return true;
+    },
+    pressHand(e, body) {
+      if (rootDrag !== null || handleDrag !== null || reattachDrag !== null || handDrag !== null) {
+        return false;
+      }
+      if (body === null) return false;
+      const { scene, motion } = store.getState();
+      const target = grabTarget(scene, resolveLayout(scene), body);
+      const ray = deps.rayAt(e.pageX, e.pageY);
+      if (target === null || ray === null) return false;
+      handDrag = {
+        pointerId: e.pointerId,
+        down: { x: e.pageX, y: e.pageY },
+        startScene: scene,
+        // 回す基準は押した位置と、押したときのシャフトの角度
+        session: startHandRotate({
+          ...target,
+          startAngle: motion.angles[target.shaftId] ?? 0,
+          startRay: ray,
+          startInput: dragInput(e),
+        }),
+        active: false,
       };
       try {
         canvas.setPointerCapture(e.pointerId);
@@ -461,6 +555,12 @@ export function createInteractions(deps: InteractionsDeps): Interactions {
       if (reattachDrag !== null) {
         endReattachDrag(false);
         return true;
+      }
+      if (handDrag !== null) {
+        // 回している最中なら回すのを終えるだけ（選択は外さない）。押しただけならそのまま Esc の扱い
+        const active = handDrag.active;
+        endHandDrag();
+        return active;
       }
       return false;
     },

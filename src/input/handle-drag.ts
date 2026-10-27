@@ -263,10 +263,11 @@ function normalized(v: Vec3): Vec3 {
   return l === 0 ? v : scale(v, 1 / l);
 }
 
-// 円弧のドラッグでの、親の軸まわりのポインターの角度。レイと親の面の交点の角度か、
-// 面を真横から見ているとき（|レイ·軸| < ARC_EDGE_ON_DOT）は、親の中心を画面に写した点のまわりの
-// ポインターの画面上の角度（軸がカメラから遠ざかる向きなら符号を反転）。決まらなければ null
-function arcPointerAngle(
+// 軸 axis（中心 center）まわりのポインターの角度（angleAroundAxis と同じ基準）。レイと「center を通り軸に
+// 垂直な面」との交点の角度で、面を真横から見ている（|レイの向き·軸| < ARC_EDGE_ON_DOT）ときは、center を
+// 画面に写した点のまわりのポインターの画面上の角度で代用する（mode: 'screen'。軸がカメラから遠ざかる向きなら
+// 符号を反転）。円弧のハンドル（S1-19）と手で回す（S1-21）が使う。求められなければ null
+export function pointerAngleAroundAxis(
   ray: Ray,
   input: DragInput,
   center: Vec3,
@@ -305,13 +306,13 @@ const arcDrag: HandleDragFactory = (scene, layout, handle, startRay, startInput)
     child.pitchRadius,
     meshSnapTargets(scene, layout, shaftId),
   );
-  let prev = arcPointerAngle(startRay, startInput, parent.center, parent.axis);
+  let prev = pointerAngleAroundAxis(startRay, startInput, parent.center, parent.axis);
   if (prev === null) return null;
   let total = 0;
   let lastRaw = p.angle;
   const command = (angle: number): Command => ({ type: 'setMeshAngle', shaftId, angle });
   return (ray, input) => {
-    const now = arcPointerAngle(ray, input, parent.center, parent.axis);
+    const now = pointerAngleAroundAxis(ray, input, parent.center, parent.axis);
     if (now === null) return null;
     // 角度の求め方が切り替わったら、その間の変化は数えない（飛ばないように）
     if (prev !== null && now.mode === prev.mode) total += unwrapDelta(prev.angle, now.angle);
