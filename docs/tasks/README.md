@@ -28,7 +28,7 @@
 | [S1-04](stage1/04-vertical-slice.md) | 最小の縦通し: 固定シーンを描画して回す | S1-03 | done |
 | [S1-05](stage1/05-mesh-graph.md) | 運動学: かみ合いのグラフ、速度比、矛盾の検出 | S1-04 | done |
 | [S1-06](stage1/06-force-balance.md) | 力のつり合い | S1-05 | done |
-| [S1-07](stage1/07-lock-detection.md) | ロック判定と状態の出力 | S1-06 | todo |
+| [S1-07](stage1/07-lock-detection.md) | ロック判定と状態の出力 | S1-06 | done |
 | [S1-08](stage1/08-collision.md) | 干渉判定 | S1-04 | todo |
 | [S1-09](stage1/09-layout-tree.md) | 配置の木構造 | S1-03, S1-08 | todo |
 | [S1-10](stage1/10-candidates.md) | 生やす候補の列挙 | S1-08, S1-09 | todo |

@@ -1,7 +1,7 @@
+import { stepMotion } from '../core/kinematics/motion';
 import type { Layout } from '../core/layout/types';
 import type { Scene } from '../core/scene/types';
 import type { SceneView } from '../render/scene-view';
-import { stepProvisionalMotion } from './provisional-motion';
 import type { Store } from './store';
 
 // タブが裏に回ったときなどの飛びを防ぐ、1 フレームの経過時間の上限（秒）
@@ -25,7 +25,7 @@ export function runFrame({ store, view, layoutOf }: LoopDeps, dt: number): void 
   const { scene, motion } = store.getState();
   const layout = layoutOf(scene);
   view.sync(scene, layout);
-  const next = stepProvisionalMotion(scene, layout, motion, dt);
+  const next = stepMotion(scene, layout, motion, dt);
   store.setMotion(next);
   view.update(next, layout);
   view.render();

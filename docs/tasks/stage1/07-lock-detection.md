@@ -1,7 +1,7 @@
 ---
 id: S1-07
 title: ロック判定と状態の出力
-status: todo
+status: done
 depends: [S1-06]
 ---
 
@@ -96,6 +96,6 @@ S1-05・S1-06 の結果から、ロックの判定、負けたモーター、角
 - なし（ロックの見た目は S1-22）
 
 ## 完了の条件
-- [ ] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
-- [ ] design.md と後続のタスク資料に、必要な変更を反映した（`backDriven` の定義と手で回す入力の扱いを design.md §6 に書く。`HandConstraint` の型を design.md §6 に足す。S1-21 の資料に「拘束の解法は S1-07 の `stepMotion` の `hand` 入力を使う」ことが書かれているか確かめる）
-- [ ] `status: done` にしてコミットした
+- [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
+- [x] design.md と後続のタスク資料に、必要な変更を反映した（`backDriven` の定義と手で回す入力の扱いを design.md §6 に書く。`HandConstraint` の型を design.md §6 に足す。S1-21 の資料に「拘束の解法は S1-07 の `stepMotion` の `hand` 入力を使う」ことが書かれているか確かめる）
+- [x] `status: done` にしてコミットした

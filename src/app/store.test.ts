@@ -39,6 +39,20 @@ describe('createStore', () => {
     expect(store.getState().motion.omegas).toEqual({ shaft_1: 0, shaft_2: 0 });
   });
 
+  it('最初の運動にロックが出る: 12 歯どうしに逆向きの S 60rpm', () => {
+    const gear2 = demoScene.gears.gear_2;
+    const motor1 = demoScene.motors.motor_1;
+    if (gear2 === undefined || motor1 === undefined) throw new Error('demoScene が想定と違う');
+    const scene: Scene = {
+      ...demoScene,
+      gears: { ...demoScene.gears, gear_2: { ...gear2, teeth: 12 } },
+      motors: { ...demoScene.motors, motor_2: { ...motor1, id: 'motor_2', shaftId: 'shaft_2' } },
+    };
+    const { motion } = createStore(scene).getState();
+    expect(motion.locks.map((l) => l.reason)).toEqual(['stalemate']);
+    expect(motion.omegas).toEqual({ shaft_1: 0, shaft_2: 0 });
+  });
+
   it('setMotion は購読者に知らせない', () => {
     const store = createStore(demoScene);
     const listener = vi.fn();

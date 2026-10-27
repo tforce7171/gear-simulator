@@ -51,6 +51,8 @@ depends: [S1-07, S1-16]
   ): MotionState;
   ```
   - 毎フレーム `opts` に `{ paused: sim.paused, hand: sim.hand }` を渡す。上の「運動」と「ロック中の扱い」の振る舞いが満たされていなければ、S1-07 の純粋関数を直す
+  - S1-07 の時点で `src/app/loop.ts` の `runFrame` は `stepMotion(scene, layout, motion, dt)` を `opts` 無しで呼んでいる。ここに `opts` を足す（`hand` が `null` なら渡さない）。拘束の解法（`θ = N q`、ω = 角度の変化 / dt、`backDriven`、ロック中の扱い）は S1-07 の `stepMotion` に実装とテストがある（`src/core/kinematics/motion.test.ts`）。上の Vitest のうち同じ内容のものは、そちらで足りていれば足さなくてよい
+  - `HandConstraint` の型は `src/core/kinematics/types.ts`、`MotionOptions` は `src/core/kinematics/motion.ts` にある
 - `src/input/handle-math.ts` の `angleAroundAxis` と `unwrapDelta`（S1-19 と共用。S1-19 が先に作っていればそれを使い、無ければここで作る。仕様は S1-19 の資料のとおり）
 - `src/input/hand-rotate.ts`: ポインターから目標の角度を求めて、毎フレーム運動の更新へ渡す
 - `__gearSim` に追加（design.md §10 も更新する）

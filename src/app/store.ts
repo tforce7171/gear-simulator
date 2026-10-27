@@ -1,8 +1,8 @@
-import { emptyMotion, type MotionState } from '../core/kinematics/types';
+import { initialMotionState, solveMotion } from '../core/kinematics/motion';
+import type { MotionState } from '../core/kinematics/types';
 import { resolveLayout } from '../core/layout/resolve';
 import type { Layout } from '../core/layout/types';
 import type { Scene } from '../core/scene/types';
-import { stepProvisionalMotion } from './provisional-motion';
 
 // アプリの状態（design.md §7）。欄は使うタスクで足していく
 export interface AppState {
@@ -21,9 +21,9 @@ export interface Store {
   setMotion(motion: MotionState): void;
 }
 
-// シーンを読み込んだ直後の運動: 角度は 0、ω は今のシーンから求めた値
+// シーンを読み込んだ直後の運動: 角度は 0、ω・ロック・負けたモーターは今のシーンから求めた値
 export function initialMotion(scene: Scene, layout: Layout): MotionState {
-  return stepProvisionalMotion(scene, layout, emptyMotion(), 0);
+  return solveMotion(scene, layout, initialMotionState());
 }
 
 function reduce(_state: AppState, action: AppAction): AppState {
