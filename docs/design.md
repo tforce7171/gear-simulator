@@ -379,9 +379,16 @@ interface Settings {
   - 描画を軽くする仕組み（S1-24。SwiftShader でも通しテストが動く速さにするため）: `Renderer.render` は見た目が前のフレームと同じなら描かない（`src/render/redraw.ts` の `createRedrawDetector`。描くオブジェクトの並び・見えるか・ワールド行列・材質、カメラ、描画バッファの大きさ、`SceneSync.version()`（部品の回転・震え・材質の選び直しで増える）を比べる。材質の色などを直接書き換えたら `invalidate` する）。影マップは `SceneSync.version()` が変わったときだけ描き直す。最初のフレームは 1 画素を読み戻して描き終わるまで待ち、`isReady` の前にシェーダーの準備を済ませる。新しく描くものを足すタスクは、行列・見えるか・材質の差し替え以外で見た目を変えるなら（材質の値を毎フレーム書き換えるなど）、`SceneSync.version()` を増やすか `invalidate` を呼ぶこと。カメラの `update` の経過時間の上限は 0.25 秒（`src/input/camera.ts` の `CAMERA_MAX_DT`。フレームが遅くても移り変わりが実時間で終わるように）。
 - **音**（S1-25。計算は `src/core/audio-model/index.ts`、再生は `src/audio/`）:
   - `core/audio-model`: `meshKey`（2 つの歯車の ID を文字列順に `|` でつなぐ）・`toothPassFrequency`・`clickToneMix`・`toneParams`・`toothPassTimes`（境目 k を「小さいほう < k ≤ 大きいほう」で数えるので、続くフレームで同じ境目を 2 回数えない）・`clickParams`（部分音とノイズのフィルタを同じ割合で ±3%）・`MATERIALS`・`computeMeshVoices(scene, layout, motion)`（`Layout.meshes` の順に全組。`MeshVoice { key, gearId, shaftId, teeth, frequency, click, tone }`。`gearId` はクリックの時刻を求める歯車で key の先頭の歯車、`frequency` はクランプしない歯の通過頻度）・`activeVoices(voices, max = MAX_AUDIO_VOICES)`（f > 0 の組を並びの順に最初の max 組。S1-26 がカメラに近い順の選び方に置き換える）・`shouldScheduleClicks`・定数 `MASTER_GAIN`（0.5）・`MUTE_RAMP_SEC`（0.05）・`CLICK_LATENCY`（0.03）。core は Web Audio に触れない（`import-rules.test.ts` は core に `AudioContext` という語があるだけで失敗するので、コメントにも書かない）。
-  - `src/audio/engine.ts` の `createAudioEngine({ muted?, material?, random?, createContext? })`: `start()`（AudioContext を作って `resume`。2 回目以降は止まっていれば `resume` だけ）・`setMuted`（主音量を 50 ms の直線で変える）・`setMaterial(id)`（初期値 `'metal'`。S1-30 がテーマに結び付ける）・`update(voices, angles, dt)`（毎フレーム）・`state()`（`__gearSim.getAudio` の中身）。AudioContext を作る前も `update` で鳴らす組は求める。主音量の後にリミッター（`DynamicsCompressorNode`）を挟む。
+  - `src/audio/engine.ts` の `createAudioEngine({ muted?, material?, random?, createContext? })`: `start()`（AudioContext を作って `resume`。2 回目以降は止まっていれば `resume` だけ）・`setMuted`（主音量を 50 ms の直線で変える）・`setMaterial(id)`（初期値 `'metal'`。S1-30 がテーマに結び付ける）・`update(frame: AudioFrame)`（毎フレーム。S1-26 で引数を 1 つのオブジェクト `{ voices, angles, dt, listener, motors, locks }` にした）・`state()`（`__gearSim.getAudio` の中身）。AudioContext を作る前も `update` で鳴らす組・背景・モーター・ロックの音の回数は求める。主音量の後にリミッター（`DynamicsCompressorNode`）を挟む。
   - かみ合い 1 組分の合成は `src/audio/mesh-voice.ts` の `createMeshVoiceSynth`（連続音: `PeriodicWave` の発振器 → ローパス、ざらつき: ループするノイズ → 基本周波数の 2 倍の帯域フィルタ。値は時定数 20 ms で追いかける。クリック: 部分音の正弦波とフィルタを通したノイズを、1 ms の立ち上がりと時定数 = 表の減衰時間の指数の減衰で予約する。消すときは 100 ms でフェードアウト）。ノイズは実行時に 1 秒の白色雑音の `AudioBuffer` を作って共有する。
-  - `main.ts`: `window` の `pointerdown`・`keydown`（capture）で `audio.start()` を呼ぶ（描画領域に限らず最初のユーザー操作で始めるため）。`startLoop` の `onFrame(dt)`（S1-25 で経過時間を渡すようにした）で、運動を進めた後のストアの状態から `computeMeshVoices` を求めて `audio.update` に渡す。
+  - `main.ts`: `window` の `pointerdown`・`keydown`（capture）で `audio.start()` を呼ぶ（描画領域に限らず最初のユーザー操作で始めるため）。`startLoop` の `onFrame(dt)`（S1-25 で経過時間を渡すようにした）で、運動を進めた後のストアの状態から `computeMeshVoices`・`computeMotorHums`・ロックの位置（`lockPosition`）を求め、今描いたカメラ（`cameraInput.activeCamera()` の位置・前方向・上方向）をリスナーにして `audio.update` に渡す。
+- **音の空間配置と専用音**（S1-26。計算は `src/core/audio-model/spatial.ts`、`index.ts` から再輸出）:
+  - `MeshVoice` に `position`（`meshContactPoint(layout, mesh)`: a の中心から b の中心へ向かう線分上で a のピッチ円半径の点）を足した。`activeVoices` は無くし、`selectVoices(candidates, listener, previous, max)`（f > 0 の候補をリスナーに近い順に max 個。前のフレームで鳴っていた候補は距離を `VOICE_HYSTERESIS`（0.9）倍して比べる。同じ距離なら key の文字列順）に置き換えた。候補の `level` は `backgroundToneLevel(f, material)`（クロスフェードの重みを掛けない連続音の level。クリックの範囲の組も連続音とみなす）。
+  - 背景のうなり: `summarizeBackground(rest, listener)`（`g_i = level × distanceGain(距離)`、音量 `min(0.5, √Σg²)`、周波数は g で重み付けした log2(f) の平均を 30〜2000 Hz にクランプ。rest が空なら null）。`src/audio/background.ts` がパンなしで主音量に直接つなぐ（材質の倍音の連続音＋同じ周波数の帯域ノイズ Q 1・0.5 倍）。
+  - `PANNER`（`HRTF`・`inverse`・`refDistance` 150・`rolloffFactor` 1・`maxDistance` 10000。長さは mm のまま）と `distanceGain`（同じ式。refDistance 未満は refDistance）。PannerNode とリスナーは `src/audio/panner.ts`（`createPanner`・`applyListener`。位置は時定数 20 ms で追いかける）。かみ合い・モーター・ロックの音源は PannerNode を通して主音量につなぐ。入れ替わる音源は 100 ms（`VOICE_FADE_SEC`）でフェードイン・アウトする。
+  - モーター: `motorHumParams(size, rpm, direction, ω)`（`strain = 1 − d·ω/ω0`、周波数 = 小 220・中 140・大 90 Hz × (0.6 + 0.4 × clamp(|ω|/ω0, 0, 1.5))、音量 0.08 + 0.07 × clamp(strain, 0, 1)、`grind = clamp(strain − 1, 0, 1)`）と `computeMotorHums(scene, motion, paused, positionOf)`（ON のモーター、ID の昇順。一時停止中は空。`grind` は `backDriven` に入っているモーターだけ）。位置は `src/render/sync.ts` の `motorCenter(shaftLayout, size)`（モーターの箱の中心）。鳴らすのはリスナーに近い `MAX_MOTOR_VOICES`（4）個（`selectVoices` で選ぶ）。合成は `src/audio/motor-hum.ts`。
+  - ロック: `lockKey(lock)`（`` `${reason}:${shaftIds.join(',')}` ``）・`diffLocks(prev, next)`・`lockPosition(layout, lock)`（ロックしている歯車の中心の平均）・`canPlayImpact(history, now)`（直近 1 秒に 4 回まで）。衝撃音とガタガタは `src/audio/lock-sound.ts`。衝撃音の回数の制限は `update` の dt を積算した時計で数える。
+
 - **生やす候補**（S1-18）:
   - 生やす歯車の大きさと歯数は `src/app/grow.ts` の `growSpec(parent, kind, paletteSize)`（外周は親と同じ大きさ、同じ軸はパレットの大きさ。歯数はどちらも `DEFAULT_TEETH[大きさ]`）。`candidatesFor(scene, selection, paletteSize)` が選択中の歯車の `listGrowCandidates` を返し（選択が無い・シャフトなら `[]`）、`growCommand(candidate)` が `growGear` にそのまま変換する。`candidateSpec(scene, candidate)` は表示用の `CandidateSpec`。
   - 候補の一覧は `Interactions.candidates()`（`src/app/interactions.ts`）。シーン・選択・パレットの大きさが変わったときだけ列挙し直し、同じ間は同じ参照を返す。ドラッグ中（起点を置く・ハンドル）は `[]`（S1-21 は手で回している間もここで `[]` にする）。`grow(index)` は `command { growGear, selectCreated: true }` を投げる（生やした歯車が選ばれ、続けて次の候補が出る）。
@@ -472,14 +479,19 @@ interface GearSimDebug {
   // arrows は今描いている回転方向の矢印（gearId の昇順。止まっている歯車は含まない。10 Hz で書き換える）
   getInfoOverlay(): { enabled: boolean; arrows: Array<{ gearId: GearId; direction: 1 | -1 }> };
   getRenderInfo(): { theme: ThemeId; quality: Quality; shadowMapEnabled: boolean; pixelRatio: number; textures: number }; // S1-24
-  // 音（S1-25。型は src/audio/engine.ts の AudioState）。contextState は AudioContext を作る前は 'none'。
-  // voices は今鳴らしているかみ合い（f > 0 の組のうち Layout.meshes の順で最初の 16 組）。key は meshKey、
-  // frequency は歯の通過頻度（Hz。連続音のクランプ前の値）、click・tone はクロスフェードの重み
+  // 音（S1-25・S1-26。型は src/audio/engine.ts の AudioState）。contextState は AudioContext を作る前は 'none'。
+  // voices は今鳴らしているかみ合い（f > 0 の組のうちカメラに近い 16 組。S1-26）。key は meshKey、
+  // frequency は歯の通過頻度（Hz。連続音のクランプ前の値）、click・tone はクロスフェードの重み、position は接点
   getAudio(): {
     contextState: 'none' | AudioContextState;
     muted: boolean;
     material: AudioMaterialId;
-    voices: Array<{ key: string; frequency: number; click: number; tone: number }>;
+    voices: Array<{ key: string; frequency: number; click: number; tone: number; position: Vec3 }>;
+    background: { level: number; frequency: number } | null; // 選ばれなかった組の背景のうなり（S1-26）
+    // 鳴らしているモーターのうなり（カメラに近い 4 個まで、motorId の昇順。一時停止中・OFF は入らない。S1-26）
+    motors: Array<{ motorId: MotorId; frequency: number; strain: number; grind: number }>;
+    // 起動からの衝撃音の回数と、ガタガタ中のロックのキー（lockKey、昇順。S1-26）
+    lockSounds: { impacts: number; rattling: string[] };
   };
 }
 
@@ -511,6 +523,7 @@ API はタスクで必要になった時点で足していく。足したらこ�
 | S1-23 | `getInfoOverlay`（済） |
 | S1-24 | `getRenderInfo`（済。`{ theme, quality, shadowMapEnabled, pixelRatio, textures }`。theme・quality は描画に適用済みの値、textures は `renderer.info.memory.textures`。S1-30 で品質の切り替えを確かめるのにも使う） |
 | S1-25 | `getAudio`（済。`{ contextState, muted, material, voices }`。S1-26、S2-05、S3-05 で中身を広げる） |
+| S1-26 | `getAudio` を広げた（済。`voices[].position`・`background`・`motors`・`lockSounds`。新しい関数は足していない） |
 | S1-27 | `getStorageStatus` |
 | S1-29 | `getView` |
 | S1-30 | `getSettings` |
