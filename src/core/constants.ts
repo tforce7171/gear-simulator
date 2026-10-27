@@ -20,3 +20,4 @@ export const AUTOSAVE_DEBOUNCE_MS = 1000;
 export const THUMBNAIL_SIZE = 256;
 export const AXIAL_SNAP = 4; // mm。シャフト上の位置の吸着の単位（全サイズ共通）
 export const MESH_PHASE_EPS = 1e-6; // rad。位相を歯のピッチを法として比べるしきい値（contact の判定には使わない）
+export const COLLISION_EPS = 1e-6; // mm。干渉の判定で、触れているだけを干渉としないための重なりの深さのしきい値

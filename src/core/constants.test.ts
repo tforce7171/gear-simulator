@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { GEAR_SIZES, MOTOR_RPM_RANGE, MOTOR_SIZES, PRESSURE_ANGLE } from './constants';
+import {
+  COLLISION_EPS,
+  GEAR_SIZES,
+  MOTOR_RPM_RANGE,
+  MOTOR_SIZES,
+  PRESSURE_ANGLE,
+} from './constants';
 
 describe('constants', () => {
   it('GEAR_SIZES.S は要件の値', () => {
@@ -20,5 +26,9 @@ describe('constants', () => {
 
   it('PRESSURE_ANGLE は 20° をラジアンにしたもの', () => {
     expect(PRESSURE_ANGLE).toBeCloseTo((20 * Math.PI) / 180, 12);
+  });
+
+  it('COLLISION_EPS は 1e-6 mm（design.md §3）', () => {
+    expect(COLLISION_EPS).toBe(1e-6);
   });
 });

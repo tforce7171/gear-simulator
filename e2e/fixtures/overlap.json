@@ -1,0 +1,39 @@
+{
+  "shafts": {
+    "shaft_1": {
+      "id": "shaft_1",
+      "placement": {
+        "kind": "root",
+        "origin": [0, 20, 0],
+        "axis": "y"
+      }
+    },
+    "shaft_2": {
+      "id": "shaft_2",
+      "placement": {
+        "kind": "root",
+        "origin": [10, 20, 0],
+        "axis": "y"
+      }
+    }
+  },
+  "gears": {
+    "gear_1": {
+      "id": "gear_1",
+      "kind": "spur",
+      "shaftId": "shaft_1",
+      "size": "S",
+      "teeth": 12,
+      "offset": 0
+    },
+    "gear_2": {
+      "id": "gear_2",
+      "kind": "spur",
+      "shaftId": "shaft_2",
+      "size": "S",
+      "teeth": 12,
+      "offset": 0
+    }
+  },
+  "motors": {}
+}

@@ -4,10 +4,13 @@ import { axisVector, radialDirection } from '../math/axis';
 import { add, scale, type Vec3 } from '../math/vec3';
 import { gearCenter } from '../scene/gear-center';
 import type { Axis, Gear, GearId, Scene, Shaft, ShaftId } from '../scene/types';
+import { type Collider, findInterferences, gearCollider } from './collision';
 import type { GearLayout, Layout, Mesh, ShaftLayout } from './types';
 
 // 暫定のレイアウト（S1-04）。root・detached のシャフトから mesh でたどれる木だけを扱う。
-// 偶然のかみ合い・干渉は扱わない（S1-08 が interferences を埋め、S1-09 がこのファイルを置き換える）
+// 偶然のかみ合いは扱わない。interferences は S1-08 の findInterferences で埋める
+// （全ての歯車の円柱と全てのシャフトの線分 origin + span × 軸、exempt は meshes の組）。
+// S1-09 がこのファイルを置き換える
 export function resolveLayout(scene: Scene): Layout {
   const gearsByShaft = new Map<ShaftId, Gear[]>();
   for (const gear of Object.values(scene.gears)) {
@@ -84,7 +87,34 @@ export function resolveLayout(scene: Scene): Layout {
     }
   }
 
-  return { shafts, gears, meshes, interferences: [] };
+  return { shafts, gears, meshes, interferences: interferencesOf(scene, shafts, gears, meshes) };
+}
+
+function interferencesOf(
+  scene: Scene,
+  shafts: Readonly<Record<ShaftId, ShaftLayout>>,
+  gears: Readonly<Record<GearId, GearLayout>>,
+  meshes: readonly Mesh[],
+): Array<[string, string]> {
+  const colliders: Collider[] = [];
+  for (const [id, g] of Object.entries(gears)) {
+    const gear = scene.gears[id];
+    if (gear === undefined) continue;
+    colliders.push(gearCollider(id, gear.shaftId, g.center, g.axis, gear.size, gear.teeth));
+  }
+  for (const [id, s] of Object.entries(shafts)) {
+    const w = axisVector(s.axis);
+    colliders.push({
+      kind: 'segment',
+      id,
+      start: add(s.origin, scale(w, s.span[0])),
+      end: add(s.origin, scale(w, s.span[1])),
+    });
+  }
+  return findInterferences(
+    colliders,
+    meshes.map((m) => [m.a, m.b] as const),
+  );
 }
 
 // 載っている歯車の両端（暫定。S1-09 で決め直す）。歯車が無ければ [0, 0]
