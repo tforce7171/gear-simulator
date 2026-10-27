@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { emptyMotion } from '../core/kinematics/types';
 import { resolveLayout } from '../core/layout/resolve';
+import type { Layout } from '../core/layout/types';
 import type { Motor, Scene } from '../core/scene/types';
 import { demoScene } from './demo-scene';
 import { stepProvisionalMotion } from './provisional-motion';
@@ -50,5 +51,52 @@ describe('stepProvisionalMotion', () => {
     const m = step(scene, 0);
     expect(m.omegas.shaft_2).toBeCloseTo(2 * Math.PI, 9);
     expect(m.omegas.shaft_1).toBeCloseTo(-4 * Math.PI, 9);
+  });
+
+  it('自由度 0 の成分（三角形）は止め、別の成分は回す', () => {
+    const scene: Scene = {
+      shafts: {
+        shaft_a: { id: 'shaft_a', placement: { kind: 'root', origin: [0, 0, 0], axis: 'y' } },
+        shaft_b: { id: 'shaft_b', placement: { kind: 'root', origin: [20, 0, 0], axis: 'y' } },
+        shaft_c: { id: 'shaft_c', placement: { kind: 'root', origin: [40, 0, 0], axis: 'y' } },
+        shaft_d: { id: 'shaft_d', placement: { kind: 'root', origin: [60, 0, 0], axis: 'y' } },
+      },
+      gears: {
+        gear_a: { id: 'gear_a', kind: 'spur', shaftId: 'shaft_a', size: 'S', teeth: 12, offset: 0 },
+        gear_b: { id: 'gear_b', kind: 'spur', shaftId: 'shaft_b', size: 'S', teeth: 12, offset: 0 },
+        gear_c: { id: 'gear_c', kind: 'spur', shaftId: 'shaft_c', size: 'S', teeth: 12, offset: 0 },
+      },
+      motors: {
+        motor_1: { id: 'motor_1', shaftId: 'shaft_a', size: 'S', rpm: 60, direction: 1, on: true },
+        motor_2: { id: 'motor_2', shaftId: 'shaft_d', size: 'S', rpm: 30, direction: 1, on: true },
+      },
+    };
+    const layout: Layout = {
+      shafts: {},
+      gears: {},
+      meshes: [
+        { a: 'gear_a', b: 'gear_b', source: 'tree' },
+        { a: 'gear_b', b: 'gear_c', source: 'tree' },
+        { a: 'gear_a', b: 'gear_c', source: 'contact' },
+      ],
+      interferences: [],
+    };
+    const m = stepProvisionalMotion(scene, layout, emptyMotion(), 0.5);
+    expect(m.omegas.shaft_a).toBe(0);
+    expect(m.omegas.shaft_b).toBe(0);
+    expect(m.omegas.shaft_c).toBe(0);
+    expect(m.omegas.shaft_d).toBeCloseTo(Math.PI, 9);
+    expect(m.angles.shaft_a).toBe(0);
+    expect(m.angles.shaft_d).toBeCloseTo(Math.PI / 2, 9);
+  });
+
+  it('同じ Layout でもシーンが変われば作り直す', () => {
+    const layout = resolveLayout(demoScene);
+    const before = stepProvisionalMotion(demoScene, layout, emptyMotion(), 0);
+    expect(before.omegas.shaft_1).toBeCloseTo(2 * Math.PI, 9);
+    const moved = withMotor({ shaftId: 'shaft_2' });
+    const after = stepProvisionalMotion(moved, layout, emptyMotion(), 0);
+    expect(after.omegas.shaft_2).toBeCloseTo(2 * Math.PI, 9);
+    expect(after.omegas.shaft_1).toBeCloseTo(-4 * Math.PI, 9);
   });
 });
