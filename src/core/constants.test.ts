@@ -4,6 +4,7 @@ import {
   GEAR_SIZES,
   MOTOR_RPM_RANGE,
   MOTOR_SIZES,
+  PERIMETER_CANDIDATE_COUNT,
   PRESSURE_ANGLE,
 } from './constants';
 
@@ -30,5 +31,9 @@ describe('constants', () => {
 
   it('COLLISION_EPS は 1e-6 mm（design.md §3）', () => {
     expect(COLLISION_EPS).toBe(1e-6);
+  });
+
+  it('PERIMETER_CANDIDATE_COUNT は 8（design.md §3）', () => {
+    expect(PERIMETER_CANDIDATE_COUNT).toBe(8);
   });
 });
