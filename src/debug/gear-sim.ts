@@ -2,6 +2,7 @@
 
 import type { CandidateKind } from '../app/grow';
 import type { Settings } from '../app/store';
+import type { AudioState } from '../audio/engine';
 import type { Command } from '../core/edit/commands';
 import type { Lang } from '../core/i18n';
 import type { HandConstraint, MotionState } from '../core/kinematics/types';
@@ -90,6 +91,12 @@ export interface GearSimDebug {
     pixelRatio: number;
     textures: number;
   };
+  /**
+   * 音の状態（S1-25）。contextState は AudioContext を作る前は 'none'（最初のユーザー操作で作る）。
+   * voices は今鳴らしているかみ合い（動いている組のうち Layout.meshes の順で最初の 16 組）。
+   * key は meshKey、frequency は歯の通過頻度（Hz、クランプしない）、click・tone はクロスフェードの重み
+   */
+  getAudio(): AudioState;
 }
 
 declare global {

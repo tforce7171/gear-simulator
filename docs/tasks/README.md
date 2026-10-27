@@ -46,7 +46,7 @@
 | [S1-22](stage1/22-lock-interference-pause.md) | ロックの表示、干渉の警告、一時停止 | S1-07, S1-08, S1-16 | doing |
 | [S1-23](stage1/23-info-overlay.md) | 情報表示 | S1-07, S1-15 | done |
 | [S1-24](stage1/24-themes.md) | テーマと質感 | S1-04 | done |
-| [S1-25](stage1/25-audio-basic.md) | 音（基本） | S1-07, S1-24 | todo |
+| [S1-25](stage1/25-audio-basic.md) | 音（基本） | S1-07, S1-24 | doing |
 | [S1-26](stage1/26-audio-spatial.md) | 音（空間） | S1-13, S1-25 | todo |
 | [S1-27](stage1/27-storage.md) | 保存（IndexedDB） | S1-11, S1-15 | todo |
 | [S1-28](stage1/28-json-io.md) | JSON のエクスポートとインポート | S1-27 | todo |

@@ -23,6 +23,7 @@ export interface Settings {
   readonly trackpadScroll: TrackpadScroll; // 2 本指スクロールの割り当て（S1-14）
   readonly theme: ThemeId; // テーマ（S1-24）
   readonly quality: Quality; // 描画の品質（S1-24）
+  readonly muted: boolean; // ミュート（S1-25。M キーとツールバーのボタン）
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -30,6 +31,7 @@ export const DEFAULT_SETTINGS: Settings = {
   trackpadScroll: 'pan',
   theme: DEFAULT_THEME,
   quality: DEFAULT_QUALITY,
+  muted: false,
 };
 
 // 表示の状態（design.md §7 の AppState.view）。保存しない

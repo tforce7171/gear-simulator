@@ -19,7 +19,7 @@ export interface LoopDeps {
   readonly store: Store;
   readonly view: SceneView;
   readonly layoutOf: (scene: Scene) => Layout;
-  readonly onFrame?: () => void; // 描いた後に呼ぶ
+  readonly onFrame?: (dt: number) => void; // 描いた後に、そのフレームの経過時間（秒）を渡して呼ぶ
   // 描くシーン（ドラッグ中の仮のシーン。S1-17）。省略するとストアのシーン。運動はストアのシーンで進める
   readonly displayScene?: () => Scene;
 }
@@ -53,9 +53,10 @@ export function startLoop(deps: LoopDeps): () => void {
   let prev: number | null = null;
   let handle = 0;
   const tick = (now: number): void => {
-    runFrame(deps, frameDt(prev, now), now / 1000);
+    const dt = frameDt(prev, now);
+    runFrame(deps, dt, now / 1000);
     prev = now;
-    deps.onFrame?.();
+    deps.onFrame?.(dt);
     handle = requestAnimationFrame(tick);
   };
   handle = requestAnimationFrame(tick);

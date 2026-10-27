@@ -1,0 +1,389 @@
+{
+  "shafts": {
+    "shaft_c01": {
+      "id": "shaft_c01",
+      "placement": {
+        "kind": "root",
+        "origin": [0, 20, 0],
+        "axis": "y"
+      }
+    },
+    "shaft_c02": {
+      "id": "shaft_c02",
+      "placement": {
+        "kind": "mesh",
+        "parentGearId": "gear_c01",
+        "childGearId": "gear_c02",
+        "angle": 1.5707963267948966
+      }
+    },
+    "shaft_c03": {
+      "id": "shaft_c03",
+      "placement": {
+        "kind": "mesh",
+        "parentGearId": "gear_c02",
+        "childGearId": "gear_c03",
+        "angle": 1.5707963267948966
+      }
+    },
+    "shaft_c04": {
+      "id": "shaft_c04",
+      "placement": {
+        "kind": "mesh",
+        "parentGearId": "gear_c03",
+        "childGearId": "gear_c04",
+        "angle": 1.5707963267948966
+      }
+    },
+    "shaft_c05": {
+      "id": "shaft_c05",
+      "placement": {
+        "kind": "mesh",
+        "parentGearId": "gear_c04",
+        "childGearId": "gear_c05",
+        "angle": 1.5707963267948966
+      }
+    },
+    "shaft_c06": {
+      "id": "shaft_c06",
+      "placement": {
+        "kind": "mesh",
+        "parentGearId": "gear_c05",
+        "childGearId": "gear_c06",
+        "angle": 1.5707963267948966
+      }
+    },
+    "shaft_c07": {
+      "id": "shaft_c07",
+      "placement": {
+        "kind": "mesh",
+        "parentGearId": "gear_c06",
+        "childGearId": "gear_c07",
+        "angle": 1.5707963267948966
+      }
+    },
+    "shaft_c08": {
+      "id": "shaft_c08",
+      "placement": {
+        "kind": "mesh",
+        "parentGearId": "gear_c07",
+        "childGearId": "gear_c08",
+        "angle": 1.5707963267948966
+      }
+    },
+    "shaft_c09": {
+      "id": "shaft_c09",
+      "placement": {
+        "kind": "mesh",
+        "parentGearId": "gear_c08",
+        "childGearId": "gear_c09",
+        "angle": 1.5707963267948966
+      }
+    },
+    "shaft_c10": {
+      "id": "shaft_c10",
+      "placement": {
+        "kind": "mesh",
+        "parentGearId": "gear_c09",
+        "childGearId": "gear_c10",
+        "angle": 1.5707963267948966
+      }
+    },
+    "shaft_c11": {
+      "id": "shaft_c11",
+      "placement": {
+        "kind": "mesh",
+        "parentGearId": "gear_c10",
+        "childGearId": "gear_c11",
+        "angle": 1.5707963267948966
+      }
+    },
+    "shaft_c12": {
+      "id": "shaft_c12",
+      "placement": {
+        "kind": "mesh",
+        "parentGearId": "gear_c11",
+        "childGearId": "gear_c12",
+        "angle": 1.5707963267948966
+      }
+    },
+    "shaft_c13": {
+      "id": "shaft_c13",
+      "placement": {
+        "kind": "mesh",
+        "parentGearId": "gear_c12",
+        "childGearId": "gear_c13",
+        "angle": 1.5707963267948966
+      }
+    },
+    "shaft_c14": {
+      "id": "shaft_c14",
+      "placement": {
+        "kind": "mesh",
+        "parentGearId": "gear_c13",
+        "childGearId": "gear_c14",
+        "angle": 1.5707963267948966
+      }
+    },
+    "shaft_c15": {
+      "id": "shaft_c15",
+      "placement": {
+        "kind": "mesh",
+        "parentGearId": "gear_c14",
+        "childGearId": "gear_c15",
+        "angle": 1.5707963267948966
+      }
+    },
+    "shaft_c16": {
+      "id": "shaft_c16",
+      "placement": {
+        "kind": "mesh",
+        "parentGearId": "gear_c15",
+        "childGearId": "gear_c16",
+        "angle": 1.5707963267948966
+      }
+    },
+    "shaft_c17": {
+      "id": "shaft_c17",
+      "placement": {
+        "kind": "mesh",
+        "parentGearId": "gear_c16",
+        "childGearId": "gear_c17",
+        "angle": 1.5707963267948966
+      }
+    },
+    "shaft_c18": {
+      "id": "shaft_c18",
+      "placement": {
+        "kind": "mesh",
+        "parentGearId": "gear_c17",
+        "childGearId": "gear_c18",
+        "angle": 1.5707963267948966
+      }
+    },
+    "shaft_c19": {
+      "id": "shaft_c19",
+      "placement": {
+        "kind": "mesh",
+        "parentGearId": "gear_c18",
+        "childGearId": "gear_c19",
+        "angle": 1.5707963267948966
+      }
+    },
+    "shaft_c20": {
+      "id": "shaft_c20",
+      "placement": {
+        "kind": "mesh",
+        "parentGearId": "gear_c19",
+        "childGearId": "gear_c20",
+        "angle": 1.5707963267948966
+      }
+    },
+    "shaft_c21": {
+      "id": "shaft_c21",
+      "placement": {
+        "kind": "mesh",
+        "parentGearId": "gear_c20",
+        "childGearId": "gear_c21",
+        "angle": 1.5707963267948966
+      }
+    },
+    "shaft_c22": {
+      "id": "shaft_c22",
+      "placement": {
+        "kind": "mesh",
+        "parentGearId": "gear_c21",
+        "childGearId": "gear_c22",
+        "angle": 1.5707963267948966
+      }
+    }
+  },
+  "gears": {
+    "gear_c01": {
+      "id": "gear_c01",
+      "kind": "spur",
+      "shaftId": "shaft_c01",
+      "size": "S",
+      "teeth": 24,
+      "offset": 0
+    },
+    "gear_c02": {
+      "id": "gear_c02",
+      "kind": "spur",
+      "shaftId": "shaft_c02",
+      "size": "S",
+      "teeth": 24,
+      "offset": 0
+    },
+    "gear_c03": {
+      "id": "gear_c03",
+      "kind": "spur",
+      "shaftId": "shaft_c03",
+      "size": "S",
+      "teeth": 24,
+      "offset": 0
+    },
+    "gear_c04": {
+      "id": "gear_c04",
+      "kind": "spur",
+      "shaftId": "shaft_c04",
+      "size": "S",
+      "teeth": 24,
+      "offset": 0
+    },
+    "gear_c05": {
+      "id": "gear_c05",
+      "kind": "spur",
+      "shaftId": "shaft_c05",
+      "size": "S",
+      "teeth": 24,
+      "offset": 0
+    },
+    "gear_c06": {
+      "id": "gear_c06",
+      "kind": "spur",
+      "shaftId": "shaft_c06",
+      "size": "S",
+      "teeth": 24,
+      "offset": 0
+    },
+    "gear_c07": {
+      "id": "gear_c07",
+      "kind": "spur",
+      "shaftId": "shaft_c07",
+      "size": "S",
+      "teeth": 24,
+      "offset": 0
+    },
+    "gear_c08": {
+      "id": "gear_c08",
+      "kind": "spur",
+      "shaftId": "shaft_c08",
+      "size": "S",
+      "teeth": 24,
+      "offset": 0
+    },
+    "gear_c09": {
+      "id": "gear_c09",
+      "kind": "spur",
+      "shaftId": "shaft_c09",
+      "size": "S",
+      "teeth": 24,
+      "offset": 0
+    },
+    "gear_c10": {
+      "id": "gear_c10",
+      "kind": "spur",
+      "shaftId": "shaft_c10",
+      "size": "S",
+      "teeth": 24,
+      "offset": 0
+    },
+    "gear_c11": {
+      "id": "gear_c11",
+      "kind": "spur",
+      "shaftId": "shaft_c11",
+      "size": "S",
+      "teeth": 24,
+      "offset": 0
+    },
+    "gear_c12": {
+      "id": "gear_c12",
+      "kind": "spur",
+      "shaftId": "shaft_c12",
+      "size": "S",
+      "teeth": 24,
+      "offset": 0
+    },
+    "gear_c13": {
+      "id": "gear_c13",
+      "kind": "spur",
+      "shaftId": "shaft_c13",
+      "size": "S",
+      "teeth": 24,
+      "offset": 0
+    },
+    "gear_c14": {
+      "id": "gear_c14",
+      "kind": "spur",
+      "shaftId": "shaft_c14",
+      "size": "S",
+      "teeth": 24,
+      "offset": 0
+    },
+    "gear_c15": {
+      "id": "gear_c15",
+      "kind": "spur",
+      "shaftId": "shaft_c15",
+      "size": "S",
+      "teeth": 24,
+      "offset": 0
+    },
+    "gear_c16": {
+      "id": "gear_c16",
+      "kind": "spur",
+      "shaftId": "shaft_c16",
+      "size": "S",
+      "teeth": 24,
+      "offset": 0
+    },
+    "gear_c17": {
+      "id": "gear_c17",
+      "kind": "spur",
+      "shaftId": "shaft_c17",
+      "size": "S",
+      "teeth": 24,
+      "offset": 0
+    },
+    "gear_c18": {
+      "id": "gear_c18",
+      "kind": "spur",
+      "shaftId": "shaft_c18",
+      "size": "S",
+      "teeth": 24,
+      "offset": 0
+    },
+    "gear_c19": {
+      "id": "gear_c19",
+      "kind": "spur",
+      "shaftId": "shaft_c19",
+      "size": "S",
+      "teeth": 24,
+      "offset": 0
+    },
+    "gear_c20": {
+      "id": "gear_c20",
+      "kind": "spur",
+      "shaftId": "shaft_c20",
+      "size": "S",
+      "teeth": 24,
+      "offset": 0
+    },
+    "gear_c21": {
+      "id": "gear_c21",
+      "kind": "spur",
+      "shaftId": "shaft_c21",
+      "size": "S",
+      "teeth": 24,
+      "offset": 0
+    },
+    "gear_c22": {
+      "id": "gear_c22",
+      "kind": "spur",
+      "shaftId": "shaft_c22",
+      "size": "S",
+      "teeth": 24,
+      "offset": 0
+    }
+  },
+  "motors": {
+    "motor_m1": {
+      "id": "motor_m1",
+      "shaftId": "shaft_c01",
+      "size": "S",
+      "rpm": 60,
+      "direction": 1,
+      "on": true
+    }
+  }
+}

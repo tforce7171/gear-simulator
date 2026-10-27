@@ -130,13 +130,14 @@ describe('createLayoutMemo', () => {
 });
 
 describe('設定と表示の状態（S1-14）', () => {
-  it('初期値: inputDevice auto・trackpadScroll pan・theme brass・quality high・watchMode false・infoOverlay false', () => {
+  it('初期値: inputDevice auto・trackpadScroll pan・theme brass・quality high・muted false・watchMode false・infoOverlay false', () => {
     const { settings, view } = createStore(demoScene).getState();
     expect(settings).toEqual({
       inputDevice: 'auto',
       trackpadScroll: 'pan',
       theme: 'brass',
       quality: 'high',
+      muted: false,
     });
     expect(view).toEqual({ watchMode: false, infoOverlay: false });
   });
@@ -151,6 +152,7 @@ describe('設定と表示の状態（S1-14）', () => {
       trackpadScroll: 'orbit',
       theme: 'brass',
       quality: 'high',
+      muted: false,
     });
     expect(after.scene).toBe(before.scene);
     expect(after.history).toBe(before.history);
@@ -161,6 +163,14 @@ describe('設定と表示の状態（S1-14）', () => {
     store.dispatch({ type: 'updateSettings', patch: { theme: 'wood', quality: 'low' } });
     expect(store.getState().settings.theme).toBe('wood');
     expect(store.getState().settings.quality).toBe('low');
+  });
+
+  it('updateSettings でミュートを切り替えられる（S1-25）', () => {
+    const store = createStore(demoScene);
+    store.dispatch({ type: 'updateSettings', patch: { muted: true } });
+    expect(store.getState().settings.muted).toBe(true);
+    store.dispatch({ type: 'updateSettings', patch: { muted: false } });
+    expect(store.getState().settings.muted).toBe(false);
   });
 
   it('値が変わらない updateSettings・setWatchMode は購読者に知らせない', () => {

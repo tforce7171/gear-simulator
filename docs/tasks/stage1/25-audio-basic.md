@@ -1,7 +1,7 @@
 ---
 id: S1-25
 title: 音（基本）
-status: todo
+status: doing
 depends: [S1-07, S1-24]
 ---
 
