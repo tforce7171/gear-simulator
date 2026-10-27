@@ -1,0 +1,39 @@
+/* 情報表示のラベル（S1-23）。描画領域の上に重ね、ポインターは canvas に通す */
+.gs-info-labels {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+}
+
+.gs-info-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  margin-top: -14px; /* 歯車の中心より少し上 */
+  padding: 2px 6px;
+  border: 1px solid rgba(255, 200, 61, 0.55);
+  border-radius: 4px;
+  background: rgba(30, 33, 38, 0.82);
+  color: #f1f3f6;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+  text-align: center;
+  white-space: nowrap;
+  will-change: transform;
+}
+
+.gs-info-label[hidden] {
+  display: none;
+}
+
+.gs-info-label__rpm {
+  font-weight: 600;
+}
+
+.gs-info-label__ratio {
+  color: #c9ced6;
+}

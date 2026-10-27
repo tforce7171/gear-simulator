@@ -1,5 +1,6 @@
 import { demoScene } from './app/demo-scene';
 import { getLanguage, onLanguageChange, setLanguage, t } from './app/i18n';
+import { createInfoOverlay } from './app/info-overlay';
 import { createInteractions } from './app/interactions';
 import { startLoop } from './app/loop';
 import { selectionForPick } from './app/selection';
@@ -12,6 +13,7 @@ import { createKeyboard, isTypingTarget } from './input/keyboard';
 import { createSelectionInput } from './input/selection-input';
 import { createSpaceTapDetector } from './input/space-tap';
 import { createAxisGizmo } from './render/axis-gizmo';
+import { infoArrowSpec } from './render/info-arrows';
 import {
   createRenderer,
   INITIAL_CAMERA_POSITION,
@@ -19,6 +21,7 @@ import {
   ORTHO_FRUSTUM_HEIGHT,
 } from './render/renderer';
 import { warningParts } from './render/warning-effects';
+import { createInfoLabels } from './ui/info-labels';
 import { createPalette } from './ui/palette';
 import { createPauseIndicator } from './ui/pause-indicator';
 import { createProperties } from './ui/properties';
@@ -204,6 +207,27 @@ store.subscribe(() => palette.refresh());
 // 一時停止中の表示（S1-22）。描画領域の上部中央
 const pauseIndicator = createPauseIndicator(shell.canvasHost);
 store.subscribe((state) => pauseIndicator.setPaused(state.sim.paused));
+// 情報表示（S1-23）: 歯車ごとの rpm・ギア比のラベルと回転方向の矢印。ツールバーのボタンで
+// 全歯車に出す（ON）・選択中の歯車だけ（OFF）を切り替える
+const infoOverlay = createInfoOverlay({
+  getState: () => store.getState(),
+  layoutOf,
+  getLanguage,
+  labels: createInfoLabels(shell.canvasHost),
+  setArrows: renderer.setInfoArrows,
+  arrowSpec: infoArrowSpec,
+  project: renderer.projectToCanvas,
+});
+const infoButton = shell.toolbar.button('info');
+infoButton.disabled = false;
+const applyInfoButton = (on: boolean): void => {
+  infoButton.setAttribute('aria-pressed', String(on));
+};
+applyInfoButton(store.getState().view.infoOverlay);
+infoButton.addEventListener('click', () => {
+  store.dispatch({ type: 'setInfoOverlay', on: !store.getState().view.infoOverlay });
+});
+store.subscribe((state) => applyInfoButton(state.view.infoOverlay));
 // プロパティパネル（S1-20）: 選択・シーン（Undo を含む）・言語が変わるたびに作り直す
 const properties = createProperties({
   setContent: shell.properties.setContent,
@@ -236,6 +260,8 @@ const view = {
     interactions.setHoveredCandidate(hit?.kind === 'candidate' ? Number(hit.id) : null);
     interactions.beforeRender();
     renderer.setHighlight({ selected: selection, hovered: selectionForPick(hit, scene) });
+    // ラベルの位置は今のカメラで毎フレーム、文字と矢印は 10 Hz で書き換える（S1-23）
+    infoOverlay.frame(performance.now());
     renderer.render();
   },
 };
@@ -279,6 +305,10 @@ installGearSim({
     const { locked, interfering } = warningParts(scene, layoutOf(scene), motion);
     return { locked: [...locked].sort(), interfering: [...interfering].sort() };
   },
+  getInfoOverlay: () => ({
+    enabled: store.getState().view.infoOverlay,
+    arrows: infoOverlay.arrows(),
+  }),
 });
 
 startLoop({

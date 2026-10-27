@@ -1,7 +1,7 @@
 ---
 id: S1-23
 title: 情報表示
-status: todo
+status: done
 depends: [S1-07, S1-15]
 ---
 
@@ -92,6 +92,6 @@ depends: [S1-07, S1-15]
 - 200 個の歯車で ON にしても、目に見えて重くならないか。
 
 ## 完了の条件
-- [ ] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
-- [ ] design.md と後続のタスク資料に、必要な変更を反映した（`view.infoOverlay`、`__gearSim.getInfoOverlay` を design.md §7・§10 に書く）
-- [ ] `status: done` にしてコミットした
+- [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
+- [x] design.md と後続のタスク資料に、必要な変更を反映した（`view.infoOverlay`、`__gearSim.getInfoOverlay` を design.md §7・§10 に書く）
+- [x] `status: done` にしてコミットした

@@ -130,10 +130,10 @@ describe('createLayoutMemo', () => {
 });
 
 describe('設定と表示の状態（S1-14）', () => {
-  it('初期値: inputDevice auto・trackpadScroll pan・watchMode false', () => {
+  it('初期値: inputDevice auto・trackpadScroll pan・watchMode false・infoOverlay false', () => {
     const { settings, view } = createStore(demoScene).getState();
     expect(settings).toEqual({ inputDevice: 'auto', trackpadScroll: 'pan' });
-    expect(view).toEqual({ watchMode: false });
+    expect(view).toEqual({ watchMode: false, infoOverlay: false });
   });
 
   it('updateSettings は指定した項目だけ変え、シーンと履歴はそのまま', () => {
@@ -328,5 +328,33 @@ describe('一時停止（S1-22）', () => {
       },
     });
     expect(Object.values(store.getState().motion.omegas).every((w) => w === 0)).toBe(true);
+  });
+});
+
+describe('情報表示（S1-23）', () => {
+  it('最初は OFF。setInfoOverlay で切り替わり、値が変わらなければ知らせない', () => {
+    const store = createStore(demoScene);
+    expect(store.getState().view.infoOverlay).toBe(false);
+    const listener = vi.fn();
+    store.subscribe(listener);
+    store.dispatch({ type: 'setInfoOverlay', on: false });
+    expect(listener).not.toHaveBeenCalled();
+    store.dispatch({ type: 'setInfoOverlay', on: true });
+    expect(store.getState().view.infoOverlay).toBe(true);
+    expect(listener).toHaveBeenCalledTimes(1);
+    store.dispatch({ type: 'setInfoOverlay', on: false });
+    expect(store.getState().view.infoOverlay).toBe(false);
+  });
+
+  it('シーン・履歴・眺めるモードを変えず、loadScene と Undo で保つ', () => {
+    const store = createStore(demoScene);
+    const { scene, history } = store.getState();
+    store.dispatch({ type: 'setInfoOverlay', on: true });
+    expect(store.getState().scene).toBe(scene);
+    expect(store.getState().history).toBe(history);
+    expect(store.getState().view.watchMode).toBe(false);
+    store.dispatch({ type: 'loadScene', scene: offScene });
+    store.dispatch({ type: 'undo' });
+    expect(store.getState().view.infoOverlay).toBe(true);
   });
 });

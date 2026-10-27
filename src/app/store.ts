@@ -27,12 +27,13 @@ export const DEFAULT_SETTINGS: Settings = {
   trackpadScroll: 'pan',
 };
 
-// 表示の状態（design.md §7 の AppState.view）。infoOverlay は S1-23 で足す
+// 表示の状態（design.md §7 の AppState.view）。保存しない
 export interface ViewState {
   readonly watchMode: boolean; // 眺めるモード（S1-14）
+  readonly infoOverlay: boolean; // 情報表示を全歯車に出す（S1-23）。OFF は選択中の歯車だけ
 }
 
-export const DEFAULT_VIEW: ViewState = { watchMode: false };
+export const DEFAULT_VIEW: ViewState = { watchMode: false, infoOverlay: false };
 
 // 運動の入力（design.md §7 の AppState.sim）。保存せず、Undo の対象にしない
 export interface SimState {
@@ -77,6 +78,8 @@ export type AppAction =
   // 設定の一部を書き換える（S1-30 の設定画面も同じ経路を使う）
   | { readonly type: 'updateSettings'; readonly patch: Partial<Settings> }
   | { readonly type: 'setWatchMode'; readonly on: boolean }
+  // 情報表示の ON/OFF（S1-23。S1-29 のコンテキストメニューも同じ経路を使う）
+  | { readonly type: 'setInfoOverlay'; readonly on: boolean }
   // 選択を置き換える（null で外す）。シーンに無い ID は null として扱う（S1-16）
   | { readonly type: 'select'; readonly id: string | null }
   // パレットで選ぶ歯車の大きさ（S1-17）
@@ -162,6 +165,10 @@ function reduce(state: AppState, action: AppAction, ids: IdGenerator): AppState 
       return state.view.watchMode === action.on
         ? state
         : { ...state, view: { ...state.view, watchMode: action.on } };
+    case 'setInfoOverlay':
+      return state.view.infoOverlay === action.on
+        ? state
+        : { ...state, view: { ...state.view, infoOverlay: action.on } };
     case 'select': {
       const selection = pruneSelection(action.id, state.scene);
       return selection === state.selection ? state : { ...state, selection };

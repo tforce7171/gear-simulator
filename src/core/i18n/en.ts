@@ -69,6 +69,8 @@ export const en = {
   'properties.motor.off': 'OFF',
   'properties.motor.remove': 'Remove',
   'toast.close': 'Close',
+  // Info overlay (S1-23). Heading of the second line of the label
+  'info.ratio': 'Ratio',
   // Pause indicator (S1-22)
   'sim.paused': 'Paused (Space to resume)',
   // Axis gizmo (S1-14)

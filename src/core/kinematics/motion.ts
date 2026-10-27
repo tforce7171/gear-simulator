@@ -24,10 +24,11 @@ export function initialMotionState(): MotionState {
   return emptyMotion();
 }
 
-// グラフは Layout の参照ごとに覚え、シーンの参照が変わったときだけ作り直す
+// グラフは Layout の参照ごとに覚え、シーンの参照が変わったときだけ作り直す。
+// 情報表示のギア比（S1-23）も同じグラフを使う
 const graphCache = new WeakMap<Layout, { scene: Scene; graph: MeshGraph }>();
 
-function graphOf(scene: Scene, layout: Layout): MeshGraph {
+export function meshGraphOf(scene: Scene, layout: Layout): MeshGraph {
   const cached = graphCache.get(layout);
   if (cached !== undefined && cached.scene === scene) return cached.graph;
   const graph = buildMeshGraph(scene, layout.meshes);
@@ -62,7 +63,7 @@ export function stepMotion(
   opts: MotionOptions = {},
 ): MotionState {
   const paused = opts.paused === true;
-  const graph = graphOf(scene, layout);
+  const graph = meshGraphOf(scene, layout);
   const balance = solveVelocities(scene, graph, { paused });
 
   // ON のモーター（一時停止中は無い）を、シャフトごとに
