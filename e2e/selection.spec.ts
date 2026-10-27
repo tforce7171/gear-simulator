@@ -21,8 +21,9 @@ const TIP_RADIUS = 22; // 中・20 歯の歯先円半径
 
 // 上から見下ろす視点（真上だと up と視線が平行になるので、少しだけ +Z 側から）
 const TOP_VIEW = { position: [0, 260, 70] as Vec3, target: [0, 24, 40] as Vec3 };
-// 部品から十分離れた床の点（「何もない所」）
-const EMPTY_FLOOR: Vec3 = [60, 0, 40];
+// 部品から十分離れた床の点（「何もない所」）。歯車を選ぶと出る生やす候補（S1-18。選んだ歯車の
+// 中心から 40 + 歯先円半径 22 = 62 mm まで広がる）にも当たらない所
+const EMPTY_FLOOR: Vec3 = [95, 0, 40];
 
 function dist(a: Vec3, b: Vec3): number {
   return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);

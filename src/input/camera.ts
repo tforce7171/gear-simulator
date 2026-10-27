@@ -18,7 +18,12 @@ import type { Aabb } from '../core/layout/bounds';
 import { length, scale, sub, type Vec3 } from '../core/math/vec3';
 import { fitDistance } from './camera-fit';
 import type { Keyboard } from './keyboard';
-import { exceedsDragThreshold, type PointerRoute, routePointerDown } from './pointer-route';
+import {
+  exceedsDragThreshold,
+  type PointerRoute,
+  type PointerTarget,
+  routePointerDown,
+} from './pointer-route';
 import {
   anglesForView,
   nearestAngle,
@@ -74,8 +79,9 @@ export interface CameraInputSettings {
 
 const DEFAULT_INPUT_SETTINGS: CameraInputSettings = { inputDevice: 'auto', trackpadScroll: 'pan' };
 
-// ページ座標の点が部品（歯車・ハンドル・候補）の上か。S1-16 が本物のピッキングに差し替える
-export type HitTest = (pageX: number, pageY: number) => boolean;
+// ページ座標の点の下にあるものの扱い（部品・ハンドルは 'app'、候補は 'click-only'。S1-18）。
+// S1-16 が本物のピッキングに差し替える
+export type HitTest = (pageX: number, pageY: number) => PointerTarget;
 
 export interface ContextRequest {
   x: number; // ページ座標（CSS ピクセル）
@@ -129,7 +135,7 @@ export interface CameraInput {
   dispose(): void;
 }
 
-const noHit: HitTest = () => false;
+const noHit: HitTest = () => 'none';
 
 interface Drag {
   pointerId: number;
@@ -371,7 +377,7 @@ export function createCameraInput(deps: CameraInputDeps): CameraInput {
       altKey: e.altKey,
       shiftKey: e.shiftKey,
       spaceHeld,
-      overInteractive: e.button === 0 ? hitTest(e.pageX, e.pageY) : false,
+      overInteractive: e.button === 0 ? hitTest(e.pageX, e.pageY) : 'none',
     });
     // 'app' は部品の側が受け取る（ハンドルは S1-17）。カメラは動かさない
     if (route === 'app') {

@@ -69,6 +69,7 @@ const interactions = createInteractions({
     document.elementFromPoint(x - window.scrollX, y - window.scrollY) === canvas,
   setPreviewStyle: renderer.setPreviewStyle,
   setHandles: renderer.setHandles,
+  setCandidates: renderer.setCandidates,
 });
 // 描くシーン（ドラッグ中は仮のシーン）と、そのハンドルを描画に渡す
 const syncDisplay = (): void => {
@@ -82,8 +83,13 @@ const pickAt = (x: number, y: number) => {
   syncDisplay();
   return renderer.pick(x, y);
 };
-// 部品（ハンドル・候補を含む）の上の左ボタンはカメラを回さない
-cameraInput.setHitTest((x, y) => pickAt(x, y) !== null);
+// 部品・ハンドルの上の左ボタンはカメラを回さない。候補の上は左クリックだけアプリが受け取り、
+// 左ドラッグはカメラの回転にする（候補は手で回せないため。S1-18）
+cameraInput.setHitTest((x, y) => {
+  const hit = pickAt(x, y);
+  if (hit === null) return 'none';
+  return hit.kind === 'candidate' ? 'click-only' : 'app';
+});
 
 // ハンドルの上の左ボタン（経路 'app'）でハンドルのドラッグを始める（S1-17）
 cameraInput.onAppPointerDown((e) => {
@@ -92,11 +98,15 @@ cameraInput.onAppPointerDown((e) => {
 });
 
 // 選択（S1-16）。左クリックで当たった部品を選び（モーターはそのシャフト）、何もない所なら外す。
-// ハンドルのクリックでは選択を変えない（S1-17）
+// ハンドルのクリックでは選択を変えない（S1-17）。候補のクリックでは歯車を生やして選ぶ（S1-18）
 const selectAt = (x: number, y: number): void => {
   const { scene } = store.getState();
   const hit = pickAt(x, y);
   if (hit?.kind === 'handle') return;
+  if (hit?.kind === 'candidate') {
+    interactions.grow(Number(hit.id));
+    return;
+  }
   store.dispatch({ type: 'select', id: selectionForPick(hit, scene) });
 };
 // マウスを乗せた位置。ハイライトする部品は描く前に求め直す（シーンやカメラが動いても追従する）
@@ -159,13 +169,15 @@ const view = {
     const active = cameraInput.activeCamera();
     active.updateMatrixWorld();
     gizmo.update(active);
-    interactions.beforeRender();
     const { scene, selection } = store.getState();
-    const hovered =
+    const hit =
       hoverPoint === null || interactions.isDragging()
         ? null
-        : selectionForPick(renderer.pick(hoverPoint.x, hoverPoint.y), scene);
-    renderer.setHighlight({ selected: selection, hovered });
+        : renderer.pick(hoverPoint.x, hoverPoint.y);
+    // マウスを乗せた候補は濃く表示する（S1-18）
+    interactions.setHoveredCandidate(hit?.kind === 'candidate' ? Number(hit.id) : null);
+    interactions.beforeRender();
+    renderer.setHighlight({ selected: selection, hovered: selectionForPick(hit, scene) });
     renderer.render();
   },
 };
@@ -200,6 +212,8 @@ installGearSim({
     interactions
       .handles()
       .map((h) => ({ kind: h.kind, targetId: h.targetId, position: h.position })),
+  getCandidates: () =>
+    interactions.candidates().map((c, index) => ({ index, kind: c.kind, center: c.center })),
 });
 
 startLoop({
