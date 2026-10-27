@@ -1,12 +1,15 @@
-import { type ClickParams, MATERIALS } from '../core/audio-model';
+import { type ClickParams, MATERIALS, VOICE_FADE_SEC } from '../core/audio-model';
+import type { Vec3 } from '../core/math/vec3';
 import type { AudioMaterialId } from '../core/theme';
+import { createPanner, type Panner } from './panner';
 
-// かみ合い 1 組分の合成（S1-25）: 連続音（倍音の発振器 → ローパス）＋ざらつきのノイズと、予約するクリック
+// かみ合い 1 組分の合成（S1-25）: 連続音（倍音の発振器 → ローパス）＋ざらつきのノイズと、予約するクリック。
+// 出力は PannerNode で 3D に置く（S1-26）。作るときに 100 ms でフェードインする
 
 // 連続音の高さ・音量を追いかける時定数（秒）。値を飛ばさずに滑らかに変えてプツッと鳴らさない
 const PARAM_SMOOTHING = 0.02;
 // 音源を消すときのフェードアウト（秒）
-const RELEASE_SEC = 0.1;
+const RELEASE_SEC = VOICE_FADE_SEC;
 // クリックのエンベロープの立ち上がり（秒）。0 から急に上げるとプツッと鳴るため
 const CLICK_ATTACK_SEC = 0.001;
 // 指数の減衰で鳴り終わったとみなす時間（減衰時間の倍数。約 −52 dB）
@@ -22,11 +25,13 @@ export interface MeshVoiceSynth {
   // time（コンテキストの時刻）にクリックを 1 回鳴らす。gain はクロスフェードの重み
   click(params: ClickParams, time: number, gain: number): void;
   setMaterial(material: AudioMaterialId): void;
+  // 音源の位置（かみ合いの接点。mm）
+  setPosition(position: Vec3): void;
   // フェードアウトして止め、ノードを切り離す
   dispose(): void;
 }
 
-function periodicWave(ctx: BaseAudioContext, harmonics: readonly number[]): PeriodicWave {
+export function periodicWave(ctx: BaseAudioContext, harmonics: readonly number[]): PeriodicWave {
   const real = new Float32Array(harmonics.length + 1);
   const imag = new Float32Array(harmonics.length + 1);
   harmonics.forEach((amp, i) => {
@@ -40,11 +45,16 @@ export function createMeshVoiceSynth(
   destination: AudioNode,
   noise: AudioBuffer,
   initialMaterial: AudioMaterialId,
+  position: Vec3,
 ): MeshVoiceSynth {
   let material = initialMaterial;
   let level = 0;
+  const panner: Panner = createPanner(ctx, destination, position);
   const output = ctx.createGain();
-  output.connect(destination);
+  // 入れ替わりでプツッと鳴らないように、0 から 100 ms で上げる
+  output.gain.setValueAtTime(0, ctx.currentTime);
+  output.gain.linearRampToValueAtTime(1, ctx.currentTime + VOICE_FADE_SEC);
+  output.connect(panner.node);
 
   // 連続音: 倍音を持つ発振器 → ローパス → 音量
   const osc = ctx.createOscillator();
@@ -92,38 +102,17 @@ export function createMeshVoiceSynth(
       );
     },
     click(params, time, gain) {
-      if (disposed || gain <= 0) return;
-      const peak = params.gain * gain;
-      // 共鳴の部分音: 正弦波を指数で減衰させる。高い部分音ほど小さく（1, 1/2, 1/3, …）
-      params.partials.forEach((partial, i) => {
-        const o = ctx.createOscillator();
-        o.frequency.value = partial.frequency;
-        const g = ctx.createGain();
-        envelope(g.gain, time, (peak / (i + 1)) * 0.6, partial.decay);
-        o.connect(g).connect(output);
-        const end = time + CLICK_ATTACK_SEC + partial.decay * CLICK_TAIL_FACTOR;
-        o.start(time);
-        o.stop(end);
-        o.onended = () => g.disconnect();
-      });
-      // ノイズの成分: 材質のフィルタを通した短いノイズ
-      const n = ctx.createBufferSource();
-      n.buffer = noise;
-      const f = ctx.createBiquadFilter();
-      f.type = params.noise.type;
-      f.frequency.value = params.noise.frequency;
-      const g = ctx.createGain();
-      envelope(g.gain, time, peak * CLICK_NOISE_RATIO, params.noise.decay);
-      n.connect(f).connect(g).connect(output);
-      const end = time + CLICK_ATTACK_SEC + params.noise.decay * CLICK_TAIL_FACTOR;
-      n.start(time, Math.random() * Math.max(0, noise.duration - 0.2));
-      n.stop(end);
-      n.onended = () => g.disconnect();
+      if (disposed) return;
+      playClick(ctx, output, noise, params, time, gain);
     },
     setMaterial(next) {
       if (disposed || next === material) return;
       material = next;
       applyMaterial();
+    },
+    setPosition(next) {
+      if (disposed) return;
+      panner.setPosition(next);
     },
     dispose() {
       if (disposed) return;
@@ -134,13 +123,54 @@ export function createMeshVoiceSynth(
       output.gain.linearRampToValueAtTime(0, now + RELEASE_SEC);
       osc.stop(now + RELEASE_SEC + 0.01);
       grit.stop(now + RELEASE_SEC + 0.01);
-      osc.onended = () => output.disconnect();
+      osc.onended = () => {
+        output.disconnect();
+        panner.dispose();
+      };
     },
   };
 }
 
+// time（コンテキストの時刻）にクリックを 1 回鳴らす。gain はクリックの音量に掛ける倍率
+export function playClick(
+  ctx: BaseAudioContext,
+  output: AudioNode,
+  noise: AudioBuffer,
+  params: ClickParams,
+  time: number,
+  gain: number,
+): void {
+  if (gain <= 0) return;
+  const peak = params.gain * gain;
+  // 共鳴の部分音: 正弦波を指数で減衰させる。高い部分音ほど小さく（1, 1/2, 1/3, …）
+  params.partials.forEach((partial, i) => {
+    const o = ctx.createOscillator();
+    o.frequency.value = partial.frequency;
+    const g = ctx.createGain();
+    envelope(g.gain, time, (peak / (i + 1)) * 0.6, partial.decay);
+    o.connect(g).connect(output);
+    const end = time + CLICK_ATTACK_SEC + partial.decay * CLICK_TAIL_FACTOR;
+    o.start(time);
+    o.stop(end);
+    o.onended = () => g.disconnect();
+  });
+  // ノイズの成分: 材質のフィルタを通した短いノイズ
+  const n = ctx.createBufferSource();
+  n.buffer = noise;
+  const f = ctx.createBiquadFilter();
+  f.type = params.noise.type;
+  f.frequency.value = params.noise.frequency;
+  const g = ctx.createGain();
+  envelope(g.gain, time, peak * CLICK_NOISE_RATIO, params.noise.decay);
+  n.connect(f).connect(g).connect(output);
+  const end = time + CLICK_ATTACK_SEC + params.noise.decay * CLICK_TAIL_FACTOR;
+  n.start(time, Math.random() * Math.max(0, noise.duration - 0.2));
+  n.stop(end);
+  n.onended = () => g.disconnect();
+}
+
 // 短い立ち上がりのあと、時定数 decay で指数に減衰する音量
-function envelope(param: AudioParam, time: number, peak: number, decay: number): void {
+export function envelope(param: AudioParam, time: number, peak: number, decay: number): void {
   param.setValueAtTime(0, time);
   param.linearRampToValueAtTime(peak, time + CLICK_ATTACK_SEC);
   param.setTargetAtTime(0, time + CLICK_ATTACK_SEC, decay);

@@ -11,6 +11,7 @@ type AudioState = {
   material: 'metal' | 'wood';
   voices: Array<{ key: string; frequency: number; click: number; tone: number }>;
 };
+// S1-26 で getAudio に足した中身（background・motors・lockSounds、voices の position）は audio-spatial.spec.ts で確かめる
 
 function fixture(name: string): Scene {
   return JSON.parse(
@@ -116,7 +117,7 @@ test('21 組のかみ合いが回るシーン（chain-22）では 16 組だけ�
   await expect.poll(async () => (await getAudio(page)).contextState).toBe('running');
   await expect.poll(async () => (await getAudio(page)).voices.length).toBe(16);
   const { voices } = await getAudio(page);
-  // Layout.meshes の順で最初の 16 組。小・24 枚・60 rpm なので、どれも 24 Hz
+  // カメラに近い 16 組（S1-26）。小・24 枚・60 rpm なので、どれも 24 Hz
   for (const v of voices) expect(v.frequency).toBeCloseTo(24, 3);
   expect(new Set(voices.map((v) => v.key)).size).toBe(16);
 });

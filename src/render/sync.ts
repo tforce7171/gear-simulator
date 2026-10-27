@@ -10,9 +10,9 @@ import {
   Vector3,
 } from 'three';
 import type { MotionState } from '../core/kinematics/types';
-import type { Layout } from '../core/layout/types';
+import type { Layout, ShaftLayout } from '../core/layout/types';
 import { axisVector } from '../core/math/axis';
-import { add, scale } from '../core/math/vec3';
+import { add, scale, type Vec3 } from '../core/math/vec3';
 import type {
   Gear,
   GearId,
@@ -41,6 +41,12 @@ export const MOTOR_BOX: Readonly<Record<SizeKey, number>> = { S: 6, M: 8, L: 11 
 const MOTOR_GAP = 1; // シャフトの端とモーターの箱のすき間
 // 細いシャフトをクリックしやすくする、見えない当たり判定の円柱の半径（S1-16）
 export const SHAFT_PICK_RADIUS = 3;
+
+// モーターの箱の中心: シャフトの負側の端のさらに外（音のうなりの位置にも使う。S1-26）
+export function motorCenter(placed: ShaftLayout, size: SizeKey): Vec3 {
+  const along = placed.span[0] - MOTOR_GAP - MOTOR_BOX[size] / 2;
+  return add(placed.origin, scale(axisVector(placed.axis), along));
+}
 
 // 選択とマウスを乗せたときのハイライト（S1-16）。ロックの赤（S1-22）と見分けられる水色
 const SELECTED_EMISSIVE = 0x1ea7ff;
@@ -339,13 +345,7 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
         entry = { motor, object, base: new Quaternion() };
         motors.set(motor.id, entry);
       }
-      // シャフトの負側の端のさらに外に置く
-      const along = placed.span[0] - MOTOR_GAP - MOTOR_BOX[motor.size] / 2;
-      placeOnAxis(
-        entry.object,
-        add(placed.origin, scale(axisVector(placed.axis), along)),
-        placed.axis,
-      );
+      placeOnAxis(entry.object, motorCenter(placed, motor.size), placed.axis);
       entry.base.copy(entry.object.quaternion);
     }
   }
