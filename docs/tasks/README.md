@@ -9,6 +9,15 @@
 3. `pnpm verify` が通ったら、`status` を `done` にしてコミットする（`feat(S1-05): ...`）。
 4. 実装中に前提（design.md や後続のタスク資料）が変わったら、同じコミットで資料も書き換える。
 
+### 自動実行
+
+`.claude/workflows/implement-all.js` が、上の手順をタスクごとにエージェントで回す（Claude Code で「implement-all ワークフローを実行して」）。
+
+- タスクごとに `task/<ID>` ブランチを切り、レビューに合格したら main に `--no-ff` でマージしてブランチを消す。この間だけ design.md §11 の「main に直接コミット」の例外とする。
+- 差し戻しは 2 回まで。それでも駄目なら新しい担当で 1 回やり直し、なお不合格なら `blocked`（途中の作業は `task/<ID>` に残す）。`blocked` を `todo` に戻して起動し直すと再挑戦する。
+- 仮定と `blocked` の理由は [implementation-log.md](implementation-log.md)、人が手で確かめる項目は [manual-checks.md](manual-checks.md) に貯める。
+- `done` と `blocked` は飛ばすので、中断しても起動し直せば続きから進む。
+
 ## 段階 1: 基盤
 
 | ID | 題名 | 依存 | 状態 |
