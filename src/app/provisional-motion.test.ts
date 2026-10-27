@@ -99,4 +99,21 @@ describe('stepProvisionalMotion', () => {
     expect(after.omegas.shaft_2).toBeCloseTo(2 * Math.PI, 9);
     expect(after.omegas.shaft_1).toBeCloseTo(-4 * Math.PI, 9);
   });
+
+  it('ω は力のつり合いの解: 逆向きの S と M（12 歯どうし）→ ∓30rpm', () => {
+    const gear2 = demoScene.gears.gear_2;
+    if (gear2 === undefined) throw new Error('demoScene に gear_2 が無い');
+    const base = withMotor({});
+    const scene: Scene = {
+      ...base,
+      gears: { ...base.gears, gear_2: { ...gear2, teeth: 12 } },
+      motors: {
+        ...base.motors,
+        motor_2: { id: 'motor_2', shaftId: 'shaft_2', size: 'M', rpm: 60, direction: 1, on: true },
+      },
+    };
+    const m = step(scene, 0);
+    expect(m.omegas.shaft_1).toBeCloseTo(-Math.PI, 9);
+    expect(m.omegas.shaft_2).toBeCloseTo(Math.PI, 9);
+  });
 });
