@@ -33,7 +33,7 @@ depends: [S1-01, S1-02, S1-03, S1-04, S1-05, S1-06, S1-07, S1-08, S1-09, S1-10, 
 6. **右クリックと設定**（`menu-and-settings.spec.ts`）
    シーン A を読む → g2 を右クリック →「モーターを付ける」→ 設定でテーマを木製、言語を英語 → 再読み込み → テーマ・言語・付けたモーターが残っている。
 7. **ループと付け直し**（`loop-and-reattach.spec.ts`）
-   `one-root-motor.json`（S1-18）を読む → A の外周の候補で B を生やし、B の外周の候補で C を生やす（A と C はかみ合わない位置）→ C を選び、円弧ハンドル（S1-19）で A とちょうどかみ合う角度まで動かす（吸着する）→ `getLayout().meshes` に A-C（`source: 'contact'`）、`getMotion().locks` に `reason: 'contradiction'`、`interferences` が空 → Ctrl+Z → ロックが解ける → B を Delete → C のシャフトが `detached` → C を選び、本体を A の外周の候補の位置へドラッグして離す（S1-19 の付け直し）→ C のシャフトが `{ kind: 'mesh', parentGearId: A }`、`locks` が空、C のシャフトの ω ≈ −π。
+   `one-root-motor.json`（S1-18）を読む → A の外周の候補で B を生やし、B の外周の候補で C を生やす（A と C はかみ合わない位置）→ C を選び、円弧ハンドル（S1-19）で A とちょうどかみ合う角度まで動かす（吸着する）→ `getLayout().meshes` に A-C（`source: 'contact'`）、`getMotion().locks` に `reason: 'contradiction'`、`interferences` が空 → Ctrl+Z → ロックが解ける → B を Delete → C のシャフトが `detached` → C を選び、本体を A の外周の候補の位置へドラッグして離す（S1-19 の付け直し。押す点は、C のシャフトの真下の位置・高さのハンドルを避ける。S1-19 の `e2e/handles.spec.ts` の `pointOnP` のように `pick` で確かめる）→ C のシャフトが `{ kind: 'mesh', parentGearId: A }`、`locks` が空、C のシャフトの ω ≈ −π。
 
 各テストはコンソールエラーと pageerror が 0 件であることを共通のフィクスチャで確かめる（design.md §10）。
 
