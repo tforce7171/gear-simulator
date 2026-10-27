@@ -69,7 +69,7 @@ depends: [S1-27]
   export function exportFileName(now: Date, workName: string | null): string;
   ```
 - ツールバーの「エクスポート」「インポート」の動作。エラーは S1-15 のトーストで出す。
-- 辞書のキー（日・英）: エラーの理由ごとの文言（6 種類）
+- 辞書のキー（日・英）: エラーの理由ごとの文言（6 種類）。ツールバーのボタン名（`toolbar.export`・`toolbar.export.tooltip`・`toolbar.import`・`toolbar.import.tooltip`）は S1-15 で足し済み。ボタンは `UiShell.toolbar.button('export')`・`button('import')` で受け取り、動作を付けて `disabled = false` にする。
 - テスト用のフィクスチャ: `e2e/fixtures/invalid-teeth.json`（S の歯車に `teeth: 81`）、`e2e/fixtures/future-version.json`（`version: 99`）
 
 ## 受け入れ条件

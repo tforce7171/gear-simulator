@@ -75,8 +75,8 @@ depends: [S1-07, S1-24]
   ```
 - `src/audio/`: `AudioContext` の開始、主音量とミュート、かみ合い 1 組分の合成（クリックの予約と連続音）、毎フレームの更新
 - テスト用のフィクスチャ `e2e/fixtures/scene-a.json`（S1-23 のシーン A。S1-23 が先に作っていればそれを使う）と `e2e/fixtures/chain-22.json`（小・24 枚の歯車 22 枚を一直線にかみ合わせ、先頭にモーター 小 60 rpm）
-- `M` キーとツールバーのミュートボタン。ボタンは `aria-pressed` でミュート中を示す。
-- 辞書のキー（日・英）: ミュートのボタン名
+- `M` キーとツールバーのミュートボタン。ボタンは `UiShell.toolbar.button('mute')` で受け取り、動作を付けて `disabled = false` にする。ボタンは `aria-pressed` でミュート中を示す。
+- 辞書のキー（日・英）: ツールバーのボタン名（`toolbar.mute`・`toolbar.mute.tooltip`）は S1-15 で足し済み。
 - `__gearSim` に追加
   ```ts
   getAudio(): {

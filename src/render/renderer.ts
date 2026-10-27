@@ -30,7 +30,7 @@ export interface Renderer extends SceneView {
   pickPoint(pageX: number, pageY: number): Vec3 | null;
 }
 
-// キャンバスに描く SceneView を作る。ウィンドウの大きさに追従する。
+// キャンバスに描く SceneView を作る。canvas の大きさ（ResizeObserver）に追従する。
 // カメラの位置と向きは input/camera.ts が動かす
 export function createRenderer(canvas: HTMLCanvasElement): Renderer {
   const renderer = new WebGLRenderer({ canvas, antialias: true });
@@ -52,14 +52,16 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
   const objects = createSceneSync();
   scene.add(objects.root);
 
+  // 描画バッファとカメラの縦横比を、canvas の表示の大きさに合わせる（S1-15。パネルを除いた描画領域）
   function resize(): void {
-    const width = canvas.clientWidth || window.innerWidth;
-    const height = canvas.clientHeight || window.innerHeight;
+    const width = canvas.clientWidth;
+    const height = canvas.clientHeight;
+    if (width === 0 || height === 0) return;
     renderer.setSize(width, height, false);
-    camera.aspect = width / Math.max(height, 1);
+    camera.aspect = width / height;
     camera.updateProjectionMatrix();
   }
-  window.addEventListener('resize', resize);
+  new ResizeObserver(resize).observe(canvas);
   resize();
 
   const projected = new Vector3();
@@ -90,6 +92,8 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
       renderer.render(scene, camera);
     },
     projectToScreen(world) {
+      // 描く前（setCamera の直後など）でも今のカメラで写す
+      camera.updateMatrixWorld();
       projected.set(world[0], world[1], world[2]).project(camera);
       const rect = canvas.getBoundingClientRect();
       return {

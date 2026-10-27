@@ -1,7 +1,7 @@
 ---
 id: S1-15
 title: 画面の骨組み
-status: todo
+status: doing
 depends: [S1-04, S1-12]
 ---
 
@@ -84,31 +84,31 @@ depends: [S1-04, S1-12]
 - `e2e/visual/ui-shell.spec.ts`
 
 ## 受け入れ条件
-- [ ] 4 つの領域と軸の目印の置き場が、要件 §7.4 の配置で出る
-- [ ] 描画領域がパネルに隠れず、ウィンドウの大きさに追従する
-- [ ] ツールバーの 8 つのボタンが並び、言語の切り替えで表示が変わる
-- [ ] パネルの上でドラッグやホイールをしてもカメラが動かない
-- [ ] `showToast` でエラー・通知のトーストが出て、時間がたつか閉じるボタンで消える
+- [x] 4 つの領域と軸の目印の置き場が、要件 §7.4 の配置で出る
+- [x] 描画領域がパネルに隠れず、ウィンドウの大きさに追従する
+- [x] ツールバーの 8 つのボタンが並び、言語の切り替えで表示が変わる
+- [x] パネルの上でドラッグやホイールをしてもカメラが動かない
+- [x] `showToast` でエラー・通知のトーストが出て、時間がたつか閉じるボタンで消える
 
 ## テストケース
 ### Vitest
 - なし（DOM の組み立てが主なので Playwright で確かめる）
 ### Playwright（`e2e/ui-shell.spec.ts`）
-- [ ] 8 つの `toolbar-*` が表示され、左から上の表の順に並ぶ（`boundingBox().x` が増えていく）
-- [ ] パレット、プロパティパネル、canvas の `boundingBox` が互いに重ならず、canvas が中央にある
-- [ ] `page.setViewportSize` で幅を 1280 → 1000 に縮める → canvas の幅が同じだけ縮み、canvas の描画バッファの縦横比が表示の縦横比と一致する（`canvas.width / canvas.height` と `clientWidth / clientHeight`）
-- [ ] プロパティパネルに案内文が出ている
-- [ ] `locale: 'ja-JP'` で開く → `toolbar-save` の文字が日本語の辞書の値。`__gearSim.setLanguage('en')` → 英語の辞書の値に変わる。`title` 属性も変わる
-- [ ] パレット・プロパティパネル・ツールバーの上の `pointerdown` と `wheel` が canvas に届かない（canvas 側にテスト用のリスナーを `page.evaluate` で付けて数える）。カメラが動かないことの確認は、S1-13 と S1-15 の両方がそろう S1-16 で行う
-- [ ] トースト（`e2e/toast.spec.ts`）: `locale: 'ja-JP'` で開き、`page.evaluate(() => import('/src/ui/toast.ts').then((m) => m.showToast('app.title', 'error')))` → `data-testid="toast"` が 1 つ出て、文字が日本語の辞書の値、`role="alert"`。`__gearSim.setLanguage('en')` → 英語の値に変わる。閉じるボタンを押す → 消える。`'info'` で出したものは、時間がたつと消える（`page.clock` で時間を進めてよい）
+- [x] 8 つの `toolbar-*` が表示され、左から上の表の順に並ぶ（`boundingBox().x` が増えていく）
+- [x] パレット、プロパティパネル、canvas の `boundingBox` が互いに重ならず、canvas が中央にある
+- [x] `page.setViewportSize` で幅を 1280 → 1000 に縮める → canvas の幅が同じだけ縮み、canvas の描画バッファの縦横比が表示の縦横比と一致する（`canvas.width / canvas.height` と `clientWidth / clientHeight`）
+- [x] プロパティパネルに案内文が出ている
+- [x] `locale: 'ja-JP'` で開く → `toolbar-save` の文字が日本語の辞書の値。`__gearSim.setLanguage('en')` → 英語の辞書の値に変わる。`title` 属性も変わる
+- [x] パレット・プロパティパネル・ツールバーの上の `pointerdown` と `wheel` が canvas に届かない（canvas 側にテスト用のリスナーを `page.evaluate` で付けて数える）。カメラが動かないことの確認は、S1-13 と S1-15 の両方がそろう S1-16 で行う
+- [x] トースト（`e2e/toast.spec.ts`）: `locale: 'ja-JP'` で開き、`page.evaluate(() => import('/src/ui/toast.ts').then((m) => m.showToast('app.title', 'error')))` → `data-testid="toast"` が 1 つ出て、文字が日本語の辞書の値、`role="alert"`。`__gearSim.setLanguage('en')` → 英語の値に変わる。閉じるボタンを押す → 消える。`'info'` で出したものは、時間がたつと消える（`page.clock` で時間を進めてよい）
 ### Playwright（見た目、`e2e/visual/ui-shell.spec.ts`）
-- [ ] 日本語の UI のスクリーンショットを `screenshots/ui-ja.png`、英語を `screenshots/ui-en.png` に保存する。真っ黒・真っ白でないこと
+- [x] 日本語の UI のスクリーンショットを `screenshots/ui-ja.png`、英語を `screenshots/ui-en.png` に保存する。真っ黒・真っ白でないこと
 
 ## 人が手で確かめる項目
 - 文字の大きさ・余白・並びが整っていて、英語の長い文字列でもボタンが崩れない
 - 狭いウィンドウ（幅 1000px 前後）でも使える
 
 ## 完了の条件
-- [ ] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
-- [ ] design.md と後続のタスク資料に、必要な変更を反映した
-- [ ] `status: done` にしてコミットした
+- [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
+- [x] design.md と後続のタスク資料に、必要な変更を反映した
+- [x] `status: done` にしてコミットした

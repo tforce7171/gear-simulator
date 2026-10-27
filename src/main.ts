@@ -7,9 +7,16 @@ import { installGearSim } from './debug/gear-sim';
 import { type ContextRequest, createCameraInput } from './input/camera';
 import { createKeyboard } from './input/keyboard';
 import { createRenderer, INITIAL_CAMERA_POSITION, INITIAL_CAMERA_TARGET } from './render/renderer';
+import { createUiShell } from './ui/shell';
 
-const canvas = document.querySelector<HTMLCanvasElement>('#app');
-if (!canvas) throw new Error('canvas #app が見つからない');
+const root = document.querySelector<HTMLElement>('#root');
+if (!root) throw new Error('#root が見つからない');
+
+// 画面の骨組み（S1-15）。canvas は中央の描画領域に入れる
+const shell = createUiShell(root);
+const canvas = document.createElement('canvas');
+canvas.id = 'app';
+shell.canvasHost.append(canvas);
 
 // タブの題名と <html lang> を現在の言語に合わせる（design.md §8）
 function applyLanguage(): void {
