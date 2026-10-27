@@ -306,7 +306,7 @@ interface Settings {
 }
 ```
 
-- 各欄は、それを使うタスクで足していく（上の型は段階 1 の完成形）。S1-21 で `sim`（`src/app/store.ts` の `SimState`。今は `hand` だけで、初期値は `DEFAULT_SIM`）を足した。`sim.hand` はポインターが動くたびに変わるので、`dispatch` ではなく `store.setHand(hand)`（購読者に知らせない。`setMotion` と同じ）で書き換える。`loadScene` で `null` に戻す。S1-22 は `SimState` に `paused` を足す。S1-14 で `view.watchMode`・`settings.inputDevice`・`settings.trackpadScroll` を足した（`src/app/store.ts` の `ViewState`・`Settings`。初期値は `DEFAULT_VIEW`・`DEFAULT_SETTINGS`）。ストアのアクションは `updateSettings { patch }`（値が `undefined` の項目は変えない）と `setWatchMode { on }`。どちらも値が変わらなければ購読者に知らせない。`loadScene` と編集コマンドは `view`・`settings` を保つ。
+- 各欄は、それを使うタスクで足していく（上の型は段階 1 の完成形）。S1-21 で `sim`（`src/app/store.ts` の `SimState`。今は `hand` だけで、初期値は `DEFAULT_SIM`）を足した。`sim.hand` はポインターが動くたびに変わるので、`dispatch` ではなく `store.setHand(hand)`（購読者に知らせない。`setMotion` と同じ）で書き換える。`loadScene` で `null` に戻す。S1-22 で `SimState` に `paused`（初期値 false。保存しない）を足した。Space の押して離す（`src/input/space-tap.ts` の `createSpaceTapDetector`。押している間にカメラのドラッグが始まった・`SPACE_TAP_MAX_MS` = 500ms より長く押した・自動の繰り返しは切り替えない）で `dispatch({ type: 'togglePause' })` する。`togglePause` はシーンと履歴を変えず、運動をすぐ解き直す（ω が次のフレームを待たずに 0 になる・戻る）。`loadScene` と編集コマンドは `paused` を保ち、解き直すときも一時停止中ならモーターを止めて解く。`runFrame` は `stepMotion` に `{ paused: sim.paused, hand }` を渡す（一時停止中でも手で回せる）。一時停止中は `stepMotion` が `locks = []` を返すので、ロックの表示も消える。一時停止中の表示は `src/ui/pause-indicator.ts`（`data-testid="pause-indicator"`、辞書 `sim.paused`）で、描画領域の上部中央に出す。S1-14 で `view.watchMode`・`settings.inputDevice`・`settings.trackpadScroll` を足した（`src/app/store.ts` の `ViewState`・`Settings`。初期値は `DEFAULT_VIEW`・`DEFAULT_SETTINGS`）。ストアのアクションは `updateSettings { patch }`（値が `undefined` の項目は変えない）と `setWatchMode { on }`。どちらも値が変わらなければ購読者に知らせない。`loadScene` と編集コマンドは `view`・`settings` を保つ。
 - シーンの変更は、必ず `core/edit` のコマンドを通す（Undo の履歴に積まれる）。コマンドの一覧と引数は S1-11 の資料が正。選択・カメラ・設定はシーンに含めない。
 - `offset` が `AXIAL_SNAP` の倍数であることは、シーンの検証（S1-03）とコマンドの引数チェック（S1-11）で強制する。
 - **部品の上での左ドラッグ**: 選択中の detached シャフトの本体なら付け直し（S1-19）、それ以外は手で回す（S1-21。`Interactions.pressHand`。`DRAG_THRESHOLD_PX` 以上動いてから回し始め、回している間は候補とハンドルを隠し、カーソルを `grabbing` にする。選択は変えない。マウスを乗せた部品のハイライトは続ける）。選択中の detached シャフトの本体が候補（S1-18）の陰にあるときも、左ボタンは `'app'`（付け直し）にする（S1-19）。
@@ -340,7 +340,8 @@ interface Settings {
   - `main.ts` の `pickAt` は、描く前（`loadScene` や編集の直後）でも今のシーンで当たるように、`sync` してから `pick` する。`CameraInput.setHitTest` には「`pickAt` が null なら `'none'`、候補なら `'click-only'`、それ以外は `'app'`」を渡す。
   - クリックは `src/input/selection-input.ts` の `createSelectionInput` が canvas で受ける（カメラの経路とは別。左ボタンを `DRAG_THRESHOLD_PX` 未満の移動で離したら `onClick`。何もない所も知らせる）。`main.ts` が `selectionForPick(pickAt(x, y), scene)`（`src/app/selection.ts`。モーターはそのシャフト、ハンドル・候補は null）をストアの `select { id }` に渡す（ハンドルのクリックは選択を変えず、候補のクリックは生やす。S1-17・S1-18）。S1-21 の手で回すは、`'app'` の経路のドラッグ（しきい値以上動いたもの）だけを扱えばよい（動かさずに離したクリックは、このまま選択になる）。
   - ストアのアクション `select { id }`（シーンに無い ID は null として扱う）。シーンが変わるアクション（編集・Undo・Redo・`loadScene`）のあとは `pruneSelection` で、無くなった部品の選択を外す。
-  - ハイライトは `Renderer.setHighlight({ selected, hovered })`（`render/sync.ts`）。材質を水色の発光（選択は強く、マウスを乗せた部品は弱く）の複製に差し替える。シャフトのときはモーターも光らせる。マウスを乗せた部品は `main.ts` が描く前に毎フレーム求め直す。S1-22 のロックの赤はこれと見分けられる色・方法にする。
+  - ハイライトは `Renderer.setHighlight({ selected, hovered })`（`render/sync.ts`）。材質を水色の発光（選択は強く、マウスを乗せた部品は弱く）の複製に差し替える。シャフトのときはモーターも光らせる。マウスを乗せた部品は `main.ts` が描く前に毎フレーム求め直す。
+  - ロックと干渉の表示（S1-22）: `runFrame` が毎フレーム `warningParts(scene, layout, motion)`（`src/render/warning-effects.ts`。three に依存しない純粋関数）で求めた部品を `SceneView.setWarnings` に渡し、`SceneView.update(motion, layout, timeSec)` の時刻で光と震えを動かす。材質は `render/sync.ts` の `levelOf` が「仮の部品の見た目 → ロック → 干渉 → 選択 → マウス」の順で選ぶ。ロックは赤の発光の強さを 2Hz で脈打たせ（`lockGlowIntensity`）、軸まわりに振幅 0.01 rad で震わせる（`lockShakeAngle`。描画だけで `MotionState` は変えない。部品の ID から位相をずらす）。干渉は一定の強さの赤の発光。ロック・干渉と選択（マウス）が重なったら、発光は赤のまま色（albedo）を水色に寄せて見分ける。仮の部品の invalid（S1-17）は色そのものを赤くするので、発光だけ赤いロック・干渉と見分けられる。ロック中の成分のシャフトに付いたモーターも locked に入る。干渉中のシャフトのモーターは、シャフトと同じ見た目にする（材質の `levelOf(motorId, shaftId)`）。
   - キー（`keyboard.ts` に登録）: Esc → 選択を外す、Delete・Backspace → `deleteParts { ids: [選択] }`、Ctrl+Z → Undo、Ctrl+Shift+Z → Redo（Ctrl は Mac の Cmd も含む）。
 - **カメラ（応用）**（S1-14）: ホイールも camera-controls に渡さず（`mouseButtons.wheel = NONE`）、`camera.ts` が canvas の `wheel`（`passive: false`）で受ける。`src/input/wheel.ts` の `createWheelClassifier` でマウスとトラックパッドを判別し（`AppState.settings.inputDevice` が `'auto'` のときだけ）、`decideWheelAction` で zoom / pan / rotate に分ける。ズームはカーソルの下の点（注視点を通り視線に垂直な平面上）を中心に、注視点と位置を同じ倍率で縮める（マウスのホイールだけなめらかに移る）。Safari のピンチは `gesturestart` / `gesturechange` の `scale` でズームする。
   - 視点の切り替え（`src/input/views.ts`）は camera-controls の `rotateTo(方位角, 極角)` で行う（方位角は +Z が 0、+X が π/2。上・下は極角 0・π で方位角 0）。テンキーは `keyboard.ts` に `code`（`Numpad1/3/7/5`）で登録する。NumLock が切れているとテンキー 7 の `key` が `'Home'` になるので、Home の全体表示は `code` が `Numpad` で始まるときは無視する。
@@ -451,6 +452,9 @@ interface GearSimDebug {
   // index は一覧の番号で、pick の結果（kind: 'candidate'）の id は String(index)
   getCandidates(): Array<{ index: number; kind: 'perimeter' | 'coaxial'; center: Vec3 }>;
   getHand(): HandConstraint | null;  // 手で回しているシャフトと目標の角度。回していなければ null（S1-21）
+  isPaused(): boolean;               // 全モーターの一時停止中か（S1-22）
+  // ロック中・干渉中として表示している部品の ID（どちらも昇順。interfering はロック中を除く。S1-22）
+  getWarningParts(): { locked: string[]; interfering: string[] };
 }
 
 // src/render/picking.ts（S1-16）
@@ -477,7 +481,7 @@ API はタスクで必要になった時点で足していく。足したらこ�
 | S1-18 | `getCandidates`（済） |
 | S1-20 | なし（パネルは `data-testid` で操作し、状態は既存の `getScene` / `getMotion` で確かめる） |
 | S1-21 | `getHand`（済） |
-| S1-22 | `isPaused` / `getWarningParts` |
+| S1-22 | `isPaused` / `getWarningParts`（済） |
 | S1-23 | `getInfoOverlay` |
 | S1-24 | `getRenderInfo`（S1-30 で品質の切り替えを確かめるのにも使う） |
 | S1-25 | `getAudio`（S1-26、S2-05、S3-05 で中身を広げる） |
