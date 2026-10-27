@@ -1,7 +1,7 @@
 ---
 id: S1-15
 title: 画面の骨組み
-status: doing
+status: done
 depends: [S1-04, S1-12]
 ---
 
