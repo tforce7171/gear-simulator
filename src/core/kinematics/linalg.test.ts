@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { nullSpace, rank } from './linalg';
+import {
+  multiply as matMul,
+  multiplyVector,
+  nullSpace,
+  rank,
+  solveParticular,
+  transpose,
+} from './linalg';
 
 function multiply(a: number[][], x: number[]): number[] {
   return a.map((row) => row.reduce((sum, v, j) => sum + v * (x[j] ?? 0), 0));
@@ -96,5 +103,56 @@ describe('rank', () => {
         4,
       ),
     ).toBe(3);
+  });
+});
+
+describe('solveParticular', () => {
+  it('正則な 2×2', () => {
+    const x = solveParticular(
+      [
+        [2, 1],
+        [1, 3],
+      ],
+      [3, 5],
+      2,
+    );
+    expect(x[0]).toBeCloseTo(0.8, 12);
+    expect(x[1]).toBeCloseTo(1.4, 12);
+  });
+
+  it('特異なら自由な列の成分を 0 にする', () => {
+    const x = solveParticular(
+      [
+        [1, 2],
+        [2, 4],
+      ],
+      [2, 4],
+      2,
+    );
+    expect(x).toEqual([2, 0]);
+  });
+
+  it('全て 0 の行列 → 0', () => {
+    expect(solveParticular([[0, 0]], [0], 2)).toEqual([0, 0]);
+  });
+});
+
+describe('multiply・multiplyVector・transpose', () => {
+  it('小さな行列で', () => {
+    const a = [
+      [1, 2],
+      [3, 4],
+      [5, 6],
+    ];
+    expect(transpose(a, 2)).toEqual([
+      [1, 3, 5],
+      [2, 4, 6],
+    ]);
+    expect(matMul(transpose(a, 2), a, 2)).toEqual([
+      [35, 44],
+      [44, 56],
+    ]);
+    expect(multiplyVector(a, [1, -1])).toEqual([-1, -1, -1]);
+    expect(transpose([], 2)).toEqual([[], []]);
   });
 });

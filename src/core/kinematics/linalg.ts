@@ -13,14 +13,17 @@ interface Echelon {
 }
 
 // 部分ピボット選択つきのガウスの消去で行階段形にする。ピボットは左の列から貪欲に取るので、
-// ピボットの列は「それより左の列と独立な列」、自由な列はその残りになる
-function echelon(a: Matrix, columns: number, relTol: number): Echelon {
+// ピボットの列は「それより左の列と独立な列」、自由な列はその残りになる。
+// extra > 0 なら、各行の columns 列より後ろの extra 列（右辺）も同じ行の操作で変える
+// （ピボットとしきい値には使わない）
+function echelon(a: Matrix, columns: number, relTol: number, extra = 0): Echelon {
   const m = a.map((row) => {
-    if (row.length !== columns) throw new RangeError('行の長さが columns と違う');
+    if (row.length !== columns + extra) throw new RangeError('行の長さが columns と違う');
     return [...row];
   });
   let maxAbs = 0;
-  for (const row of m) for (const v of row) maxAbs = Math.max(maxAbs, Math.abs(v));
+  for (const row of m)
+    for (let j = 0; j < columns; j++) maxAbs = Math.max(maxAbs, Math.abs(row[j] as number));
   const tol = relTol * maxAbs;
 
   const pivotColumns: number[] = [];
@@ -48,7 +51,9 @@ function echelon(a: Matrix, columns: number, relTol: number): Echelon {
       const row = m[i] as number[];
       const f = (row[c] as number) / p;
       if (f === 0) continue;
-      for (let j = c; j < columns; j++) row[j] = (row[j] as number) - f * (pivotRow[j] as number);
+      for (let j = c; j < columns + extra; j++) {
+        row[j] = (row[j] as number) - f * (pivotRow[j] as number);
+      }
       row[c] = 0;
     }
     pivotColumns.push(c);
@@ -91,4 +96,49 @@ export function nullSpace(a: Matrix, columns: number, relTol?: number): Matrix {
 
 export function rank(a: Matrix, columns: number, relTol: number = DEFAULT_REL_TOL): number {
   return echelon(a, columns, relTol).pivotColumns.length;
+}
+
+// a x = rhs の解のうち、自由な列の成分を 0 にしたものを返す。解が無い（矛盾する）ときは、
+// ピボットの行だけを満たすものになる（呼ぶ側で解があることを保証する）
+export function solveParticular(
+  a: Matrix,
+  rhs: readonly number[],
+  columns: number,
+  relTol: number = DEFAULT_REL_TOL,
+): number[] {
+  if (rhs.length !== a.length) throw new RangeError('右辺の長さが a の行数と違う');
+  const augmented = a.map((row, i) => [...row, rhs[i] as number]);
+  const { rows, pivotColumns } = echelon(augmented, columns, relTol, 1);
+  const x = new Array<number>(columns).fill(0);
+  for (let i = pivotColumns.length - 1; i >= 0; i--) {
+    const row = rows[i] as number[];
+    const pc = pivotColumns[i] as number;
+    let sum = row[columns] as number;
+    for (let j = pc + 1; j < columns; j++) sum -= (row[j] as number) * (x[j] as number);
+    x[pc] = sum / (row[pc] as number);
+  }
+  return x;
+}
+
+// 行列の積
+export function multiply(a: Matrix, b: Matrix, bColumns: number): Matrix {
+  return a.map((row) => {
+    const out = new Array<number>(bColumns).fill(0);
+    row.forEach((v, k) => {
+      if (v === 0) return;
+      const bRow = b[k] as number[];
+      for (let j = 0; j < bColumns; j++) out[j] = (out[j] as number) + v * (bRow[j] as number);
+    });
+    return out;
+  });
+}
+
+// 行列とベクトルの積
+export function multiplyVector(a: Matrix, x: readonly number[]): number[] {
+  return a.map((row) => row.reduce((sum, v, j) => sum + v * (x[j] as number), 0));
+}
+
+// 転置。rows 行 columns 列の a から columns 行 rows 列を作る（行が 0 本でも列数が分かるように columns を取る）
+export function transpose(a: Matrix, columns: number): Matrix {
+  return Array.from({ length: columns }, (_, j) => a.map((row) => row[j] as number));
 }
