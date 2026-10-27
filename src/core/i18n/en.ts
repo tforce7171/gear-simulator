@@ -21,6 +21,18 @@ export const en = {
   'toolbar.settings': 'Settings',
   'toolbar.settings.tooltip': 'Open the settings',
   'palette.title': 'Parts',
+  // 部品パレット（S1-17）
+  'palette.size': 'Gear size',
+  'palette.size.S': 'Small',
+  'palette.size.S.tooltip': 'Small (module 1)',
+  'palette.size.M': 'Medium',
+  'palette.size.M.tooltip': 'Medium (module 2)',
+  'palette.size.L': 'Large',
+  'palette.size.L.tooltip': 'Large (module 3)',
+  'palette.parts': 'Parts to place',
+  'palette.rootShaft': 'Base shaft',
+  'palette.rootShaft.tooltip':
+    'Drag onto the floor to place (R to change the direction, Esc to cancel)',
   'properties.title': 'Properties',
   'properties.empty': 'Select a part to see its settings here',
   'toast.close': 'Close',

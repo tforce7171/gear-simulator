@@ -12,7 +12,7 @@ import type { MotionState } from '../core/kinematics/types';
 import { resolveLayout } from '../core/layout/resolve';
 import type { Layout } from '../core/layout/types';
 import { createRandomIdGenerator, type IdGenerator } from '../core/scene/ids';
-import type { Scene } from '../core/scene/types';
+import type { Scene, SizeKey } from '../core/scene/types';
 import type { InputDeviceSetting, TrackpadScroll } from '../input/wheel';
 import { pruneSelection } from './selection';
 
@@ -34,6 +34,13 @@ export interface ViewState {
 
 export const DEFAULT_VIEW: ViewState = { watchMode: false };
 
+// 部品パレットで選んでいるもの（design.md §7 の AppState.palette。S1-17）。S2-05 で種類を足す
+export interface PaletteState {
+  readonly size: SizeKey; // 起点を置く・同じ軸に生やす歯車の大きさ
+}
+
+export const DEFAULT_PALETTE: PaletteState = { size: 'M' };
+
 // アプリの状態（design.md §7）。欄は使うタスクで足していく
 export interface AppState {
   readonly scene: Scene;
@@ -42,20 +49,29 @@ export interface AppState {
   readonly motion: MotionState;
   readonly view: ViewState; // S1-14
   readonly settings: Settings; // S1-14
+  readonly palette: PaletteState; // S1-17
 }
 
 // loadScene: 履歴を空にしてシーンを置き換える（テストの準備用。Undo の対象にしない）。
 // command: 編集コマンド（core/edit）を実行して履歴に積む。undo / redo: 履歴をたどる
 export type AppAction =
   | { readonly type: 'loadScene'; readonly scene: Scene }
-  | { readonly type: 'command'; readonly command: Command; readonly coalesceKey?: string }
+  // selectCreated: 成功して部品を作ったら、最後に作った部品を選ぶ（起点を置いたら歯車を選ぶ。S1-17）
+  | {
+      readonly type: 'command';
+      readonly command: Command;
+      readonly coalesceKey?: string;
+      readonly selectCreated?: boolean;
+    }
   | { readonly type: 'undo' }
   | { readonly type: 'redo' }
   // 設定の一部を書き換える（S1-30 の設定画面も同じ経路を使う）
   | { readonly type: 'updateSettings'; readonly patch: Partial<Settings> }
   | { readonly type: 'setWatchMode'; readonly on: boolean }
   // 選択を置き換える（null で外す）。シーンに無い ID は null として扱う（S1-16）
-  | { readonly type: 'select'; readonly id: string | null };
+  | { readonly type: 'select'; readonly id: string | null }
+  // パレットで選ぶ歯車の大きさ（S1-17）
+  | { readonly type: 'setPaletteSize'; readonly size: SizeKey };
 
 export interface StoreOptions {
   readonly ids?: IdGenerator; // 新しい部品の ID（既定はランダム）
@@ -110,7 +126,11 @@ function reduce(state: AppState, action: AppAction, ids: IdGenerator): AppState 
       const options = action.coalesceKey === undefined ? {} : { coalesceKey: action.coalesceKey };
       const result = execute(state, action.command, { ids }, options);
       // 失敗したコマンドは何も変えない（想定内の失敗なので例外にしない）
-      return result.ok ? withEdit(state, result.state) : state;
+      if (!result.ok) return state;
+      const edited = withEdit(state, result.state);
+      const created = result.created[result.created.length - 1];
+      if (action.selectCreated !== true || created === undefined || edited === state) return edited;
+      return { ...edited, selection: pruneSelection(created, edited.scene) };
     }
     case 'undo':
       return withEdit(state, undo(state));
@@ -128,6 +148,10 @@ function reduce(state: AppState, action: AppAction, ids: IdGenerator): AppState 
       const selection = pruneSelection(action.id, state.scene);
       return selection === state.selection ? state : { ...state, selection };
     }
+    case 'setPaletteSize':
+      return state.palette.size === action.size
+        ? state
+        : { ...state, palette: { ...state.palette, size: action.size } };
   }
 }
 
@@ -148,6 +172,7 @@ export function createStore(scene: Scene, options: StoreOptions = {}): Store {
     motion: initialMotion(scene, resolveLayout(scene)),
     view: DEFAULT_VIEW,
     settings: DEFAULT_SETTINGS,
+    palette: DEFAULT_PALETTE,
   };
   const listeners = new Set<(state: AppState) => void>();
   return {

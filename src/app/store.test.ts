@@ -210,3 +210,49 @@ describe('選択（S1-16）', () => {
     expect(store.getState().selection).toBeNull();
   });
 });
+
+describe('パレットと、作った部品の選択（S1-17）', () => {
+  it('パレットの大きさの初期値は中。setPaletteSize で変わり、同じ値なら知らせない', () => {
+    const store = createStore(emptyScene());
+    expect(store.getState().palette.size).toBe('M');
+    const listener = vi.fn();
+    store.subscribe(listener);
+    store.dispatch({ type: 'setPaletteSize', size: 'S' });
+    expect(store.getState().palette.size).toBe('S');
+    store.dispatch({ type: 'setPaletteSize', size: 'S' });
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('selectCreated なら最後に作った部品（起点では歯車）を選び、Undo 1 回で両方消えて選択も外れる', () => {
+    const store = createStore(emptyScene(), { ids: createSequentialIdGenerator() });
+    store.dispatch({
+      type: 'command',
+      command: {
+        type: 'addRootShaft',
+        axis: 'y',
+        origin: [0, 35, 0],
+        gear: { size: 'M', teeth: 20 },
+      },
+      selectCreated: true,
+    });
+    expect(store.getState().selection).toBe('gear_1');
+    store.dispatch({ type: 'undo' });
+    expect(store.getState().scene.shafts).toEqual({});
+    expect(store.getState().scene.gears).toEqual({});
+    expect(store.getState().selection).toBeNull();
+  });
+
+  it('selectCreated が無ければ選択は変えない', () => {
+    const store = createStore(emptyScene(), { ids: createSequentialIdGenerator() });
+    store.dispatch({
+      type: 'command',
+      command: {
+        type: 'addRootShaft',
+        axis: 'y',
+        origin: [0, 35, 0],
+        gear: { size: 'M', teeth: 20 },
+      },
+    });
+    expect(store.getState().selection).toBeNull();
+  });
+});

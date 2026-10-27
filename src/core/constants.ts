@@ -25,3 +25,5 @@ export const SHAFT_END_MARGIN = 4; // mm。シャフトを歯車の端から伸�
 export const EMPTY_SHAFT_HALF_LENGTH = 10; // mm。歯車の無いシャフトの長さの半分
 export const PERIMETER_CANDIDATE_COUNT = 8; // 外周の候補の方向の数（45° 刻み。S1-10）
 export const HISTORY_LIMIT = 100; // Undo の履歴に残すシーンの数の上限（S1-11）
+export const DEFAULT_TEETH = { S: 30, M: 20, L: 16 } as const; // 新しく置く・生やす歯車の歯数（S1-17）
+export const GRID_SNAP = 5; // mm。起点のシャフトの床上の位置と高さの吸着の単位（S1-17）

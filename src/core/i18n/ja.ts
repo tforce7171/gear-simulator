@@ -22,6 +22,18 @@ export const ja = {
   'toolbar.settings.tooltip': '設定を開く',
   // パネル（S1-15）
   'palette.title': '部品',
+  // 部品パレット（S1-17）
+  'palette.size': '歯車の大きさ',
+  'palette.size.S': '小',
+  'palette.size.S.tooltip': '小（モジュール 1）',
+  'palette.size.M': '中',
+  'palette.size.M.tooltip': '中（モジュール 2）',
+  'palette.size.L': '大',
+  'palette.size.L.tooltip': '大（モジュール 3）',
+  'palette.parts': '置く部品',
+  'palette.rootShaft': '起点のシャフト',
+  'palette.rootShaft.tooltip':
+    '床へドラッグして置く（ドラッグ中に R で向きを変える、Esc でやめる）',
   'properties.title': 'プロパティ',
   'properties.empty': '部品を選ぶと、ここに設定が出ます',
   // トースト（S1-15）
