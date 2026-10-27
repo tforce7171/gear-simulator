@@ -128,3 +128,42 @@ describe('createLayoutMemo', () => {
     expect(layoutOf({ ...demoScene })).not.toBe(a);
   });
 });
+
+describe('設定と表示の状態（S1-14）', () => {
+  it('初期値: inputDevice auto・trackpadScroll pan・watchMode false', () => {
+    const { settings, view } = createStore(demoScene).getState();
+    expect(settings).toEqual({ inputDevice: 'auto', trackpadScroll: 'pan' });
+    expect(view).toEqual({ watchMode: false });
+  });
+
+  it('updateSettings は指定した項目だけ変え、シーンと履歴はそのまま', () => {
+    const store = createStore(demoScene);
+    const before = store.getState();
+    store.dispatch({ type: 'updateSettings', patch: { trackpadScroll: 'orbit' } });
+    const after = store.getState();
+    expect(after.settings).toEqual({ inputDevice: 'auto', trackpadScroll: 'orbit' });
+    expect(after.scene).toBe(before.scene);
+    expect(after.history).toBe(before.history);
+  });
+
+  it('値が変わらない updateSettings・setWatchMode は購読者に知らせない', () => {
+    const store = createStore(demoScene);
+    const listener = vi.fn();
+    store.subscribe(listener);
+    store.dispatch({ type: 'updateSettings', patch: { inputDevice: 'auto' } });
+    store.dispatch({ type: 'setWatchMode', on: false });
+    expect(listener).not.toHaveBeenCalled();
+    store.dispatch({ type: 'setWatchMode', on: true });
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(store.getState().view.watchMode).toBe(true);
+  });
+
+  it('loadScene と編集コマンドは設定と表示の状態を保つ', () => {
+    const store = createStore(demoScene);
+    store.dispatch({ type: 'updateSettings', patch: { inputDevice: 'trackpad' } });
+    store.dispatch({ type: 'setWatchMode', on: true });
+    store.dispatch({ type: 'loadScene', scene: offScene });
+    expect(store.getState().settings.inputDevice).toBe('trackpad');
+    expect(store.getState().view.watchMode).toBe(true);
+  });
+});

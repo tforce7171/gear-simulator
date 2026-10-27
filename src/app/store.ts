@@ -13,12 +13,33 @@ import { resolveLayout } from '../core/layout/resolve';
 import type { Layout } from '../core/layout/types';
 import { createRandomIdGenerator, type IdGenerator } from '../core/scene/ids';
 import type { Scene } from '../core/scene/types';
+import type { InputDeviceSetting, TrackpadScroll } from '../input/wheel';
+
+// 設定（design.md §7 の Settings）。項目は各担当タスクで足す（S1-30 で localStorage に保存する）
+export interface Settings {
+  readonly inputDevice: InputDeviceSetting; // 入力デバイス（S1-14）
+  readonly trackpadScroll: TrackpadScroll; // 2 本指スクロールの割り当て（S1-14）
+}
+
+export const DEFAULT_SETTINGS: Settings = {
+  inputDevice: 'auto',
+  trackpadScroll: 'pan',
+};
+
+// 表示の状態（design.md §7 の AppState.view）。infoOverlay は S1-23 で足す
+export interface ViewState {
+  readonly watchMode: boolean; // 眺めるモード（S1-14）
+}
+
+export const DEFAULT_VIEW: ViewState = { watchMode: false };
 
 // アプリの状態（design.md §7）。欄は使うタスクで足していく
 export interface AppState {
   readonly scene: Scene;
   readonly history: History; // Undo/Redo の履歴（S1-11）
   readonly motion: MotionState;
+  readonly view: ViewState; // S1-14
+  readonly settings: Settings; // S1-14
 }
 
 // loadScene: 履歴を空にしてシーンを置き換える（テストの準備用。Undo の対象にしない）。
@@ -27,7 +48,10 @@ export type AppAction =
   | { readonly type: 'loadScene'; readonly scene: Scene }
   | { readonly type: 'command'; readonly command: Command; readonly coalesceKey?: string }
   | { readonly type: 'undo' }
-  | { readonly type: 'redo' };
+  | { readonly type: 'redo' }
+  // 設定の一部を書き換える（S1-30 の設定画面も同じ経路を使う）
+  | { readonly type: 'updateSettings'; readonly patch: Partial<Settings> }
+  | { readonly type: 'setWatchMode'; readonly on: boolean };
 
 export interface StoreOptions {
   readonly ids?: IdGenerator; // 新しい部品の ID（既定はランダム）
@@ -55,13 +79,25 @@ function withEdit(state: AppState, edited: EditState | null): AppState {
     edited.scene === state.scene
       ? state.motion
       : solveMotion(edited.scene, resolveLayout(edited.scene), state.motion);
-  return { scene: edited.scene, history: edited.history, motion };
+  return { ...state, scene: edited.scene, history: edited.history, motion };
+}
+
+// patch の値が undefined の項目は変えない。何も変わらなければ同じ参照を返す
+function mergeSettings(settings: Settings, patch: Partial<Settings>): Settings {
+  let next = settings;
+  for (const key of Object.keys(patch) as Array<keyof Settings>) {
+    const value = patch[key];
+    if (value === undefined || value === settings[key]) continue;
+    next = { ...next, [key]: value };
+  }
+  return next;
 }
 
 function reduce(state: AppState, action: AppAction, ids: IdGenerator): AppState {
   switch (action.type) {
     case 'loadScene':
       return {
+        ...state,
         scene: action.scene,
         history: emptyHistory(),
         motion: initialMotion(action.scene, resolveLayout(action.scene)),
@@ -76,6 +112,14 @@ function reduce(state: AppState, action: AppAction, ids: IdGenerator): AppState 
       return withEdit(state, undo(state));
     case 'redo':
       return withEdit(state, redo(state));
+    case 'updateSettings': {
+      const settings = mergeSettings(state.settings, action.patch);
+      return settings === state.settings ? state : { ...state, settings };
+    }
+    case 'setWatchMode':
+      return state.view.watchMode === action.on
+        ? state
+        : { ...state, view: { ...state.view, watchMode: action.on } };
   }
 }
 
@@ -85,6 +129,8 @@ export function createStore(scene: Scene, options: StoreOptions = {}): Store {
     scene,
     history: emptyHistory(),
     motion: initialMotion(scene, resolveLayout(scene)),
+    view: DEFAULT_VIEW,
+    settings: DEFAULT_SETTINGS,
   };
   const listeners = new Set<(state: AppState) => void>();
   return {
