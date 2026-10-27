@@ -165,11 +165,11 @@ function meshesOf(
     const p = placed[i] as (typeof placed)[number];
     for (let j = i + 1; j < placed.length; j++) {
       const q = placed[j] as (typeof placed)[number];
+      // 数値の判定を先にする（木の組かどうかの文字列のキーは、ちょうどの距離の組だけで作る）
+      if (!inContact(p.gear, p.layout, q.gear, q.layout)) continue;
       if (tree.has(pairKey(p.gear.id, q.gear.id))) continue;
-      if (inContact(p.gear, p.layout, q.gear, q.layout)) {
-        const [a, b] = ordered(p.gear.id, q.gear.id);
-        meshes.push({ a, b, source: 'contact' });
-      }
+      const [a, b] = ordered(p.gear.id, q.gear.id);
+      meshes.push({ a, b, source: 'contact' });
     }
   }
   return meshes.sort((m, n) => compare(m.a, n.a) || compare(m.b, n.b));

@@ -57,3 +57,10 @@
 | S1-09 | テストケースに無い補助として、「軸の向きが違う組は contact にしない」「別々の根でもちょうどの距離なら contact」「`descendantShafts` でシーンに無いシャフト → 空」「幅優先で浅いものが先」のテストを足した。`descendantShafts` は循環していても止まるようにした | 資料の contact の条件と幅優先の順を確かめるため。S1-11 の循環の判定に使われるので、循環したシーンでも無限ループにしないため |
 | S1-09 | e2e のフィクスチャ `square-loop.json`・`triangle.json` は ID を `shaft_1`〜・`gear_1`〜（A, B, C, D の順）にした。`square-loop.json` にはモーターを置かない。spec は `e2e/layout-tree.spec.ts` | 資料は `triangle.json` だけに `A` の S 60rpm を指定していたため。ID は既存のフィクスチャに合わせた |
 | S1-09 | 作業は `.claude/worktrees/S1-09`（`git worktree add`）で行った（`task/S1-09` ブランチ） | 実行環境が共有の作業ツリーへの書き込みを禁止していたため |
+| S1-10 | 絞り込みは「仮のシーンの `interferences` に、元のシーンの `interferences` に無い組が 1 つでもあれば除く」とした（組の差）。同じ軸の候補で伸びたシャフトが元から干渉していた組は、候補を減らさない | 新しい部品と伸びたシャフト以外は位置も形も変わらないので、増える組は必ずそれらを含み、資料の条件と一致する。「既存の干渉は候補の可否に関係しない」を伸びたシャフトにも素直に当てはめたため（テスト「伸びるシャフトが元から干渉していても…」を足した） |
+| S1-10 | シーンに無い `gearId`、整数でない歯数は例外にした。根からたどれない（`Layout` に無い）歯車は空の配列を返す | 呼び出しの誤りは歯数の範囲外と同じ扱いにした。`resolveLayout` が到達できない部品を例外にしない方針に合わせた |
+| S1-10 | 外周の候補の `center`・`axis`・`basePhase`、同じ軸の候補の `center`・`axis` は、仮のシーンの `resolveLayout` の値をそのまま使う。仮の ID は `__candidate_gear`・`__candidate_shaft`（既存の ID と重なれば `_1` などを付ける） | `growGear` で実際に足したときの値と必ず一致させるため |
+| S1-10 | 性能のため、`resolveLayout` の contact の判定（`meshesOf`）で、数値の判定（`inContact`）を木の組かどうかの判定（文字列のキーを作る）より先にした。結果は変わらない（`resolve.test.ts` がそのまま通る） | 歯車 200 枚で 1 回の `resolveLayout` が約 7ms（うち contact の判定が約 6ms。2 万組の文字列のキーの生成）で、列挙（仮のシーン 10 個）が約 80ms と目標の 50ms を超えたため。入れ替え後は約 40ms |
+| S1-10 | 性能のテストの 200 枚の木は、+X 方向に 100 枚の鎖（背骨）と、偶数番目は +Z・奇数番目は −Z に 1 枚ずつの枝にした。時間は 2 回目の呼び出しを測る | 資料は配置を決めていなかったため。干渉も contact も無い木になる |
+| S1-10 | S1-18 の資料の `CandidateKind` を `'mesh' \| 'coaxial'` から `GrowCandidate['kind']`（`'perimeter' \| 'coaxial'`）に直し、`GrowCandidate` から `growGear` の引数への変換を書いた | S1-10 の `GrowCandidate` と S1-11 の `growGear` の `mode` が `'perimeter'` なので、名前をそろえるため |
+| S1-10 | 作業は `.claude/worktrees/S1-10`（`git worktree add`）で行った（`task/S1-10` ブランチ） | 実行環境が共有の作業ツリーへの書き込みを禁止していたため |
