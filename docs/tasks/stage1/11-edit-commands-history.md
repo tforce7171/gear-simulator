@@ -1,7 +1,7 @@
 ---
 id: S1-11
 title: 編集コマンドと Undo/Redo
-status: todo
+status: doing
 depends: [S1-09]
 ---
 

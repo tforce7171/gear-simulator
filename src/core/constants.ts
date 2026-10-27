@@ -24,3 +24,4 @@ export const COLLISION_EPS = 1e-6; // mm。干渉の判定で、触れている�
 export const SHAFT_END_MARGIN = 4; // mm。シャフトを歯車の端から伸ばす長さ
 export const EMPTY_SHAFT_HALF_LENGTH = 10; // mm。歯車の無いシャフトの長さの半分
 export const PERIMETER_CANDIDATE_COUNT = 8; // 外周の候補の方向の数（45° 刻み。S1-10）
+export const HISTORY_LIMIT = 100; // Undo の履歴に残すシーンの数の上限（S1-11）
