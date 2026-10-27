@@ -1,7 +1,7 @@
 ---
 id: S1-13
 title: カメラ（基本）
-status: todo
+status: done
 depends: [S1-04]
 ---
 
@@ -87,32 +87,32 @@ camera-controls を入れ、要件 §7.1・§7.2 のマウスとキーボード�
   ```
 
 ## 受け入れ条件
-- [ ] 上の割り当て表どおりにカメラが動く
-- [ ] 右クリックでブラウザ標準のメニューが出ない。右ドラッグではコンテキストメニューの要求が出ない
-- [ ] ホイールでカーソルの下の点に向かってズームする
-- [ ] F・Home で全部品が画面に収まる
-- [ ] テキスト入力中は F・Home が効かない
+- [x] 上の割り当て表どおりにカメラが動く
+- [x] 右クリックでブラウザ標準のメニューが出ない。右ドラッグではコンテキストメニューの要求が出ない
+- [x] ホイールでカーソルの下の点に向かってズームする
+- [x] F・Home で全部品が画面に収まる
+- [x] テキスト入力中は F・Home が効かない
 
 ## テストケース
 ### Vitest
-- [ ] `routePointerDown`: 割り当て表の各行（左／中／右 × Alt／Shift／Space × `overInteractive` の真偽）→ 期待する経路。特に「左＋部品の上 → app」「Alt+左＋部品の上 → camera-rotate」「Space+左＋部品の上 → camera-pan」「Shift+右 → camera-pan」
-- [ ] `exceedsDragThreshold`: 3px の移動 → false、4px → true、斜め (3, 3) → true
-- [ ] `boundsOf`: 空のシーン → null。原点の縦軸の起点に中・20 歯の歯車 1 つ（`offset 0`。中心 `[0, 4, 0]`）→ x と z の範囲が ±歯先円半径（22）、y の範囲が 0〜8（歯幅 8）。`offset −4` にすると y の範囲が −4〜4。`ids` で 1 つを指定すると、その部品だけの範囲になる
-- [ ] `fitDistance`: 半径 0 → 0 以上の有限の値。半径を 2 倍にすると距離もほぼ 2 倍。aspect < 1（縦長）では横の視野で決まり、aspect = 1 のときより遠い
-- [ ] `isTypingTarget`: `input` 要素 → true、`button` 要素 → false、null → false（jsdom が要らないように、要素の判定を `tagName` と `isContentEditable` だけで行う形にしてもよい）
+- [x] `routePointerDown`: 割り当て表の各行（左／中／右 × Alt／Shift／Space × `overInteractive` の真偽）→ 期待する経路。特に「左＋部品の上 → app」「Alt+左＋部品の上 → camera-rotate」「Space+左＋部品の上 → camera-pan」「Shift+右 → camera-pan」
+- [x] `exceedsDragThreshold`: 3px の移動 → false、4px → true、斜め (3, 3) → true
+- [x] `boundsOf`: 空のシーン → null。原点の縦軸の起点に中・20 歯の歯車 1 つ（`offset 0`。中心 `[0, 4, 0]`）→ x と z の範囲が ±歯先円半径（22）、y の範囲が 0〜8（歯幅 8）。`offset −4` にすると y の範囲が −4〜4。`ids` で 1 つを指定すると、その部品だけの範囲になる
+- [x] `fitDistance`: 半径 0 → 0 以上の有限の値。半径を 2 倍にすると距離もほぼ 2 倍。aspect < 1（縦長）では横の視野で決まり、aspect = 1 のときより遠い
+- [x] `isTypingTarget`: `input` 要素 → true、`button` 要素 → false、null → false（jsdom が要らないように、要素の判定を `tagName` と `isContentEditable` だけで行う形にしてもよい）
 ### Playwright（`e2e/camera-basic.spec.ts`）
 準備: `e2e/fixtures/two-gears.json`（縦軸の起点のシャフトに中・20 歯、その外周に中・20 歯をかみ合わせたもの。まだ無ければこのタスクで作る）を `loadScene` し、`setCamera` で決まった視点にする。「何もない所」は、`projectToScreen` で部品から十分離れた床の点（例: `[300, 0, 300]`）を選ぶ。
-- [ ] 何もない所で左ドラッグ（100px 右へ）→ `getCamera().position` が変わり、`target` は変わらない
-- [ ] 右ドラッグ → 回転する。`getLastContextRequest()` は null のまま
-- [ ] Alt+左ドラッグ → 回転する
-- [ ] 中ドラッグ → `target` と `position` が同じだけ動く（平行移動）
-- [ ] Shift+右ドラッグ、Space を押しながら左ドラッグ → 平行移動になる
-- [ ] 右クリック（動かさない）→ `getLastContextRequest()` がクリック位置を返し、カメラは変わらない
-- [ ] 画面の中心から右上にずれた位置でホイール（`deltaY: -300`）→ 注視点からカメラまでの距離が縮み、`target` がカーソル側へ動く
-- [ ] 歯車の中心を `projectToScreen` した位置でダブルクリック → 移り終わった後（`expect.poll`）、`target` が歯車の中心から歯先円半径以内にあり、距離が元の約半分
-- [ ] 歯車から外して遠くへ動かした視点で Home → すべての歯車の中心の `projectToScreen` が画面内に入る
-- [ ] 選択なしで F → Home と同じ結果
-- [ ] フォーカスを `input` に置いた状態（テスト用に `page.evaluate` で一時的な input を足す）で Home → カメラが動かない
+- [x] 何もない所で左ドラッグ（100px 右へ）→ `getCamera().position` が変わり、`target` は変わらない
+- [x] 右ドラッグ → 回転する。`getLastContextRequest()` は null のまま
+- [x] Alt+左ドラッグ → 回転する
+- [x] 中ドラッグ → `target` と `position` が同じだけ動く（平行移動）
+- [x] Shift+右ドラッグ、Space を押しながら左ドラッグ → 平行移動になる
+- [x] 右クリック（動かさない）→ `getLastContextRequest()` がクリック位置を返し、カメラは変わらない
+- [x] 画面の中心から右上にずれた位置でホイール（`deltaY: -300`）→ 注視点からカメラまでの距離が縮み、`target` がカーソル側へ動く
+- [x] 歯車の中心を `projectToScreen` した位置でダブルクリック → 移り終わった後（`expect.poll`）、`target` が歯車の中心から歯先円半径以内にあり、距離が元の約半分
+- [x] 歯車から外して遠くへ動かした視点で Home → すべての歯車の中心の `projectToScreen` が画面内に入る
+- [x] 選択なしで F → Home と同じ結果
+- [x] フォーカスを `input` に置いた状態（テスト用に `page.evaluate` で一時的な input を足す）で Home → カメラが動かない
 
 ## 人が手で確かめる項目
 - 回転・平行移動・ズームの速さが自然で、引っかかりがない
@@ -120,6 +120,6 @@ camera-controls を入れ、要件 §7.1・§7.2 のマウスとキーボード�
 - Mac で Ctrl+クリック（右クリック扱い）の挙動に違和感がない
 
 ## 完了の条件
-- [ ] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
-- [ ] design.md と後続のタスク資料に、必要な変更を反映した（`__gearSim` の API が design.md §10 と合っているか確かめる）
-- [ ] `status: done` にしてコミットした
+- [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
+- [x] design.md と後続のタスク資料に、必要な変更を反映した（`__gearSim` の API が design.md §10 と合っているか確かめる）
+- [x] `status: done` にしてコミットした

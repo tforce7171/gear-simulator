@@ -327,6 +327,11 @@ interface Settings {
 - ストア（S1-04 の `src/app/store.ts`）は、`dispatch` で状態が変わったときに購読者に知らせる（S1-11 から。失敗したコマンドでは知らせない）。毎フレームの運動は `setMotion` で入れ、購読者には知らせない。
 - render は、前回と参照が変わった部品だけを作り直す。形状データ（BufferGeometry）は `(種類, 大きさ, 歯数)` をキーに共有する。
 - UI は素の TypeScript で書き、DOM を直接操作する。文字列はすべて `t('key')` を通す。
+- **カメラと入力**（S1-13）: `src/render/renderer.ts` の `createRenderer` は `SceneView` に加えて `camera`・`canvas`・`pickPoint(pageX, pageY)`（部品に当たればその点、なければ床 y = 0 との交点、どちらも無ければ null）を返す。カメラは `src/input/camera.ts` の `createCameraInput` が camera-controls で動かし、`main.ts` が描く前に毎フレーム `update()` を呼ぶ。マウスのボタンは camera-controls に渡さず、`src/input/pointer-route.ts` の `routePointerDown` で振り分けて自前で `rotate` / `truck` を呼ぶ（ホイールだけ camera-controls の `dollyToCursor`）。カメラのドラッグは、どのボタンも押した位置から `DRAG_THRESHOLD_PX`（4px）動いてから始まる。
+  - 「部品の上か」は `CameraInput.setHitTest((pageX, pageY) => boolean)` で差し替える（既定は常に false。S1-16 がピッキングに差し替える）。経路が `'app'` のポインターはカメラが無視する（受け取り手は S1-16 以降が canvas に付ける）。
+  - 右クリック（ドラッグなし）は `CameraInput.onContextRequest(listener)` で通知する（S1-29 が使う）。ブラウザ標準のメニューは canvas の `contextmenu` で止める。
+  - キー入力は `src/input/keyboard.ts` の `createKeyboard(window).bind({ key | code, ctrl?, alt?, shift? }, { onDown, onUp })` にまとめる。フォーカスがテキストの入力先（`isTypingTarget`）なら `onDown` を呼ばない。`ctrl`・`alt` は省略すると「押されていない」、`shift` は「どちらでもよい」。文字キーは `event.key`（大文字・小文字を区別しない）、テンキーは `event.code`。Space（押している間は平行移動の修飾キー）・F・Home は `camera.ts` が登録する。
+  - F で寄る先の選択は `CameraInputDeps.getSelection`（S1-16 で `AppState.selection` を渡す。それまでは省略して常に全体表示）。全体表示の範囲は `src/core/layout/bounds.ts` の `boundsOf`。
 
 ## 8. 国際化
 
@@ -382,7 +387,13 @@ interface GearSimDebug {
   projectToScreen(world: Vec3): { x: number; y: number };
   getLanguage(): Lang;               // 現在の画面の言語（S1-12）
   setLanguage(lang: Lang): void;     // タブの題名と <html lang> も変わる（S1-12）
+  getCamera(): CameraPose;           // 今の視点（移っている途中ならその時点の値。S1-13）
+  setCamera(pose: Pick<CameraPose, 'position' | 'target'>): void; // transition なしで即座に（S1-13）
+  getLastContextRequest(): { x: number; y: number } | null; // 最後の右クリック（ドラッグなし）のページ座標（S1-13）
 }
+
+// src/input/camera.ts（S1-13）
+interface CameraPose { position: Vec3; target: Vec3; projection: 'perspective' | 'orthographic' }
 ```
 
 API はタスクで必要になった時点で足していく。足したらこの節も更新する。各タスクの資料で予定している追加は次のとおり。
@@ -393,7 +404,7 @@ API はタスクで必要になった時点で足していく。足したらこ�
 | S1-04 | `getScene` / `getLayout` / `getMotion` / `loadScene` / `projectToScreen`（済） |
 | S1-11 | `dispatch` / `undo` / `redo`（済） |
 | S1-12 | `getLanguage` / `setLanguage`（済） |
-| S1-13 | `getCamera` / `setCamera` / `getLastContextRequest` |
+| S1-13 | `getCamera` / `setCamera` / `getLastContextRequest`（済） |
 | S1-14 | `getInputDevice` / `updateSettings` / `setWatchMode` / `getGizmoTargets` |
 | S1-16 | `pick` / `select` |
 | S1-17 | `getHandles` |
