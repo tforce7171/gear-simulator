@@ -84,6 +84,7 @@ depends: [S1-02]
   export interface SceneError {
     code: string;      // 例 'missingRef' | 'teethOutOfRange' | 'meshCycle' | ...（実装で決める）
     id?: string;       // 問題のある部品
+    path?: string;     // 問題の場所（例 'gears.gear_1.teeth'）。S1-28 のエラー表示で使う
     message: string;   // 開発者向け（英語でよい。UI には出さない）
   }
   export function validateScene(scene: Scene): { ok: true } | { ok: false; errors: SceneError[] };
