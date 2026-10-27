@@ -306,7 +306,7 @@ interface Settings {
 }
 ```
 
-- 各欄は、それを使うタスクで足していく（上の型は段階 1 の完成形）。S1-21 で `sim`（`src/app/store.ts` の `SimState`。今は `hand` だけで、初期値は `DEFAULT_SIM`）を足した。`sim.hand` はポインターが動くたびに変わるので、`dispatch` ではなく `store.setHand(hand)`（購読者に知らせない。`setMotion` と同じ）で書き換える。`loadScene` で `null` に戻す。S1-22 で `SimState` に `paused`（初期値 false。保存しない）を足した。Space の押して離す（`src/input/space-tap.ts` の `createSpaceTapDetector`。押している間にカメラのドラッグが始まった・`SPACE_TAP_MAX_MS` = 500ms より長く押した・自動の繰り返しは切り替えない）で `dispatch({ type: 'togglePause' })` する。`togglePause` はシーンと履歴を変えず、運動をすぐ解き直す（ω が次のフレームを待たずに 0 になる・戻る）。`loadScene` と編集コマンドは `paused` を保ち、解き直すときも一時停止中ならモーターを止めて解く。`runFrame` は `stepMotion` に `{ paused: sim.paused, hand }` を渡す（一時停止中でも手で回せる）。一時停止中は `stepMotion` が `locks = []` を返すので、ロックの表示も消える。一時停止中の表示は `src/ui/pause-indicator.ts`（`data-testid="pause-indicator"`、辞書 `sim.paused`）で、描画領域の上部中央に出す。S1-14 で `view.watchMode`・`settings.inputDevice`・`settings.trackpadScroll` を足した（`src/app/store.ts` の `ViewState`・`Settings`。初期値は `DEFAULT_VIEW`・`DEFAULT_SETTINGS`）。ストアのアクションは `updateSettings { patch }`（値が `undefined` の項目は変えない）と `setWatchMode { on }`。どちらも値が変わらなければ購読者に知らせない。`loadScene` と編集コマンドは `view`・`settings` を保つ。S1-24 で `settings.theme`（`ThemeId`、初期値 `'brass'`）と `settings.quality`（`Quality`、初期値 `'high'`）を足した（型と初期値は `src/core/theme.ts` の `DEFAULT_THEME`・`DEFAULT_QUALITY`）。変えるのは同じ `updateSettings` で、ツールバーのテーマボタンは `nextTheme` で次のテーマにする。
+- 各欄は、それを使うタスクで足していく（上の型は段階 1 の完成形）。S1-21 で `sim`（`src/app/store.ts` の `SimState`。今は `hand` だけで、初期値は `DEFAULT_SIM`）を足した。`sim.hand` はポインターが動くたびに変わるので、`dispatch` ではなく `store.setHand(hand)`（購読者に知らせない。`setMotion` と同じ）で書き換える。`loadScene` で `null` に戻す。S1-22 で `SimState` に `paused`（初期値 false。保存しない）を足した。Space の押して離す（`src/input/space-tap.ts` の `createSpaceTapDetector`。押している間にカメラのドラッグが始まった・`SPACE_TAP_MAX_MS` = 500ms より長く押した・自動の繰り返しは切り替えない）で `dispatch({ type: 'togglePause' })` する。`togglePause` はシーンと履歴を変えず、運動をすぐ解き直す（ω が次のフレームを待たずに 0 になる・戻る）。`loadScene` と編集コマンドは `paused` を保ち、解き直すときも一時停止中ならモーターを止めて解く。`runFrame` は `stepMotion` に `{ paused: sim.paused, hand }` を渡す（一時停止中でも手で回せる）。一時停止中は `stepMotion` が `locks = []` を返すので、ロックの表示も消える。一時停止中の表示は `src/ui/pause-indicator.ts`（`data-testid="pause-indicator"`、辞書 `sim.paused`）で、描画領域の上部中央に出す。S1-14 で `view.watchMode`・`settings.inputDevice`・`settings.trackpadScroll` を足した（`src/app/store.ts` の `ViewState`・`Settings`。初期値は `DEFAULT_VIEW`・`DEFAULT_SETTINGS`）。ストアのアクションは `updateSettings { patch }`（値が `undefined` の項目は変えない）と `setWatchMode { on }`。どちらも値が変わらなければ購読者に知らせない。`loadScene` と編集コマンドは `view`・`settings` を保つ。S1-24 で `settings.theme`（`ThemeId`、初期値 `'brass'`）と `settings.quality`（`Quality`、初期値 `'high'`）を足した（型と初期値は `src/core/theme.ts` の `DEFAULT_THEME`・`DEFAULT_QUALITY`）。変えるのは同じ `updateSettings` で、ツールバーのテーマボタンは `nextTheme` で次のテーマにする。S1-25 で `settings.muted`（初期値 `false`。localStorage への保存は S1-30）を足した。M キー（`keyboard.ts` に `{ key: 'm' }`）とツールバーの `mute` ボタンが `updateSettings { patch: { muted: !muted } }` で切り替え、ボタンは `aria-pressed` で示す。
 - シーンの変更は、必ず `core/edit` のコマンドを通す（Undo の履歴に積まれる）。コマンドの一覧と引数は S1-11 の資料が正。選択・カメラ・設定はシーンに含めない。
 - `offset` が `AXIAL_SNAP` の倍数であることは、シーンの検証（S1-03）とコマンドの引数チェック（S1-11）で強制する。
 - **部品の上での左ドラッグ**: 選択中の detached シャフトの本体なら付け直し（S1-19）、それ以外は手で回す（S1-21。`Interactions.pressHand`。`DRAG_THRESHOLD_PX` 以上動いてから回し始め、回している間は候補とハンドルを隠し、カーソルを `grabbing` にする。選択は変えない。マウスを乗せた部品のハイライトは続ける）。選択中の detached シャフトの本体が候補（S1-18）の陰にあるときも、左ボタンは `'app'`（付け直し）にする（S1-19）。
@@ -377,6 +377,11 @@ interface Settings {
   - 歯車・シャフト・モーターは影を落とし、歯車と床は影を受ける。情報表示の矢印・候補・ハンドルの材質はテーマで変えない。
   - 高品質の環境マップは 128（資料の表の 256 から下げた。implementation-log の S1-24）。
   - 描画を軽くする仕組み（S1-24。SwiftShader でも通しテストが動く速さにするため）: `Renderer.render` は見た目が前のフレームと同じなら描かない（`src/render/redraw.ts` の `createRedrawDetector`。描くオブジェクトの並び・見えるか・ワールド行列・材質、カメラ、描画バッファの大きさ、`SceneSync.version()`（部品の回転・震え・材質の選び直しで増える）を比べる。材質の色などを直接書き換えたら `invalidate` する）。影マップは `SceneSync.version()` が変わったときだけ描き直す。最初のフレームは 1 画素を読み戻して描き終わるまで待ち、`isReady` の前にシェーダーの準備を済ませる。新しく描くものを足すタスクは、行列・見えるか・材質の差し替え以外で見た目を変えるなら（材質の値を毎フレーム書き換えるなど）、`SceneSync.version()` を増やすか `invalidate` を呼ぶこと。カメラの `update` の経過時間の上限は 0.25 秒（`src/input/camera.ts` の `CAMERA_MAX_DT`。フレームが遅くても移り変わりが実時間で終わるように）。
+- **音**（S1-25。計算は `src/core/audio-model/index.ts`、再生は `src/audio/`）:
+  - `core/audio-model`: `meshKey`（2 つの歯車の ID を文字列順に `|` でつなぐ）・`toothPassFrequency`・`clickToneMix`・`toneParams`・`toothPassTimes`（境目 k を「小さいほう < k ≤ 大きいほう」で数えるので、続くフレームで同じ境目を 2 回数えない）・`clickParams`（部分音とノイズのフィルタを同じ割合で ±3%）・`MATERIALS`・`computeMeshVoices(scene, layout, motion)`（`Layout.meshes` の順に全組。`MeshVoice { key, gearId, shaftId, teeth, frequency, click, tone }`。`gearId` はクリックの時刻を求める歯車で key の先頭の歯車、`frequency` はクランプしない歯の通過頻度）・`activeVoices(voices, max = MAX_AUDIO_VOICES)`（f > 0 の組を並びの順に最初の max 組。S1-26 がカメラに近い順の選び方に置き換える）・`shouldScheduleClicks`・定数 `MASTER_GAIN`（0.5）・`MUTE_RAMP_SEC`（0.05）・`CLICK_LATENCY`（0.03）。core は Web Audio に触れない（`import-rules.test.ts` は core に `AudioContext` という語があるだけで失敗するので、コメントにも書かない）。
+  - `src/audio/engine.ts` の `createAudioEngine({ muted?, material?, random?, createContext? })`: `start()`（AudioContext を作って `resume`。2 回目以降は止まっていれば `resume` だけ）・`setMuted`（主音量を 50 ms の直線で変える）・`setMaterial(id)`（初期値 `'metal'`。S1-30 がテーマに結び付ける）・`update(voices, angles, dt)`（毎フレーム）・`state()`（`__gearSim.getAudio` の中身）。AudioContext を作る前も `update` で鳴らす組は求める。主音量の後にリミッター（`DynamicsCompressorNode`）を挟む。
+  - かみ合い 1 組分の合成は `src/audio/mesh-voice.ts` の `createMeshVoiceSynth`（連続音: `PeriodicWave` の発振器 → ローパス、ざらつき: ループするノイズ → 基本周波数の 2 倍の帯域フィルタ。値は時定数 20 ms で追いかける。クリック: 部分音の正弦波とフィルタを通したノイズを、1 ms の立ち上がりと時定数 = 表の減衰時間の指数の減衰で予約する。消すときは 100 ms でフェードアウト）。ノイズは実行時に 1 秒の白色雑音の `AudioBuffer` を作って共有する。
+  - `main.ts`: `window` の `pointerdown`・`keydown`（capture）で `audio.start()` を呼ぶ（描画領域に限らず最初のユーザー操作で始めるため）。`startLoop` の `onFrame(dt)`（S1-25 で経過時間を渡すようにした）で、運動を進めた後のストアの状態から `computeMeshVoices` を求めて `audio.update` に渡す。
 - **生やす候補**（S1-18）:
   - 生やす歯車の大きさと歯数は `src/app/grow.ts` の `growSpec(parent, kind, paletteSize)`（外周は親と同じ大きさ、同じ軸はパレットの大きさ。歯数はどちらも `DEFAULT_TEETH[大きさ]`）。`candidatesFor(scene, selection, paletteSize)` が選択中の歯車の `listGrowCandidates` を返し（選択が無い・シャフトなら `[]`）、`growCommand(candidate)` が `growGear` にそのまま変換する。`candidateSpec(scene, candidate)` は表示用の `CandidateSpec`。
   - 候補の一覧は `Interactions.candidates()`（`src/app/interactions.ts`）。シーン・選択・パレットの大きさが変わったときだけ列挙し直し、同じ間は同じ参照を返す。ドラッグ中（起点を置く・ハンドル）は `[]`（S1-21 は手で回している間もここで `[]` にする）。`grow(index)` は `command { growGear, selectCreated: true }` を投げる（生やした歯車が選ばれ、続けて次の候補が出る）。
@@ -466,6 +471,16 @@ interface GearSimDebug {
   // 情報表示（S1-23）。enabled はツールバーの ON/OFF（view.infoOverlay。OFF でも選択中の歯車には出る）。
   // arrows は今描いている回転方向の矢印（gearId の昇順。止まっている歯車は含まない。10 Hz で書き換える）
   getInfoOverlay(): { enabled: boolean; arrows: Array<{ gearId: GearId; direction: 1 | -1 }> };
+  getRenderInfo(): { theme: ThemeId; quality: Quality; shadowMapEnabled: boolean; pixelRatio: number; textures: number }; // S1-24
+  // 音（S1-25。型は src/audio/engine.ts の AudioState）。contextState は AudioContext を作る前は 'none'。
+  // voices は今鳴らしているかみ合い（f > 0 の組のうち Layout.meshes の順で最初の 16 組）。key は meshKey、
+  // frequency は歯の通過頻度（Hz。連続音のクランプ前の値）、click・tone はクロスフェードの重み
+  getAudio(): {
+    contextState: 'none' | AudioContextState;
+    muted: boolean;
+    material: AudioMaterialId;
+    voices: Array<{ key: string; frequency: number; click: number; tone: number }>;
+  };
 }
 
 // src/render/picking.ts（S1-16）
@@ -495,7 +510,7 @@ API はタスクで必要になった時点で足していく。足したらこ�
 | S1-22 | `isPaused` / `getWarningParts`（済） |
 | S1-23 | `getInfoOverlay`（済） |
 | S1-24 | `getRenderInfo`（済。`{ theme, quality, shadowMapEnabled, pixelRatio, textures }`。theme・quality は描画に適用済みの値、textures は `renderer.info.memory.textures`。S1-30 で品質の切り替えを確かめるのにも使う） |
-| S1-25 | `getAudio`（S1-26、S2-05、S3-05 で中身を広げる） |
+| S1-25 | `getAudio`（済。`{ contextState, muted, material, voices }`。S1-26、S2-05、S3-05 で中身を広げる） |
 | S1-27 | `getStorageStatus` |
 | S1-29 | `getView` |
 | S1-30 | `getSettings` |
