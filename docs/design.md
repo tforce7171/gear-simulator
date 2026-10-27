@@ -268,6 +268,7 @@ function initialMotionState(): MotionState; // 全て空
   - かみ合いのグラフは `stepMotion` の中で `buildMeshGraph(scene, layout.meshes)` で作り、`Layout` の参照をキーに、シーンの参照が同じ間は使い回す
 - **手で回す**: つかんだシャフトの角度を手の位置で拘束する（無限に強い力）。手を離したら、つり合いの解に戻す。
   - 実装（S1-07 の `opts.hand`）: つかんだシャフトの成分（段階 1 では自由度 1）は、`(N q)_{つかんだ行} = angle` となる `q` に決め、`θ = N q`、`ω = N (q − q_前) / dt`（`q_前` は前の状態の基準シャフトの角度。`dt = 0` なら 0）とする。モーターのつり合いは無視し、`stalemate` のロックは出さない。自由度 0 なら角度を変えず `contradiction` のロックにする（モーターの有無によらない）。一時停止中でも効く。シーンに無いシャフトをつかんでいたら手は無いものとして扱う。自由度 2 以上は今は例外を投げる（S3-03 で、残りの自由度をつり合いで解く）
+  - 入力（S1-21）: 回している間の手の拘束は `AppState.sim.hand`。`src/app/loop.ts` の `runFrame` は `sim.hand` が null でなければ `stepMotion` の `opts` に `{ hand }` を渡す。目標の角度は `src/input/hand-rotate.ts` の `startHandRotate`（押したときのシャフトの角度 + 手の角度の変化量の積算。手の角度は `src/input/handle-drag.ts` の `pointerAngleAroundAxis` で、円弧のハンドルと共用。面を真横から見ているときは画面上の角度で代用し、求め方が切り替わった間の変化は数えない）。つかむシャフトと中心は `grabTarget`（歯車はその中心、シャフト・モーターは当たった点を軸に下ろした点）。ポインターを動かすたびに `store.setHand` で目標を入れ、離す（`pointerup`・`pointercancel`・Esc）と `null` に戻す。ロック中の成分の扱い: `contradiction`（自由度 0）は回らず、`stalemate` は回している間ロックを外す（どちらも上の `stepMotion` の実装のとおり）
 - **一時停止**（Space）: すべてのモーターを止めた状態で解く。シーンは変えない。`opts.paused` で渡す（S1-07）。ON のモーターが無いのと同じなので、ロックも負けたモーターも出ない
 
 ## 7. アプリの状態と層の関係
@@ -305,10 +306,10 @@ interface Settings {
 }
 ```
 
-- 各欄は、それを使うタスクで足していく（上の型は段階 1 の完成形）。S1-14 で `view.watchMode`・`settings.inputDevice`・`settings.trackpadScroll` を足した（`src/app/store.ts` の `ViewState`・`Settings`。初期値は `DEFAULT_VIEW`・`DEFAULT_SETTINGS`）。ストアのアクションは `updateSettings { patch }`（値が `undefined` の項目は変えない）と `setWatchMode { on }`。どちらも値が変わらなければ購読者に知らせない。`loadScene` と編集コマンドは `view`・`settings` を保つ。
+- 各欄は、それを使うタスクで足していく（上の型は段階 1 の完成形）。S1-21 で `sim`（`src/app/store.ts` の `SimState`。今は `hand` だけで、初期値は `DEFAULT_SIM`）を足した。`sim.hand` はポインターが動くたびに変わるので、`dispatch` ではなく `store.setHand(hand)`（購読者に知らせない。`setMotion` と同じ）で書き換える。`loadScene` で `null` に戻す。S1-22 は `SimState` に `paused` を足す。S1-14 で `view.watchMode`・`settings.inputDevice`・`settings.trackpadScroll` を足した（`src/app/store.ts` の `ViewState`・`Settings`。初期値は `DEFAULT_VIEW`・`DEFAULT_SETTINGS`）。ストアのアクションは `updateSettings { patch }`（値が `undefined` の項目は変えない）と `setWatchMode { on }`。どちらも値が変わらなければ購読者に知らせない。`loadScene` と編集コマンドは `view`・`settings` を保つ。
 - シーンの変更は、必ず `core/edit` のコマンドを通す（Undo の履歴に積まれる）。コマンドの一覧と引数は S1-11 の資料が正。選択・カメラ・設定はシーンに含めない。
 - `offset` が `AXIAL_SNAP` の倍数であることは、シーンの検証（S1-03）とコマンドの引数チェック（S1-11）で強制する。
-- **部品の上での左ドラッグ**: 選択中の detached シャフトの本体なら付け直し（S1-19）、それ以外は手で回す（S1-21）。選択中の detached シャフトの本体が候補（S1-18）の陰にあるときも、左ボタンは `'app'`（付け直し）にする（S1-19）。
+- **部品の上での左ドラッグ**: 選択中の detached シャフトの本体なら付け直し（S1-19）、それ以外は手で回す（S1-21。`Interactions.pressHand`。`DRAG_THRESHOLD_PX` 以上動いてから回し始め、回している間は候補とハンドルを隠し、カーソルを `grabbing` にする。選択は変えない。マウスを乗せた部品のハイライトは続ける）。選択中の detached シャフトの本体が候補（S1-18）の陰にあるときも、左ボタンは `'app'`（付け直し）にする（S1-19）。
 - `reattachShaft` は、子の歯車の `offset` が 0 になるように、そのシャフト上の全歯車の `offset` を同じ量だけずらす（S1-11）。
 - **編集コマンド**（S1-11。`src/core/edit/commands.ts` の `applyCommand(scene, command, { ids })`）: 入力のシーンを変えずに新しいシーンを返し、変わらない部分（コレクション・部品）は元の参照を使い回す。何も変わらなければ同じシーンの参照を返す。失敗は例外にせず `{ ok: false, error: { code: 'notFound' | 'invalidValue' | 'notAllowed', message } }`。成功の `created` は新しく作った部品の ID（作った順。例: `addRootShaft` は `[シャフト, 歯車]`）。成功したシーンは必ず `validateScene` を通る。コマンドの一覧:
   - `addRootShaft { axis, origin, gear: { size, teeth } }`、`growGear { mode: 'perimeter', parentGearId, angle, teeth }`（親と同じ大きさ・`offset 0` の歯車と `mesh` のシャフト）、`growGear { mode: 'coaxial', shaftId, offset, size, teeth }`
@@ -354,7 +355,7 @@ interface Settings {
   - 仮の部品の見た目は `Renderer.setPreviewStyle({ ids, ghost, invalid } | null)`（`render/sync.ts` の `PreviewStyle`）。`ghost` は半透明、`invalid` は赤（色そのものを赤にする。選択の水色より優先）。ハンドルのドラッグで新たな干渉を生む位置では、動く部品（`movedParts`: そのシャフトとその先のシャフト・歯車・モーター）を赤くする。
   - ハンドル: 一覧は `src/input/handle-drag.ts` の `listHandles(scene, layout, selection)`（`HandleSpec { kind, targetId, position, frame? }`）、描画は `src/render/handles.ts`（`Renderer.setHandles(handles, activeId)`。奥行きを無視して最後に重ねて描く）。ピッキングの ID は `handlePickId` = `'<kind>:<targetId>'`。種類ごとの「レイ → 編集コマンド」は `HANDLE_DRAGS`、形は `HANDLE_BUILDERS` に登録する（S1-19 が `'arc'`・`'axial'` を足す）。ドラッグの共通の振る舞いは `startHandleDrag(scene, handle, startRay)` のセッション（`update(ray)` / `state()` = `{ scene, invalid }` / `finish()` = 確定するコマンドか null）。新たな干渉の判定は `src/core/layout/interference-diff.ts` の `newInterferences(before, after)`。
   - 位置のハンドルは原点の真下の床（`[x, 0, z]`）、高さのハンドルは同じ縦の線の上で、シャフトの部品の最も低い所の 6 mm 下（10 mm より下にはしない）。どちらもドラッグ開始時からの移動量を原点に足して `GRID_SNAP` に吸着する（高さは 0 以上）。レイの計算は `src/input/placement.ts`（`intersectRayPlane`・`closestHeightOnVerticalLine`・`snap`・`rootHeight`・`nextAxis`・`rootPlacementCommand`）。`Renderer.rayAt(pageX, pageY)` が `activeCamera()` のレイを返す。
-  - `CameraInput.onAppPointerDown(listener)`: 経路が `'app'` の pointerdown を知らせる（Alt・Space の付いた左ボタンはカメラの経路なので来ない）。`main.ts` はハンドルに当たればハンドルのドラッグを始める（S1-21 の手で回すも、ここから始める）。ハンドルのクリックでは選択を変えない。
+  - `CameraInput.onAppPointerDown(listener)`: 経路が `'app'` の pointerdown を知らせる（Alt・Space の付いた左ボタンはカメラの経路なので来ない）。`main.ts` はハンドルに当たればハンドルのドラッグを始め、そうでなければ `pressBody`（付け直し）、それが `false` なら `pressHand`（手で回す。S1-21）を呼ぶ。ハンドルのクリックでは選択を変えない。
   - キー: R → 起点を置くドラッグ中は仮の部品の向き、それ以外は選んでいる `root`・`detached` のシャフト（またはその上の歯車）の `setShaftAxis`（`mesh` のシャフトでは何もしない）。Esc → ドラッグ中ならやめて元に戻す（選択は外さない）。そうでなければ選択を外す。ドラッグ中に Undo などでシーンが変わったら、ハンドルのドラッグはやめる。
 - **円弧・軸方向のハンドルと付け直し**（S1-19）:
   - `listHandles` の並びは move → height → arc → axial。`'arc'`（`targetId` は `mesh` のシャフト）は `mesh` のシャフトかその上の歯車を選んでいるとき、`'axial'`（`targetId` は歯車）は歯車を選んでいて、それが `mesh` のシャフトの `childGearId` でないとき（`root`・`detached` のシャフトの歯車にも出る）。`HandleSpec.frame`（`{ center, axis, radius, angle }`。`position = center + radialDirection(axis, angle) × radius`）が描画の形を決める。円弧は親の中心・半径 = 中心距離 + 子の歯先円半径 + `ARC_HANDLE_GAP`（8 mm）・今の角度、矢印は歯車の中心・歯先円半径 + `AXIAL_HANDLE_GAP`（6 mm）・その歯車に生やした子の向きから最も離れた外周の 8 方向の 1 つ。
@@ -449,6 +450,7 @@ interface GearSimDebug {
   // 今表示している候補（S1-18）。center は仮の歯車の中心のワールド座標。
   // index は一覧の番号で、pick の結果（kind: 'candidate'）の id は String(index)
   getCandidates(): Array<{ index: number; kind: 'perimeter' | 'coaxial'; center: Vec3 }>;
+  getHand(): HandConstraint | null;  // 手で回しているシャフトと目標の角度。回していなければ null（S1-21）
 }
 
 // src/render/picking.ts（S1-16）
@@ -474,7 +476,7 @@ API はタスクで必要になった時点で足していく。足したらこ�
 | S1-19 | `getHandles` が `'arc'`（`targetId` はシャフト）と `'axial'`（`targetId` は歯車）も返す（済。新しい関数は足していない） |
 | S1-18 | `getCandidates`（済） |
 | S1-20 | なし（パネルは `data-testid` で操作し、状態は既存の `getScene` / `getMotion` で確かめる） |
-| S1-21 | `getHand` |
+| S1-21 | `getHand`（済） |
 | S1-22 | `isPaused` / `getWarningParts` |
 | S1-23 | `getInfoOverlay` |
 | S1-24 | `getRenderInfo`（S1-30 で品質の切り替えを確かめるのにも使う） |

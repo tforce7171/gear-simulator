@@ -37,6 +37,7 @@ depends: [S1-07, S1-08, S1-16]
 - 編集中の仮の部品を赤くする表示（S1-17・S1-19）
 
 ## 作るもの
+- S1-21 で済んだもの: `AppState.sim` は `src/app/store.ts` の `SimState`（今は `hand` だけ。初期値 `DEFAULT_SIM`）。ここに `paused` を足す（`sim.hand` は `store.setHand` で書き換え、購読者に知らせない。`paused` は Space で切り替えるので `dispatch` のアクションにしてよい）。`src/app/loop.ts` の `runFrame` は `sim.hand` が null でなければ `stepMotion` に `{ hand }` を渡しているので、`{ paused: sim.paused, hand }` にする。`e2e/fixtures/lock-opposed.json`（`shaft_1`・`shaft_2`、`gear_1`・`gear_2`、`motor_1`・`motor_2`）と `e2e/fixtures/lock-triangle.json`（起点 `shaft_1` の原点 `[0, 20, 0]`、`gear_1`〜`gear_3`、`motor_1`）は S1-21 で作った
 - S1-17 の仮の部品の赤（`render/sync.ts` の `PreviewStyle` の `invalid`。色そのものを赤 `0xe0403a` にした材質）とも見分けられるようにする。材質を選ぶのは `applyHighlight` の `levelOf`（仮の部品の見た目 → 選択 → マウス）なので、ロック・干渉の表示もここで組み合わせる
 - `src/render/warning-effects.ts`（計算部分は純粋関数）
   ```ts
