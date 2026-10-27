@@ -10,6 +10,7 @@ import type { Scene } from '../core/scene/types';
 import type { CameraPose } from '../input/camera';
 import type { ViewName } from '../input/views';
 import type { InputDevice } from '../input/wheel';
+import type { PickHit } from '../render/picking';
 
 export interface GearSimDebug {
   /** 最初のフレームを描いたら true */
@@ -45,6 +46,12 @@ export interface GearSimDebug {
   setWatchMode(on: boolean): void;
   /** 軸の目印の球の中心のページ座標（S1-14） */
   getGizmoTargets(): Array<{ view: ViewName; x: number; y: number }>;
+  /** 選択中の部品の ID。無ければ []、あれば [id]（選択は 1 つだけ。S1-16） */
+  getSelection(): string[];
+  /** ページ座標の点の下の部品（優先順位つき）。何も無ければ null（S1-16） */
+  pick(x: number, y: number): PickHit | null;
+  /** 選択を置き換える。null で外す。シーンに無い ID は null と同じ（S1-16） */
+  select(id: string | null): void;
 }
 
 declare global {

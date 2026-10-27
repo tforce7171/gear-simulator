@@ -14,6 +14,7 @@ import type { Layout } from '../core/layout/types';
 import { createRandomIdGenerator, type IdGenerator } from '../core/scene/ids';
 import type { Scene } from '../core/scene/types';
 import type { InputDeviceSetting, TrackpadScroll } from '../input/wheel';
+import { pruneSelection } from './selection';
 
 // 設定（design.md §7 の Settings）。項目は各担当タスクで足す（S1-30 で localStorage に保存する）
 export interface Settings {
@@ -37,6 +38,7 @@ export const DEFAULT_VIEW: ViewState = { watchMode: false };
 export interface AppState {
   readonly scene: Scene;
   readonly history: History; // Undo/Redo の履歴（S1-11）
+  readonly selection: string | null; // 選択中の歯車かシャフト。1 つだけ（S1-16）
   readonly motion: MotionState;
   readonly view: ViewState; // S1-14
   readonly settings: Settings; // S1-14
@@ -51,7 +53,9 @@ export type AppAction =
   | { readonly type: 'redo' }
   // 設定の一部を書き換える（S1-30 の設定画面も同じ経路を使う）
   | { readonly type: 'updateSettings'; readonly patch: Partial<Settings> }
-  | { readonly type: 'setWatchMode'; readonly on: boolean };
+  | { readonly type: 'setWatchMode'; readonly on: boolean }
+  // 選択を置き換える（null で外す）。シーンに無い ID は null として扱う（S1-16）
+  | { readonly type: 'select'; readonly id: string | null };
 
 export interface StoreOptions {
   readonly ids?: IdGenerator; // 新しい部品の ID（既定はランダム）
@@ -120,7 +124,19 @@ function reduce(state: AppState, action: AppAction, ids: IdGenerator): AppState 
       return state.view.watchMode === action.on
         ? state
         : { ...state, view: { ...state.view, watchMode: action.on } };
+    case 'select': {
+      const selection = pruneSelection(action.id, state.scene);
+      return selection === state.selection ? state : { ...state, selection };
+    }
   }
+}
+
+// シーンが変わって選択中の部品が無くなったら（削除、Undo など）選択を外す（S1-16）
+function reduceWithSelection(state: AppState, action: AppAction, ids: IdGenerator): AppState {
+  const next = reduce(state, action, ids);
+  if (next === state || next.scene === state.scene) return next;
+  const selection = pruneSelection(next.selection, next.scene);
+  return selection === next.selection ? next : { ...next, selection };
 }
 
 export function createStore(scene: Scene, options: StoreOptions = {}): Store {
@@ -128,6 +144,7 @@ export function createStore(scene: Scene, options: StoreOptions = {}): Store {
   let state: AppState = {
     scene,
     history: emptyHistory(),
+    selection: null,
     motion: initialMotion(scene, resolveLayout(scene)),
     view: DEFAULT_VIEW,
     settings: DEFAULT_SETTINGS,
@@ -137,7 +154,7 @@ export function createStore(scene: Scene, options: StoreOptions = {}): Store {
     getState: () => state,
     // 状態が変わったときだけ購読者に知らせる（loadScene は常に変わる）
     dispatch(action) {
-      const next = reduce(state, action, ids);
+      const next = reduceWithSelection(state, action, ids);
       if (next === state) return;
       state = next;
       for (const listener of [...listeners]) listener(state);

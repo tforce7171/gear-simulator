@@ -167,3 +167,46 @@ describe('設定と表示の状態（S1-14）', () => {
     expect(store.getState().view.watchMode).toBe(true);
   });
 });
+
+describe('選択（S1-16）', () => {
+  it('最初は未選択。select で選び、null で外す。同じ値なら知らせない', () => {
+    const store = createStore(demoScene);
+    expect(store.getState().selection).toBeNull();
+    const listener = vi.fn();
+    store.subscribe(listener);
+    store.dispatch({ type: 'select', id: 'gear_2' });
+    expect(store.getState().selection).toBe('gear_2');
+    store.dispatch({ type: 'select', id: 'gear_2' });
+    expect(listener).toHaveBeenCalledTimes(1);
+    store.dispatch({ type: 'select', id: null });
+    expect(store.getState().selection).toBeNull();
+  });
+
+  it('シーンに無い ID は選ばない', () => {
+    const store = createStore(demoScene);
+    store.dispatch({ type: 'select', id: 'gear_99' });
+    expect(store.getState().selection).toBeNull();
+  });
+
+  it('削除で選択中の部品が無くなったら外れ、Undo で戻っても外れたまま', () => {
+    const store = createStore(demoScene);
+    store.dispatch({ type: 'select', id: 'gear_2' });
+    store.dispatch({ type: 'command', command: { type: 'deleteParts', ids: ['gear_2'] } });
+    expect(store.getState().scene.gears.gear_2).toBeUndefined();
+    expect(store.getState().selection).toBeNull();
+    store.dispatch({ type: 'undo' });
+    expect(store.getState().scene.gears.gear_2).toBeDefined();
+    expect(store.getState().selection).toBeNull();
+  });
+
+  it('残っている部品の選択は、ほかの部品の削除や loadScene でも保つ', () => {
+    const store = createStore(demoScene);
+    store.dispatch({ type: 'select', id: 'gear_1' });
+    store.dispatch({ type: 'command', command: { type: 'deleteParts', ids: ['gear_2'] } });
+    expect(store.getState().selection).toBe('gear_1');
+    store.dispatch({ type: 'loadScene', scene: offScene });
+    expect(store.getState().selection).toBe('gear_1');
+    store.dispatch({ type: 'loadScene', scene: emptyScene() });
+    expect(store.getState().selection).toBeNull();
+  });
+});
