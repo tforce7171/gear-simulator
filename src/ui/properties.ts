@@ -1,0 +1,341 @@
+// プロパティパネルの中身（S1-20、要件 §3.2・§3.3・§5）。選んでいる歯車・シャフトの設定と、そのシャフトの
+// モーターの欄を組み立てる。選択・シーン（Undo を含む）・言語が変わるたびに作り直す。
+// 設定の変更はすべて編集コマンド（setGearTeeth・addMotor・updateMotor・removeMotor）で行い、
+// 1 回の確定を 1 回のコマンド（Undo 1 回）にする。値が変わらない確定ではコマンドを出さない
+import { onLanguageChange, t } from '../app/i18n';
+import type { AppAction, AppState } from '../app/store';
+import { GEAR_SIZES, MOTOR_RPM_RANGE } from '../core/constants';
+import type { Command } from '../core/edit/commands';
+import type { MessageKey, MessageParams } from '../core/i18n';
+import type { Layout } from '../core/layout/types';
+import type { Axis, Gear, Motor, Scene, ShaftId, SizeKey } from '../core/scene/types';
+import { h } from './dom';
+import { parseClampedInt } from './number-input';
+import './properties.css';
+
+export const PROPERTY_SIZES: readonly SizeKey[] = ['S', 'M', 'L'];
+
+export interface PropertiesDeps {
+  // UiShell.properties.setContent
+  readonly setContent: (content: HTMLElement | null) => void;
+  readonly getState: () => Pick<AppState, 'scene' | 'selection'>;
+  readonly getLayout: (scene: Scene) => Layout;
+  readonly dispatch: (action: AppAction) => void;
+}
+
+export interface Properties {
+  // ストアが変わったら呼ぶ。選択・シーンが前回と同じなら何もしない
+  refresh(): void;
+  dispose(): void;
+}
+
+const AXIS_KEYS: Readonly<Record<Axis, MessageKey>> = {
+  x: 'properties.axis.x',
+  y: 'properties.axis.y',
+  z: 'properties.axis.z',
+};
+
+export function motorOnShaft(scene: Scene, shaftId: ShaftId): Motor | undefined {
+  return Object.values(scene.motors).find((m) => m.shaftId === shaftId);
+}
+
+function text<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  className: string,
+  key: MessageKey,
+  params?: MessageParams,
+  testId?: string,
+): HTMLElementTagNameMap[K] {
+  const el = h(tag, className, testId);
+  el.textContent = t(key, params);
+  return el;
+}
+
+function button(className: string, testId: string, label: string, tooltip?: string) {
+  const el = h('button', `gs-prop__button ${className}`, testId);
+  el.type = 'button';
+  el.textContent = label;
+  if (tooltip !== undefined) {
+    el.title = tooltip;
+    el.setAttribute('aria-label', tooltip);
+  }
+  return el;
+}
+
+// 項目名と値の 1 行
+function row(labelKey: MessageKey, ...value: HTMLElement[]): HTMLElement {
+  const el = h('div', 'gs-prop__row');
+  el.append(text('span', 'gs-prop__label', labelKey), ...value);
+  return el;
+}
+
+export function createProperties(deps: PropertiesDeps): Properties {
+  let shown: { scene: Scene; selection: string | null } | null = null;
+  // 作り直している間は、取り除いた入力欄の blur で確定しない
+  let building = false;
+
+  const command = (c: Command): void => {
+    deps.dispatch({ type: 'command', command: c });
+  };
+
+  // 数値の入力欄: Enter かフォーカスが外れたときに確定する（Enter はフォーカスを外して確定する）。
+  // 小数は四捨五入、範囲外は端に丸め、数でなければ元の値に戻す
+  function numberField(
+    testId: string,
+    value: number,
+    min: number,
+    max: number,
+    labelKey: MessageKey,
+    commit: (next: number) => void,
+  ): HTMLInputElement {
+    const input = h('input', 'gs-prop__number', testId);
+    input.type = 'text';
+    input.inputMode = 'numeric';
+    input.autocomplete = 'off';
+    input.value = String(value);
+    input.setAttribute('aria-label', t(labelKey));
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        input.blur();
+      } else if (e.key === 'Escape') {
+        input.value = String(value);
+        input.blur();
+      }
+    });
+    input.addEventListener('blur', () => {
+      if (building) return;
+      const next = parseClampedInt(input.value, min, max);
+      input.value = String(value);
+      if (next === null || next === value) return;
+      commit(next);
+    });
+    return input;
+  }
+
+  function gearSection(gear: Gear): HTMLElement {
+    const section = h('section', 'gs-prop__section');
+    section.append(text('h3', 'gs-prop__heading', 'properties.gear', undefined, 'prop-heading'));
+    section.append(
+      row('properties.kind', text('span', 'gs-prop__value', 'properties.kind.spur')),
+      row(
+        'properties.size',
+        text('span', 'gs-prop__value', `properties.size.${gear.size}`, undefined, 'prop-size'),
+      ),
+    );
+    const { minTeeth: min, maxTeeth: max } = GEAR_SIZES[gear.size];
+    const setTeeth = (teeth: number): void =>
+      command({ type: 'setGearTeeth', gearId: gear.id, teeth });
+    const dec = button('gs-prop__step', 'prop-teeth-dec', '−', t('properties.teeth.dec'));
+    dec.disabled = gear.teeth <= min;
+    dec.addEventListener('click', () => setTeeth(Math.max(min, gear.teeth - 1)));
+    const inc = button('gs-prop__step', 'prop-teeth-inc', '+', t('properties.teeth.inc'));
+    inc.disabled = gear.teeth >= max;
+    inc.addEventListener('click', () => setTeeth(Math.min(max, gear.teeth + 1)));
+    const input = numberField('prop-teeth', gear.teeth, min, max, 'properties.teeth', setTeeth);
+    const stepper = h('div', 'gs-prop__stepper');
+    stepper.append(dec, input, inc);
+    const range = text('span', 'gs-prop__hint', 'properties.teeth.range', { min, max });
+    section.append(row('properties.teeth', stepper), range);
+    return section;
+  }
+
+  function shaftSection(scene: Scene, shaftId: ShaftId): HTMLElement {
+    const section = h('section', 'gs-prop__section');
+    section.append(text('h3', 'gs-prop__heading', 'properties.shaft', undefined, 'prop-heading'));
+    const axis = deps.getLayout(scene).shafts[shaftId]?.axis;
+    if (axis !== undefined) {
+      section.append(
+        row(
+          'properties.axis',
+          text('span', 'gs-prop__value', AXIS_KEYS[axis], undefined, 'prop-shaft-axis'),
+        ),
+        text('span', 'gs-prop__hint', 'properties.axis.hint'),
+      );
+    }
+    return section;
+  }
+
+  // 大きさの選択（小・中・大）。押すと onPick
+  function sizeGroup(
+    prefix: string,
+    current: SizeKey | null,
+    tooltip: (size: SizeKey) => string | undefined,
+    onPick: (size: SizeKey) => void,
+  ): HTMLElement {
+    const group = h('div', 'gs-prop__sizes');
+    if (current !== null) group.setAttribute('role', 'radiogroup');
+    for (const size of PROPERTY_SIZES) {
+      const b = button('gs-prop__size', `${prefix}-${size}`, t(`properties.size.${size}`));
+      const tip = tooltip(size);
+      if (tip !== undefined) {
+        b.title = tip;
+        b.setAttribute('aria-label', tip);
+      }
+      if (current !== null) {
+        b.setAttribute('role', 'radio');
+        b.setAttribute('aria-checked', String(size === current));
+        b.classList.toggle('is-selected', size === current);
+      }
+      b.addEventListener('click', () => onPick(size));
+      group.append(b);
+    }
+    return group;
+  }
+
+  function motorSection(scene: Scene, shaftId: ShaftId): HTMLElement {
+    const section = h('section', 'gs-prop__section', 'prop-motor');
+    section.append(
+      text('h3', 'gs-prop__heading', 'properties.motor', undefined, 'prop-motor-heading'),
+    );
+    const motor = motorOnShaft(scene, shaftId);
+    if (motor === undefined) {
+      section.append(
+        text('p', 'gs-prop__hint', 'properties.motor.none'),
+        row(
+          'properties.motor.add',
+          sizeGroup(
+            'prop-motor-add',
+            null,
+            (size) => t(`properties.motor.add.${size}`),
+            (size) => command({ type: 'addMotor', shaftId, size }),
+          ),
+        ),
+      );
+      return section;
+    }
+    const update = (patch: Extract<Command, { type: 'updateMotor' }>['patch']): void =>
+      command({ type: 'updateMotor', motorId: motor.id, patch });
+
+    const size = sizeGroup(
+      'prop-motor-size',
+      motor.size,
+      () => undefined,
+      (next) => {
+        if (next !== motor.size) update({ size: next });
+      },
+    );
+
+    // rpm: スライダーは離したとき（change）に確定し、動かしている間（input）は数値の表示だけ変える
+    const { min, max } = MOTOR_RPM_RANGE;
+    const setRpm = (rpm: number): void => update({ rpm });
+    const rpmInput = numberField(
+      'prop-motor-rpm',
+      motor.rpm,
+      min,
+      max,
+      'properties.motor.rpm',
+      setRpm,
+    );
+    const slider = h('input', 'gs-prop__slider', 'prop-motor-rpm-slider');
+    slider.type = 'range';
+    slider.min = String(min);
+    slider.max = String(max);
+    slider.step = '1';
+    slider.value = String(motor.rpm);
+    slider.setAttribute('aria-label', t('properties.motor.rpm'));
+    slider.addEventListener('input', () => {
+      rpmInput.value = slider.value;
+    });
+    slider.addEventListener('change', () => {
+      const next = parseClampedInt(slider.value, min, max);
+      if (next === null || next === motor.rpm) {
+        rpmInput.value = String(motor.rpm);
+        return;
+      }
+      setRpm(next);
+    });
+    const rpm = h('div', 'gs-prop__rpm');
+    rpm.append(slider, rpmInput);
+
+    const direction = button(
+      'gs-prop__toggle',
+      'prop-motor-direction',
+      t(
+        motor.direction === 1
+          ? 'properties.motor.direction.forward'
+          : 'properties.motor.direction.reverse',
+      ),
+    );
+    direction.dataset.direction = String(motor.direction);
+    direction.addEventListener('click', () =>
+      update({ direction: motor.direction === 1 ? -1 : 1 }),
+    );
+
+    const power = button(
+      'gs-prop__toggle',
+      'prop-motor-on',
+      t(motor.on ? 'properties.motor.on' : 'properties.motor.off'),
+    );
+    power.setAttribute('aria-pressed', String(motor.on));
+    power.classList.toggle('is-on', motor.on);
+    power.addEventListener('click', () => update({ on: !motor.on }));
+
+    const remove = button('gs-prop__remove', 'prop-motor-remove', t('properties.motor.remove'));
+    remove.addEventListener('click', () => command({ type: 'removeMotor', motorId: motor.id }));
+
+    section.append(
+      row('properties.motor.size', size),
+      row('properties.motor.rpm'),
+      rpm,
+      row('properties.motor.direction', direction),
+      row('properties.motor.power', power),
+      remove,
+    );
+    return section;
+  }
+
+  function build(scene: Scene, selection: string | null): HTMLElement | null {
+    if (selection === null) return null;
+    const content = h('div', 'gs-prop', 'prop-content');
+    const gear = scene.gears[selection];
+    if (gear !== undefined) {
+      content.append(gearSection(gear), motorSection(scene, gear.shaftId));
+      return content;
+    }
+    if (scene.shafts[selection] !== undefined) {
+      content.append(shaftSection(scene, selection), motorSection(scene, selection));
+      return content;
+    }
+    return null;
+  }
+
+  let current: HTMLElement | null = null;
+
+  function render(): void {
+    const { scene, selection } = deps.getState();
+    shown = { scene, selection };
+    // フォーカスのあった要素（ボタンなど）は、作り直した後の同じ要素に戻す
+    const active = document.activeElement;
+    const focusedId =
+      current !== null && active instanceof HTMLElement && current.contains(active)
+        ? active.dataset.testid
+        : undefined;
+    building = true;
+    try {
+      current = build(scene, selection);
+      deps.setContent(current);
+    } finally {
+      building = false;
+    }
+    if (focusedId !== undefined && current !== null) {
+      const next = current.querySelector<HTMLElement>(`[data-testid="${focusedId}"]`);
+      if (next !== null && !(next instanceof HTMLButtonElement && next.disabled)) next.focus();
+    }
+  }
+
+  const offLanguage = onLanguageChange(render);
+  render();
+
+  return {
+    refresh() {
+      const { scene, selection } = deps.getState();
+      if (shown !== null && shown.scene === scene && shown.selection === selection) return;
+      render();
+    },
+    dispose() {
+      offLanguage();
+      deps.setContent(null);
+    },
+  };
+}

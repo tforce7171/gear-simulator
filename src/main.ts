@@ -18,6 +18,7 @@ import {
   ORTHO_FRUSTUM_HEIGHT,
 } from './render/renderer';
 import { createPalette } from './ui/palette';
+import { createProperties } from './ui/properties';
 import { createUiShell } from './ui/shell';
 
 const root = document.querySelector<HTMLElement>('#root');
@@ -169,6 +170,14 @@ const palette = createPalette({
   onRootDragCancel: () => interactions.cancelRootDrag(),
 });
 store.subscribe(() => palette.refresh());
+// プロパティパネル（S1-20）: 選択・シーン（Undo を含む）・言語が変わるたびに作り直す
+const properties = createProperties({
+  setContent: shell.properties.setContent,
+  getState: () => store.getState(),
+  getLayout: layoutOf,
+  dispatch: (action) => store.dispatch(action),
+});
+store.subscribe(() => properties.refresh());
 // 右下の軸の目印（S1-14）。球をクリックすると、その軸の側から見る
 const gizmo = createAxisGizmo(shell.gizmoSlot, (v) => cameraInput.setView(v));
 // コンテキストメニューの中身は S1-29。それまではテスト用に最後の要求だけ覚えておく

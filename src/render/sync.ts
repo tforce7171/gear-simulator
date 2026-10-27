@@ -10,14 +10,24 @@ import type { MotionState } from '../core/kinematics/types';
 import type { Layout } from '../core/layout/types';
 import { axisVector } from '../core/math/axis';
 import { add, scale } from '../core/math/vec3';
-import type { Gear, GearId, Motor, MotorId, Scene, Shaft, ShaftId } from '../core/scene/types';
+import type {
+  Gear,
+  GearId,
+  Motor,
+  MotorId,
+  Scene,
+  Shaft,
+  ShaftId,
+  SizeKey,
+} from '../core/scene/types';
 import { placeOnAxis } from './frame';
 import { createGeometryCache, type GeometryCache } from './gear-geometry';
 import { setPickTarget } from './picking';
 
 // 仮の見た目の寸法（mm）。形と質感は S1-24 で整える
 const SHAFT_RADIUS = 1.5;
-const MOTOR_BOX = 8; // 一辺
+// モーターの箱の一辺（大きさごと。S1-20）
+export const MOTOR_BOX: Readonly<Record<SizeKey, number>> = { S: 6, M: 8, L: 11 };
 const MOTOR_GAP = 1; // シャフトの端とモーターの箱のすき間
 // 細いシャフトをクリックしやすくする、見えない当たり判定の円柱の半径（S1-16）
 export const SHAFT_PICK_RADIUS = 3;
@@ -122,7 +132,11 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
   const motorMaterials = materialSet(
     new MeshStandardMaterial({ color: 0x5c6068, metalness: 0.1, roughness: 0.7 }),
   );
-  const motorGeometry = new BoxGeometry(MOTOR_BOX, MOTOR_BOX, MOTOR_BOX);
+  const motorGeometries: Readonly<Record<SizeKey, BoxGeometry>> = {
+    S: new BoxGeometry(MOTOR_BOX.S, MOTOR_BOX.S, MOTOR_BOX.S),
+    M: new BoxGeometry(MOTOR_BOX.M, MOTOR_BOX.M, MOTOR_BOX.M),
+    L: new BoxGeometry(MOTOR_BOX.L, MOTOR_BOX.L, MOTOR_BOX.L),
+  };
   // 当たり判定だけの形（描かないがレイキャストには当たる）
   const pickProxyMaterial = new MeshBasicMaterial({ visible: false });
   let highlight: Highlight = { selected: null, hovered: null };
@@ -225,14 +239,14 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
       if (placed === undefined) continue;
       let entry = motors.get(motor.id);
       if (entry === undefined) {
-        const object = new Mesh(motorGeometry, motorMaterials.none);
+        const object = new Mesh(motorGeometries[motor.size], motorMaterials.none);
         setPickTarget(object, 'motor', motor.id);
         root.add(object);
         entry = { motor, object };
         motors.set(motor.id, entry);
       }
       // シャフトの負側の端のさらに外に置く（仮。S1-24 で整える）
-      const along = placed.span[0] - MOTOR_GAP - MOTOR_BOX / 2;
+      const along = placed.span[0] - MOTOR_GAP - MOTOR_BOX[motor.size] / 2;
       placeOnAxis(
         entry.object,
         add(placed.origin, scale(axisVector(placed.axis), along)),
