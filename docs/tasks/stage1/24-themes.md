@@ -1,7 +1,7 @@
 ---
 id: S1-24
 title: テーマと質感
-status: todo
+status: doing
 depends: [S1-04]
 ---
 

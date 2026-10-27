@@ -60,6 +60,7 @@ depends: [S1-01, S1-02, S1-03, S1-04, S1-05, S1-06, S1-07, S1-08, S1-09, S1-10, 
 ### 性能の計測（`scripts/perf.ts`）
 - 実行: `pnpm perf`。`vite build --mode e2e` → `vite preview --mode e2e` を起動し、Playwright の Chromium を **画面ありで、実際の GPU で**（SwiftShader を使わず）開く。垂直同期と fps の上限を外す（`--disable-gpu-vsync`、`--disable-frame-rate-limit`）ので、60fps を超えた余裕も見える。
 - 画面の大きさ 1280×800、`devicePixelRatio` は実機のまま。
+- S1-24 から、見た目が前のフレームと同じなら描かない（`src/render/redraw.ts`）。眺めるモードでカメラが回り続け、モーターも回っているので毎フレーム描くが、描いていないフレームを数えないよう、描画の負荷は `renderer.info.render.frame` の増え方でも確かめる。描き直しの判定（全オブジェクトの行列の比較）そのものの時間も、200 個のときに見ておく。
 - シーン: `generatePerfScene(200)` で作り、`loadScene` で読む。モーターはすべて ON。
 - 手順: キャンバスをクリック（音を開始）→ Home → 眺めるモード ON → 3 秒待つ（ウォームアップ）→ 10 秒間、ページ内の `requestAnimationFrame` でフレームの間隔を記録する。
 - 条件: 次の 4 つを順に測る。
