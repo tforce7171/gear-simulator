@@ -1,7 +1,7 @@
 ---
 id: S1-09
 title: 配置の木構造
-status: todo
+status: doing
 depends: [S1-03, S1-08]
 ---
 

@@ -21,3 +21,5 @@ export const THUMBNAIL_SIZE = 256;
 export const AXIAL_SNAP = 4; // mm。シャフト上の位置の吸着の単位（全サイズ共通）
 export const MESH_PHASE_EPS = 1e-6; // rad。位相を歯のピッチを法として比べるしきい値（contact の判定には使わない）
 export const COLLISION_EPS = 1e-6; // mm。干渉の判定で、触れているだけを干渉としないための重なりの深さのしきい値
+export const SHAFT_END_MARGIN = 4; // mm。シャフトを歯車の端から伸ばす長さ
+export const EMPTY_SHAFT_HALF_LENGTH = 10; // mm。歯車の無いシャフトの長さの半分
