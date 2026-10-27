@@ -1,7 +1,7 @@
 ---
 id: S1-03
 title: シーンのデータ形式と、かみ合いの幾何
-status: doing
+status: done
 depends: [S1-02]
 ---
 
@@ -156,4 +156,4 @@ depends: [S1-02]
 ## 完了の条件
 - [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
 - [x] design.md と後続のタスク資料に、必要な変更を反映した（軸の基底 `u`・`v`、角度の向き、basePhase の定義と式を design.md §2・§5 に書く）
-- [ ] `status: done` にしてコミットした
+- [x] `status: done` にしてコミットした
