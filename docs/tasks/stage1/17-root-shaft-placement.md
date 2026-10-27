@@ -1,7 +1,7 @@
 ---
 id: S1-17
 title: 起点のシャフトを置く
-status: doing
+status: done
 depends: [S1-16]
 ---
 
