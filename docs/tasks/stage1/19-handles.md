@@ -1,7 +1,7 @@
 ---
 id: S1-19
 title: 外周の角度の円弧ハンドル、シャフト上の位置のドラッグ
-status: todo
+status: doing
 depends: [S1-18]
 ---
 
