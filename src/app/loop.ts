@@ -25,12 +25,13 @@ export interface LoopDeps {
 
 // 1 フレーム分: 運動を進めてストアに入れ、描画に渡す
 export function runFrame({ store, view, layoutOf, displayScene }: LoopDeps, dt: number): void {
-  const { scene, motion } = store.getState();
+  const { scene, motion, sim } = store.getState();
   const layout = layoutOf(scene);
   const shown = displayScene?.() ?? scene;
   const shownLayout = shown === scene ? layout : resolveLayout(shown);
   view.sync(shown, shownLayout);
-  const next = stepMotion(scene, layout, motion, dt);
+  // 手で回している間は、つかんだシャフトを目標の角度にする（S1-21）
+  const next = stepMotion(scene, layout, motion, dt, sim.hand === null ? {} : { hand: sim.hand });
   store.setMotion(next);
   view.update(next, shownLayout);
   view.render();

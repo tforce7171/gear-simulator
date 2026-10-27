@@ -256,3 +256,25 @@ describe('パレットと、作った部品の選択（S1-17）', () => {
     expect(store.getState().selection).toBeNull();
   });
 });
+
+describe('手の拘束（S1-21）', () => {
+  it('最初は null。setHand で入り、購読者には知らせない', () => {
+    const store = createStore(demoScene);
+    expect(store.getState().sim.hand).toBe(null);
+    const listener = vi.fn();
+    store.subscribe(listener);
+    const hand = { shaftId: 'shaft_1', angle: 0.5 };
+    store.setHand(hand);
+    expect(store.getState().sim.hand).toBe(hand);
+    expect(listener).not.toHaveBeenCalled();
+    store.setHand(null);
+    expect(store.getState().sim.hand).toBe(null);
+  });
+
+  it('loadScene で外れる', () => {
+    const store = createStore(demoScene);
+    store.setHand({ shaftId: 'shaft_1', angle: 0.5 });
+    store.dispatch({ type: 'loadScene', scene: offScene });
+    expect(store.getState().sim.hand).toBe(null);
+  });
+});

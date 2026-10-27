@@ -4,7 +4,7 @@ import type { CandidateKind } from '../app/grow';
 import type { Settings } from '../app/store';
 import type { Command } from '../core/edit/commands';
 import type { Lang } from '../core/i18n';
-import type { MotionState } from '../core/kinematics/types';
+import type { HandConstraint, MotionState } from '../core/kinematics/types';
 import type { Layout } from '../core/layout/types';
 import type { Vec3 } from '../core/math/vec3';
 import type { Scene } from '../core/scene/types';
@@ -64,6 +64,8 @@ export interface GearSimDebug {
    * index はピッキングの ID（pick の結果の kind: 'candidate' の id は String(index)）
    */
   getCandidates(): Array<{ index: number; kind: CandidateKind; center: Vec3 }>;
+  /** 手で回しているシャフトと目標の角度（S1-21）。手で回していなければ null */
+  getHand(): HandConstraint | null;
 }
 
 declare global {
