@@ -1,7 +1,7 @@
 ---
 id: S1-26
 title: 音（空間）
-status: doing
+status: done
 depends: [S1-13, S1-25]
 ---
 
@@ -128,4 +128,4 @@ depends: [S1-13, S1-25]
 ## 完了の条件
 - [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
 - [x] design.md と後続のタスク資料に、必要な変更を反映した（`__gearSim.getAudio` の拡張を design.md §10 に書く）
-- [ ] `status: done` にしてコミットした
+- [x] `status: done` にしてコミットした
