@@ -1,7 +1,7 @@
 ---
 id: S1-11
 title: 編集コマンドと Undo/Redo
-status: todo
+status: doing
 depends: [S1-09]
 ---
 
@@ -103,10 +103,10 @@ design.md §7「シーンの変更は、必ず core/edit のコマンドを通�
   ```
 
 ## 受け入れ条件
-- [ ] 要件 §6 の編集（起点、生やす、削除して浮かせる、浮いたシャフトの付け直し、歯数・角度・位置の変更、モーター、シャフトの移動と向き）がすべてコマンドで行える
-- [ ] 干渉ができる編集も成功し、干渉は `resolveLayout` の `interferences` に出る
-- [ ] どのコマンドの後も `validateScene` が ok
-- [ ] Undo で、コマンドの前のシーンと同じ参照に戻る
+- [x] 要件 §6 の編集（起点、生やす、削除して浮かせる、浮いたシャフトの付け直し、歯数・角度・位置の変更、モーター、シャフトの移動と向き）がすべてコマンドで行える
+- [x] 干渉ができる編集も成功し、干渉は `resolveLayout` の `interferences` に出る
+- [x] どのコマンドの後も `validateScene` が ok
+- [x] Undo で、コマンドの前のシーンと同じ参照に戻る
 
 ## テストケース
 ID は S1-03 の `createSequentialIdGenerator()`。下の「基本のシーン」は空のシーンから次の順で作る。
@@ -118,42 +118,42 @@ ID は S1-03 の `createSequentialIdGenerator()`。下の「基本のシーン�
 
 位置は `resolveLayout` で確かめる（歯幅は 4、`offset 0` の歯車の中心はシャフトの原点から +2。基本のシーンで `gear_1` の中心 `[0, 22, 0]`、`shaft_2` の原点 `[18, 20, 0]`、`gear_2` の中心 `[18, 22, 0]`、`gear_3` の中心 `[18, 26, 0]`、`shaft_3` の原点 `[18, 24, 18]`、`gear_4` の中心 `[18, 26, 18]`。基本のシーンに干渉は無い）。
 ### Vitest
-- [ ] 基本のシーン: `shaft_2` の `placement` は `{ kind: 'mesh', parentGearId: 'gear_1', childGearId: 'gear_2', angle: π/2 }`（`axis` を持たない）、`resolveLayout` の `shafts.shaft_2.axis === 'y'`。`gear_3.offset === 4`。`motor_1` は `{ size 'S', rpm 60, direction 1, on true }`。`validateScene` が ok
-- [ ] 干渉しても成功する: 基本のシーンに `growGear perimeter { parentGearId 'gear_1', angle π/2, teeth 12 }`（中心 `[12, 22, 0]` で `gear_2` と重なる）→ 成功、`created = ['shaft_4', 'gear_5']`、`interferences` に `['gear_2', 'gear_5']` がある
-- [ ] 干渉しても成功する: `addRootShaft { axis 'y', origin [5, 20, 0], gear { 'S', 12 } }`（`gear_1` と重なる）→ 成功、`interferences` に `gear_1` と新しい歯車の組がある
-- [ ] 範囲外: `growGear perimeter` の `teeth 81` → `invalidValue`。存在しない `parentGearId` → `notFound`。`growGear coaxial` の `offset 2` → `invalidValue`
-- [ ] 削除（途中の子の歯車）: `deleteParts ['gear_2']` → `shaft_2` が `{ kind: 'detached', origin ≈ [18, 20, 0], axis: 'y' }`、`gear_3` は残る（`offset 4` のまま）、`shaft_3` は `mesh` のまま、`gear_4` の中心は `[18, 26, 18]` のまま
-- [ ] 削除（親の歯車）: `deleteParts ['gear_1']` → `shaft_1` と `motor_1` も消える（歯車が残らないため）、`shaft_2` が `detached`（原点 `[18, 20, 0]`、`axis 'y'`）、`gear_2` の中心は `[18, 22, 0]` のまま
-- [ ] 削除（シャフト）: `deleteParts ['shaft_2']` → `gear_2`・`gear_3` も消え、`shaft_3` が `detached`（原点 `[18, 24, 18]`、`axis 'y'`）
-- [ ] 削除（複数・重複）: `deleteParts ['shaft_2', 'gear_3']` → 成功（`gear_3` は先に消えているので無視）。`deleteParts ['gear_99']` → `notFound`、シーンは変わらない
-- [ ] 削除（モーター）: `deleteParts ['motor_1']` と `removeMotor { motorId 'motor_1' }` が同じ結果
-- [ ] 歯数: `setGearTeeth { gearId 'gear_1', teeth 20 }` → `gear_2` の中心 `[22, 22, 0]`、`gear_4` の中心 `[22, 26, 18]`。`teeth 81` → `invalidValue`。`teeth 12`（同じ値）→ 同じシーンの参照
-- [ ] 歯数の変更で干渉しても成功する: 基本のシーンに `addRootShaft { axis 'y', origin [40, 20, 0], gear { 'S', 12 } }`（この時点では干渉なし）→ `setGearTeeth { gearId 'gear_1', teeth 30 }` → 成功し、`gear_2` が `[27, 22, 0]` に動いて新しい起点の歯車（中心 `[40, 22, 0]`）と重なり、`resolveLayout` の `interferences` に `gear_2` と新しい歯車の組がある
-- [ ] 角度: `setMeshAngle { shaftId 'shaft_2', angle 0 }` → `gear_2` の中心 `[0, 22, 18]`、`gear_4` の中心 `[0, 26, 36]`。`angle −π/2` → 持つ値は `3π/2`。`shaftId 'shaft_1'`（root）→ `notAllowed`
-- [ ] シャフト上の位置: `setGearOffset { gearId 'gear_3', offset 8 }` → `gear_3` の中心 `[18, 30, 0]`、`gear_4` の中心 `[18, 30, 18]`。`offset 6` → `invalidValue`。`gearId 'gear_2'`（`shaft_2` の子）→ `notAllowed`
-- [ ] モーター: `addMotor { shaftId 'shaft_1' }` をもう一度 → `notAllowed`。`addMotor { shaftId 'shaft_2', size 'L' }` → `rpm 15`
-- [ ] モーターの設定: `updateMotor { motorId 'motor_1', patch { rpm 120, direction -1 } }` → 反映。`rpm 0` → `invalidValue`。`patch { size 'M' }` → `rpm` は 60 のまま。`patch { on: false }` → 反映
-- [ ] シャフトの移動: `moveShaft { shaftId 'shaft_1', origin [100, 20, 0] }` → `gear_2` の中心 `[118, 22, 0]`。`shaftId 'shaft_2'` → `notAllowed`。`detached` にした `shaft_2` は動かせる
-- [ ] 向き: `setShaftAxis { shaftId 'shaft_1', axis 'x' }` → `shaft_1.placement.axis === 'x'`。`scene.shafts.shaft_2`・`shaft_3` は前と同じ参照のまま、`resolveLayout` の `shafts` の 3 本がすべて `axis 'x'`。`gear_1` の中心 `[2, 20, 0]`、`gear_2` の中心 `[2, 20, 18]`（軸 `x` の `angle π/2` は `+Z`）。`shaftId 'shaft_2'` → `notAllowed`
-- [ ] 付け直し: `deleteParts ['gear_2']` の後、`reattachShaft { shaftId 'shaft_2', childGearId 'gear_3', parentGearId 'gear_1', angle π/2 }` → `shaft_2` が `{ kind: 'mesh', parentGearId: 'gear_1', childGearId: 'gear_3', angle: π/2 }`、`gear_3.offset === 0`（4 を引いた）、`gear_3` の中心 `[18, 22, 0]`、その先の `gear_4` の中心 `[18, 22, 18]`（その先ごとついてくる）。`validateScene` が ok
-- [ ] 付け直しの失敗: 同じ状態で、`parentGearId 'gear_4'`（`shaft_2` の先の `shaft_3` に載る。循環）→ `notAllowed`。`shaftId 'shaft_3'`（`mesh`）→ `notAllowed`。`childGearId 'gear_4'`（`shaft_2` に無い）→ `notAllowed`。`addRootShaft { axis 'y', origin [0, 20, 100], gear { 'M', 20 } }` で足した M の歯車を親にする → `notAllowed`（大きさが違う）
-- [ ] 参照の使い回し: `setGearTeeth { gearId 'gear_1', … }` の後、`scene.gears.gear_2`・`scene.shafts`・`scene.motors` は前と同じ参照、`scene.gears.gear_1` は新しい参照
-- [ ] `replaceScene` に検証を通らないシーン（歯数 11）→ `invalidValue`
-- [ ] 不変: 入力のシーンを `Object.freeze`（深く）しても、全てのコマンドが例外にならない
-- [ ] ランダムな操作列: 種を固定した乱数で、上のコマンド（`reattachShaft` を含む）を 500 回ランダムに（存在する ID を選んで）適用 → 成功したものの後は毎回 `validateScene` が ok
-- [ ] 履歴: 基本のシーンの 5 コマンドを `execute` → `undo` を 5 回で `emptyScene()` と等しいシーン、6 回目は `null`。`redo` 5 回で基本のシーンと同じ参照
-- [ ] 履歴の参照: `deleteParts ['gear_2']` → `undo` → 削除前のシーンと同じ参照（`toBe`）
-- [ ] 失敗したコマンド・何も変えないコマンドは履歴に積まない（`past` の長さが変わらない）
-- [ ] Undo の後に新しいコマンド → `future` が空になる
-- [ ] 上限: 101 回 `moveShaft`（毎回違う原点）→ `past.length === 100`
-- [ ] まとめる: `updateMotor { rpm 70 }`、`{ rpm 80 }`、`{ rpm 90 }` を同じ `coalesceKey: 'rpm-drag-1'` で → `undo` 1 回で `rpm 60` に戻る。間に `undo` か、キーなしのコマンドが入ると途切れる
+- [x] 基本のシーン: `shaft_2` の `placement` は `{ kind: 'mesh', parentGearId: 'gear_1', childGearId: 'gear_2', angle: π/2 }`（`axis` を持たない）、`resolveLayout` の `shafts.shaft_2.axis === 'y'`。`gear_3.offset === 4`。`motor_1` は `{ size 'S', rpm 60, direction 1, on true }`。`validateScene` が ok
+- [x] 干渉しても成功する: 基本のシーンに `growGear perimeter { parentGearId 'gear_1', angle π/2, teeth 12 }`（中心 `[12, 22, 0]` で `gear_2` と重なる）→ 成功、`created = ['shaft_4', 'gear_5']`、`interferences` に `['gear_2', 'gear_5']` がある
+- [x] 干渉しても成功する: `addRootShaft { axis 'y', origin [5, 20, 0], gear { 'S', 12 } }`（`gear_1` と重なる）→ 成功、`interferences` に `gear_1` と新しい歯車の組がある
+- [x] 範囲外: `growGear perimeter` の `teeth 81` → `invalidValue`。存在しない `parentGearId` → `notFound`。`growGear coaxial` の `offset 2` → `invalidValue`
+- [x] 削除（途中の子の歯車）: `deleteParts ['gear_2']` → `shaft_2` が `{ kind: 'detached', origin ≈ [18, 20, 0], axis: 'y' }`、`gear_3` は残る（`offset 4` のまま）、`shaft_3` は `mesh` のまま、`gear_4` の中心は `[18, 26, 18]` のまま
+- [x] 削除（親の歯車）: `deleteParts ['gear_1']` → `shaft_1` と `motor_1` も消える（歯車が残らないため）、`shaft_2` が `detached`（原点 `[18, 20, 0]`、`axis 'y'`）、`gear_2` の中心は `[18, 22, 0]` のまま
+- [x] 削除（シャフト）: `deleteParts ['shaft_2']` → `gear_2`・`gear_3` も消え、`shaft_3` が `detached`（原点 `[18, 24, 18]`、`axis 'y'`）
+- [x] 削除（複数・重複）: `deleteParts ['shaft_2', 'gear_3']` → 成功（`gear_3` は先に消えているので無視）。`deleteParts ['gear_99']` → `notFound`、シーンは変わらない
+- [x] 削除（モーター）: `deleteParts ['motor_1']` と `removeMotor { motorId 'motor_1' }` が同じ結果
+- [x] 歯数: `setGearTeeth { gearId 'gear_1', teeth 20 }` → `gear_2` の中心 `[22, 22, 0]`、`gear_4` の中心 `[22, 26, 18]`。`teeth 81` → `invalidValue`。`teeth 12`（同じ値）→ 同じシーンの参照
+- [x] 歯数の変更で干渉しても成功する: 基本のシーンに `addRootShaft { axis 'y', origin [40, 20, 0], gear { 'S', 12 } }`（この時点では干渉なし）→ `setGearTeeth { gearId 'gear_1', teeth 30 }` → 成功し、`gear_2` が `[27, 22, 0]` に動いて新しい起点の歯車（中心 `[40, 22, 0]`）と重なり、`resolveLayout` の `interferences` に `gear_2` と新しい歯車の組がある
+- [x] 角度: `setMeshAngle { shaftId 'shaft_2', angle 0 }` → `gear_2` の中心 `[0, 22, 18]`、`gear_4` の中心 `[0, 26, 36]`。`angle −π/2` → 持つ値は `3π/2`。`shaftId 'shaft_1'`（root）→ `notAllowed`
+- [x] シャフト上の位置: `setGearOffset { gearId 'gear_3', offset 8 }` → `gear_3` の中心 `[18, 30, 0]`、`gear_4` の中心 `[18, 30, 18]`。`offset 6` → `invalidValue`。`gearId 'gear_2'`（`shaft_2` の子）→ `notAllowed`
+- [x] モーター: `addMotor { shaftId 'shaft_1' }` をもう一度 → `notAllowed`。`addMotor { shaftId 'shaft_2', size 'L' }` → `rpm 15`
+- [x] モーターの設定: `updateMotor { motorId 'motor_1', patch { rpm 120, direction -1 } }` → 反映。`rpm 0` → `invalidValue`。`patch { size 'M' }` → `rpm` は 60 のまま。`patch { on: false }` → 反映
+- [x] シャフトの移動: `moveShaft { shaftId 'shaft_1', origin [100, 20, 0] }` → `gear_2` の中心 `[118, 22, 0]`。`shaftId 'shaft_2'` → `notAllowed`。`detached` にした `shaft_2` は動かせる
+- [x] 向き: `setShaftAxis { shaftId 'shaft_1', axis 'x' }` → `shaft_1.placement.axis === 'x'`。`scene.shafts.shaft_2`・`shaft_3` は前と同じ参照のまま、`resolveLayout` の `shafts` の 3 本がすべて `axis 'x'`。`gear_1` の中心 `[2, 20, 0]`、`gear_2` の中心 `[2, 20, 18]`（軸 `x` の `angle π/2` は `+Z`）。`shaftId 'shaft_2'` → `notAllowed`
+- [x] 付け直し: `deleteParts ['gear_2']` の後、`reattachShaft { shaftId 'shaft_2', childGearId 'gear_3', parentGearId 'gear_1', angle π/2 }` → `shaft_2` が `{ kind: 'mesh', parentGearId: 'gear_1', childGearId: 'gear_3', angle: π/2 }`、`gear_3.offset === 0`（4 を引いた）、`gear_3` の中心 `[18, 22, 0]`、その先の `gear_4` の中心 `[18, 22, 18]`（その先ごとついてくる）。`validateScene` が ok
+- [x] 付け直しの失敗: 同じ状態で、`parentGearId 'gear_4'`（`shaft_2` の先の `shaft_3` に載る。循環）→ `notAllowed`。`shaftId 'shaft_3'`（`mesh`）→ `notAllowed`。`childGearId 'gear_4'`（`shaft_2` に無い）→ `notAllowed`。`addRootShaft { axis 'y', origin [0, 20, 100], gear { 'M', 20 } }` で足した M の歯車を親にする → `notAllowed`（大きさが違う）
+- [x] 参照の使い回し: `setGearTeeth { gearId 'gear_1', … }` の後、`scene.gears.gear_2`・`scene.shafts`・`scene.motors` は前と同じ参照、`scene.gears.gear_1` は新しい参照
+- [x] `replaceScene` に検証を通らないシーン（歯数 11）→ `invalidValue`
+- [x] 不変: 入力のシーンを `Object.freeze`（深く）しても、全てのコマンドが例外にならない
+- [x] ランダムな操作列: 種を固定した乱数で、上のコマンド（`reattachShaft` を含む）を 500 回ランダムに（存在する ID を選んで）適用 → 成功したものの後は毎回 `validateScene` が ok
+- [x] 履歴: 基本のシーンの 5 コマンドを `execute` → `undo` を 5 回で `emptyScene()` と等しいシーン、6 回目は `null`。`redo` 5 回で基本のシーンと同じ参照
+- [x] 履歴の参照: `deleteParts ['gear_2']` → `undo` → 削除前のシーンと同じ参照（`toBe`）
+- [x] 失敗したコマンド・何も変えないコマンドは履歴に積まない（`past` の長さが変わらない）
+- [x] Undo の後に新しいコマンド → `future` が空になる
+- [x] 上限: 101 回 `moveShaft`（毎回違う原点）→ `past.length === 100`
+- [x] まとめる: `updateMotor { rpm 70 }`、`{ rpm 80 }`、`{ rpm 90 }` を同じ `coalesceKey: 'rpm-drag-1'` で → `undo` 1 回で `rpm 60` に戻る。間に `undo` か、キーなしのコマンドが入ると途切れる
 ### Playwright
-- [ ] `loadScene(空のシーン)` → `__gearSim.dispatch` で基本のシーンの 5 コマンドを順に → `getScene().gears` が 4 枚、0.5 秒後に `getMotion().angles.shaft_1` が増えている → `undo()` を 5 回 → `getScene()` が空
+- [x] `loadScene(空のシーン)` → `__gearSim.dispatch` で基本のシーンの 5 コマンドを順に → `getScene().gears` が 4 枚、0.5 秒後に `getMotion().angles.shaft_1` が増えている（アプリの ID はランダムなので、`shaft_1` は起点のシャフトの実際の ID に読み替える） → `undo()` を 5 回 → `getScene()` が空
 
 ## 人が手で確かめる項目
 - なし
 
 ## 完了の条件
-- [ ] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
-- [ ] design.md と後続のタスク資料に、必要な変更を反映した（`Command` の一覧・削除と付け直しの規則・`coalesceKey` を design.md §7 に書く。`__gearSim` に足した API が §10 と合っているか確かめる。S1-16・S1-17・S1-20・S1-27 の資料のコマンド名がこれと合っているか確かめる）
-- [ ] `status: done` にしてコミットした
+- [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
+- [x] design.md と後続のタスク資料に、必要な変更を反映した（`Command` の一覧・削除と付け直しの規則・`coalesceKey` を design.md §7 に書く。`__gearSim` に足した API が §10 と合っているか確かめる。S1-16・S1-17・S1-20・S1-27 の資料のコマンド名がこれと合っているか確かめる）
+- [x] `status: done` にしてコミットした

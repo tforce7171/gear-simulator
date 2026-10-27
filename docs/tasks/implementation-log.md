@@ -64,3 +64,10 @@
 | S1-10 | 性能のテストの 200 枚の木は、+X 方向に 100 枚の鎖（背骨）と、偶数番目は +Z・奇数番目は −Z に 1 枚ずつの枝にした。時間は 2 回目の呼び出しを測る | 資料は配置を決めていなかったため。干渉も contact も無い木になる |
 | S1-10 | S1-18 の資料の `CandidateKind` を `'mesh' \| 'coaxial'` から `GrowCandidate['kind']`（`'perimeter' \| 'coaxial'`）に直し、`GrowCandidate` から `growGear` の引数への変換を書いた | S1-10 の `GrowCandidate` と S1-11 の `growGear` の `mode` が `'perimeter'` なので、名前をそろえるため |
 | S1-10 | 作業は `.claude/worktrees/S1-10`（`git worktree add`）で行った（`task/S1-10` ブランチ） | 実行環境が共有の作業ツリーへの書き込みを禁止していたため |
+| S1-11 | 作業は `.claude/worktrees/S1-11`（`git worktree add`）で行った | 実行環境が共有の作業ツリーへの書き込みを禁止していたため |
+| S1-11 | 何も変えないコマンド（同じ値の設定、空の `deleteParts` など）は、履歴を `coalesceKey` も含めてそのままにする（キーを途切れさせない） | 資料は「積まない」とだけ書いており、ドラッグ中に同じ値が続いてもまとめが切れないほうが自然なため |
+| S1-11 | 失敗の判定は「ID が無い（`notFound`）→ 操作が許されない（`notAllowed`）→ 値が不正（`invalidValue`）」の順に調べる（`growGear`・`setGearTeeth` などは値の検査だけ）。`removeMotor` の無い ID は `notFound` | 資料は個々の失敗の種類だけを決めており、重なったときの順は決めていなかったため。存在と許可を先に見るほうが UI のメッセージとして分かりやすい |
+| S1-11 | `deleteParts` で `detached` にするシャフトが入力のシーンの `Layout` に無い（根からたどれない）ときは、原点 `[0,0,0]`・向き `shaftAxis`（無ければ `'y'`）にする | 検証済みのシーンでは起きないが、例外にしない決まりのため |
+| S1-11 | ストアの `dispatch` は状態が変わったときだけ購読者に知らせる。コマンド・Undo・Redo でシーンが変わったら、角度を引き継いで `solveMotion` で ω・ロックを求め直す。`createStore(scene, { ids })` で ID の生成関数を注入できる（既定はランダム） | 失敗したコマンドで自動保存（S1-27）などが動かないようにし、`dispatch` の直後の `getMotion()` が新しいシーンと合うようにするため |
+| S1-11 | `__gearSim.dispatch` は design.md §10 のとおり `void` を返し、失敗しても何もしない（警告も出さない） | 失敗は `getScene()` が変わらないことで確かめられ、`console.error` を出すとテストが失敗するため |
+| S1-11 | Playwright のテストは、アプリの ID がランダムなので、`shaft_1` などを前のコマンドで増えた部品の ID に読み替えた | 資料は「ID はランダムの生成関数を使う」としており、テストの ID はそのままでは使えないため |

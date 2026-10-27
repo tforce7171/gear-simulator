@@ -1,17 +1,37 @@
+import type { Command } from '../core/edit/commands';
+import {
+  type EditState,
+  emptyHistory,
+  execute,
+  type History,
+  redo,
+  undo,
+} from '../core/edit/history';
 import { initialMotionState, solveMotion } from '../core/kinematics/motion';
 import type { MotionState } from '../core/kinematics/types';
 import { resolveLayout } from '../core/layout/resolve';
 import type { Layout } from '../core/layout/types';
+import { createRandomIdGenerator, type IdGenerator } from '../core/scene/ids';
 import type { Scene } from '../core/scene/types';
 
 // アプリの状態（design.md §7）。欄は使うタスクで足していく
 export interface AppState {
   readonly scene: Scene;
+  readonly history: History; // Undo/Redo の履歴（S1-11）
   readonly motion: MotionState;
 }
 
-// このタスクでは内部のアクションだけ。編集コマンドは S1-11 で足す
-export type AppAction = { readonly type: 'loadScene'; readonly scene: Scene };
+// loadScene: 履歴を空にしてシーンを置き換える（テストの準備用。Undo の対象にしない）。
+// command: 編集コマンド（core/edit）を実行して履歴に積む。undo / redo: 履歴をたどる
+export type AppAction =
+  | { readonly type: 'loadScene'; readonly scene: Scene }
+  | { readonly type: 'command'; readonly command: Command; readonly coalesceKey?: string }
+  | { readonly type: 'undo' }
+  | { readonly type: 'redo' };
+
+export interface StoreOptions {
+  readonly ids?: IdGenerator; // 新しい部品の ID（既定はランダム）
+}
 
 export interface Store {
   getState(): AppState;
@@ -26,23 +46,54 @@ export function initialMotion(scene: Scene, layout: Layout): MotionState {
   return solveMotion(scene, layout, initialMotionState());
 }
 
-function reduce(_state: AppState, action: AppAction): AppState {
+// 編集でシーンが変わったとき: 角度はそのまま引き継ぎ、ω・ロック・負けたモーターを新しいシーンで求め直す
+function withEdit(state: AppState, edited: EditState | null): AppState {
+  if (edited === null || (edited.scene === state.scene && edited.history === state.history)) {
+    return state;
+  }
+  const motion =
+    edited.scene === state.scene
+      ? state.motion
+      : solveMotion(edited.scene, resolveLayout(edited.scene), state.motion);
+  return { scene: edited.scene, history: edited.history, motion };
+}
+
+function reduce(state: AppState, action: AppAction, ids: IdGenerator): AppState {
   switch (action.type) {
     case 'loadScene':
       return {
         scene: action.scene,
+        history: emptyHistory(),
         motion: initialMotion(action.scene, resolveLayout(action.scene)),
       };
+    case 'command': {
+      const options = action.coalesceKey === undefined ? {} : { coalesceKey: action.coalesceKey };
+      const result = execute(state, action.command, { ids }, options);
+      // 失敗したコマンドは何も変えない（想定内の失敗なので例外にしない）
+      return result.ok ? withEdit(state, result.state) : state;
+    }
+    case 'undo':
+      return withEdit(state, undo(state));
+    case 'redo':
+      return withEdit(state, redo(state));
   }
 }
 
-export function createStore(scene: Scene): Store {
-  let state: AppState = { scene, motion: initialMotion(scene, resolveLayout(scene)) };
+export function createStore(scene: Scene, options: StoreOptions = {}): Store {
+  const ids = options.ids ?? createRandomIdGenerator();
+  let state: AppState = {
+    scene,
+    history: emptyHistory(),
+    motion: initialMotion(scene, resolveLayout(scene)),
+  };
   const listeners = new Set<(state: AppState) => void>();
   return {
     getState: () => state,
+    // 状態が変わったときだけ購読者に知らせる（loadScene は常に変わる）
     dispatch(action) {
-      state = reduce(state, action);
+      const next = reduce(state, action, ids);
+      if (next === state) return;
+      state = next;
       for (const listener of [...listeners]) listener(state);
     },
     subscribe(listener) {

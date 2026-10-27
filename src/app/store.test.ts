@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+import { createSequentialIdGenerator } from '../core/scene/ids';
+import { emptyScene } from '../core/scene/scene';
 import type { Scene } from '../core/scene/types';
 import { demoScene } from './demo-scene';
 import { createLayoutMemo, createStore } from './store';
@@ -59,6 +61,62 @@ describe('createStore', () => {
     store.subscribe(listener);
     store.setMotion(store.getState().motion);
     expect(listener).not.toHaveBeenCalled();
+  });
+});
+
+describe('編集コマンドと Undo/Redo', () => {
+  const addRoot = {
+    type: 'command',
+    command: {
+      type: 'addRootShaft',
+      axis: 'y',
+      origin: [0, 20, 0],
+      gear: { size: 'S', teeth: 12 },
+    },
+  } as const;
+
+  it('command で新しい部品が足され、undo / redo で戻る・進む', () => {
+    const store = createStore(emptyScene(), { ids: createSequentialIdGenerator() });
+    const before = store.getState().scene;
+    store.dispatch(addRoot);
+    expect(Object.keys(store.getState().scene.gears)).toEqual(['gear_1']);
+    expect(store.getState().history.past).toEqual([before]);
+    const after = store.getState().scene;
+    store.dispatch({ type: 'undo' });
+    expect(store.getState().scene).toBe(before);
+    store.dispatch({ type: 'redo' });
+    expect(store.getState().scene).toBe(after);
+  });
+
+  it('シーンが変わると ω を求め直し、角度は引き継ぐ', () => {
+    const store = createStore(demoScene, { ids: createSequentialIdGenerator() });
+    store.setMotion({ ...store.getState().motion, angles: { shaft_1: 1, shaft_2: -0.5 } });
+    store.dispatch({
+      type: 'command',
+      command: { type: 'updateMotor', motorId: 'motor_1', patch: { on: false } },
+    });
+    expect(store.getState().motion.omegas.shaft_1).toBe(0);
+    expect(store.getState().motion.angles.shaft_1).toBeCloseTo(1, 12);
+  });
+
+  it('失敗したコマンドと戻せない undo は状態を変えず、購読者に知らせない', () => {
+    const store = createStore(demoScene);
+    const listener = vi.fn();
+    store.subscribe(listener);
+    const before = store.getState();
+    store.dispatch({ type: 'command', command: { type: 'deleteParts', ids: ['gear_99'] } });
+    store.dispatch({ type: 'undo' });
+    store.dispatch({ type: 'redo' });
+    expect(store.getState()).toBe(before);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('loadScene は履歴を空にする', () => {
+    const store = createStore(emptyScene(), { ids: createSequentialIdGenerator() });
+    store.dispatch(addRoot);
+    store.dispatch({ type: 'loadScene', scene: demoScene });
+    expect(store.getState().history.past).toEqual([]);
+    expect(store.getState().history.future).toEqual([]);
   });
 });
 
