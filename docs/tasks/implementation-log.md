@@ -23,3 +23,10 @@
 | S1-03 | `multipleMotors` の `id` はシャフトの ID、`path` は `shafts.<id>` にした。`meshChildOffset`・`meshSizeMismatch` の `id` は子の歯車 | どの部品に問題があるかを最も直接に示す場所にしたため |
 | S1-03 | `createRandomIdGenerator` は `<kind>_` に英小文字と数字 10 文字を続ける（36^10 通り）。乱数を注入できる | 1000 回で重複しない確率が十分に高く、保存形式の ID として短いため |
 | S1-03 | `shaftAxis` は参照先の歯車・シャフトが無いときも `null` を返す | 資料は循環のときだけ `null` としていたが、たどれないのは同じため |
+| S1-04 | `Layout`・`Mesh` などの型は `src/core/layout/types.ts`、`MotionState`・`LockInfo`・`LockReason` と `emptyMotion()` は `src/core/kinematics/types.ts` に置いた | 資料の「作るもの」に型の置き場所が無く、render（描画の層）が app を import せずに使えるよう core に置いた。S1-07・S1-09 がそのまま使える |
+| S1-04 | ストアに `dispatch` とは別に `setMotion(motion)` を足した。購読者には知らせない | 資料は `dispatch` を `loadScene` 相当だけに絞っており、毎フレームの運動の更新で購読者（後の自動保存など）を毎フレーム呼ばないため |
+| S1-04 | `loadScene`（とストアの作成）の直後の運動は、角度 0、ω は暫定の運動を `dt = 0` で求めた値にした（`initialMotion`） | 読み込んだ直後に `getMotion().omegas` を読んでも次のフレームを待たずに正しい値が出るようにし、Playwright のテストが描画のタイミングに左右されないようにするため |
+| S1-04 | 暫定の `resolveLayout` は、根にたどり着かない（参照切れ・循環の）シャフトと歯車を `Layout` に含めない。歯車の無いシャフトの `span` は `[0, 0]`。`mesh` のシャフトの子の歯車が別のシャフトに載っていれば、そのシャフトは置かない | 資料は「root・detached から mesh でたどれる木だけを扱う」としており、それ以外の扱いは S1-09 が決めるため |
+| S1-04 | 仮の見た目の寸法はシャフトの太さ半径 1.5 mm、モーターは一辺 8 mm の立方体を、シャフトの `span` の負側の端から 1 mm 離して置いた。カメラは `(40, 75, 70)` から `(9, 18, 0)` を見る | 資料は「render 側の定数で仮に決める」としていたため。S・12 歯の歯底円半径（4.75 mm）より細く、固定シーンの全体が画面に入る位置にした |
+| S1-04 | 起動時に固定シーンが出るようになったので、`e2e/visual/empty-scene.spec.ts` は `loadScene` で空のシーンを読んで 2 フレーム待ってから撮るようにした | 場面名（床のグリッドだけ）の意味を保つため |
+| S1-04 | `src/app/demo-scene.test.ts` で、`demoScene` が `e2e/fixtures/two-spur.json` と等しく、`validateScene` を通ることを確かめる | 2 か所に同じシーンを持つので、ずれを防ぐため |

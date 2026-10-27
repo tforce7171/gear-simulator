@@ -164,7 +164,7 @@ interface Motor {
 
 ## 5. 導出データ（レイアウト）
 
-`resolveLayout(scene): Layout` は純粋関数で、シーンから位置などを毎回求める。シーンの参照が同じなら結果をキャッシュしてよい。
+`resolveLayout(scene): Layout` は純粋関数で、シーンから位置などを毎回求める。シーンの参照が同じなら結果をキャッシュしてよい。型は `src/core/layout/types.ts`、関数は `src/core/layout/resolve.ts`（S1-04 の暫定版を S1-09 が置き換える）。app は `createLayoutMemo()`（`src/app/store.ts`）でシーンの参照ごとに 1 回だけ求める。
 
 ```ts
 interface Layout {
@@ -196,7 +196,7 @@ interface Mesh {
 
 ## 6. 運動の状態と計算
 
-運動の状態はシーンとは別に持つ。Undo の対象にもならず、保存もしない。
+運動の状態はシーンとは別に持つ。Undo の対象にもならず、保存もしない。`MotionState`・`LockInfo`・`LockReason` の型は `src/core/kinematics/types.ts`（S1-04）。
 
 ```ts
 interface MotionState {
@@ -284,6 +284,8 @@ interface Settings {
 - `__gearSim.loadScene` は、Undo の履歴を空にしてシーンを置き換える（テストの準備用。ユーザーの操作で使う `replaceScene` コマンドとは別）。
 - 編集コマンドは、干渉を理由に失敗しない（干渉は Layout が赤い警告として出す）。干渉する位置に置かせない・戻すといった判断は、UI 側（候補の列挙、ハンドル）が行う。
 - エラーや通知は、S1-15 で作るトーストで表示する。想定内の失敗（読み込めないファイルなど）は `console.warn` にとどめ、`console.error` は出さない（§10 のテストで失敗になるため）。
+- **描画の層**（S1-04）: app は `src/render/scene-view.ts` の `SceneView`（`sync(scene, layout)` / `update(motion, layout)` / `render()` / `projectToScreen(world)`）だけを使う。毎フレームの更新ループは `src/app/loop.ts`（`requestAnimationFrame`、`dt` は 0.1 秒で頭打ち）で、`sync` → 運動を進める → `update` → `render` の順に呼ぶ。歯車は中心に置いた `Group` のローカルの x・y・z を `u`・`v`・`w` に合わせ、その子のメッシュをローカルの z まわりに `basePhase + シャフトの角度` だけ回す。
+- ストア（S1-04 の `src/app/store.ts`）は、`dispatch` で購読者に知らせる。毎フレームの運動は `setMotion` で入れ、購読者には知らせない。
 - render は、前回と参照が変わった部品だけを作り直す。形状データ（BufferGeometry）は `(種類, 大きさ, 歯数)` をキーに共有する。
 - UI は素の TypeScript で書き、DOM を直接操作する。文字列はすべて `t('key')` を通す。
 
@@ -341,6 +343,7 @@ API はタスクで必要になった時点で足していく。足したらこ�
 | タスク | 追加する API |
 |---|---|
 | S1-01 | `isReady`（済） |
+| S1-04 | `getScene` / `getLayout` / `getMotion` / `loadScene` / `projectToScreen`（済） |
 | S1-11 | `undo` / `redo` |
 | S1-12 | `getLanguage` / `setLanguage` |
 | S1-13 | `getCamera` / `setCamera` / `getLastContextRequest` |

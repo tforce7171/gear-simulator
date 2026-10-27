@@ -33,7 +33,7 @@ S1-05・S1-06 の結果から、ロックの判定、負けたモーター、角
   - 一時停止中でも手で回せる
   - 自由度 2 以上の成分を手で回す場合（残りの自由度をモーターのつり合いで解く）は S3-03 で扱う。このタスクでは例外にしてよい
   - 手を離したら（`hand` が無くなったら）、次のフレームからつり合いの速度に戻る
-- app への組み込み: このタスクで `src/app/provisional-motion.ts` を `stepMotion` に置き換え、消す（毎フレーム `resolveLayout` → `stepMotion`）。`opts` は S1-21・S1-22 が `AppState.sim` から渡す。このタスクでは渡さない
+- app への組み込み: このタスクで `src/app/provisional-motion.ts` を `stepMotion` に置き換え、消す（毎フレーム `resolveLayout` → `stepMotion`）。S1-04 では `stepProvisionalMotion(scene, layout, prev, dt)` を `src/app/loop.ts` の `runFrame`（毎フレーム）と `src/app/store.ts` の `initialMotion`（`loadScene` の直後。`dt = 0` で ω だけ求める）の 2 か所から呼んでいる。後者は `solveMotion` に置き換える。`MotionState`・`LockInfo`・`LockReason` の型と `emptyMotion()` は S1-04 が `src/core/kinematics/types.ts` に置いた（`initialMotionState` はこれを使ってよい）。`opts` は S1-21・S1-22 が `AppState.sim` から渡す。このタスクでは渡さない
 
 ## 範囲外
 - ロックの赤い表示と震え、干渉の赤い警告、Space での一時停止の操作（S1-22）

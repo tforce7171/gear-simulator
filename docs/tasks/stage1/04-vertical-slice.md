@@ -1,7 +1,7 @@
 ---
 id: S1-04
 title: 最小の縦通し: 固定シーンを描画して回す
-status: todo
+status: doing
 depends: [S1-03]
 ---
 
