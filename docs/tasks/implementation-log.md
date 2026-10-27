@@ -35,3 +35,7 @@
 | S1-05 | ID の昇順は、`localeCompare` ではなく符号単位の比較（`<`）にした。長い減速の列のテストでは、10 本のシャフトの名前を `shaft_0`〜`shaft_9` にした | 実行環境のロケールに依らず決定的にするため。`shaft_10` は `shaft_2` より前に来るので、昇順に並ぶ名前にした |
 | S1-05 | `KinematicComponent.meshes` は入力の `Mesh[]` の順のまま持つ。歯車のシャフトがシーンに無い `Mesh` も例外にする | 資料は順を決めていないが、入力が同じなら同じ順になり決定的なため。シャフトの無い歯車は呼ぶ側の不具合のため |
 | S1-05 | 暫定の運動で、成分の「最初の ON のモーター」は、モーターの ID の昇順で最初のものとした。自由度 1 では `q = ω_m / n`（n はモーターのシャフトの行）、2 以上では `n·q = ω_m` を満たす最小ノルムの `q` にした。グラフは `Layout` をキーにした `WeakMap` に、シーンの参照と一緒に覚え、シーンが変わったときだけ作り直す | S1-04 は `Object.values` の順だったが、決定的にするため。`stepProvisionalMotion` の引数を変えずに済み、`store.ts`・`loop.ts` を変えなくてよいため。段階 1 では自由度 2 以上は出ない |
+| S1-06 | `solveVelocities` は `paused` のとき `motorTorques` を空にする。自由度 0 の成分の ON のモーターも `motorTorques` に含め、値は `ω = 0` での `T_stall·d` にする | 資料は「ON のモーターだけ」としており、一時停止中は全モーターを OFF とみなすため。S1-07 の stalemate・contradiction の判定で、ON のモーターのトルクを成分によらず引けるようにするため |
+| S1-06 | 線形代数は `linalg.ts` に `solveParticular`（自由な列の成分を 0 にした特解。階数のしきい値は S1-05 と同じ相対 1e-9）、`multiply`・`multiplyVector`・`transpose` を足して組んだ。`Nᵀ D N` の階数の判定もこのしきい値による | 資料は「自前の小さな実装でよい」としていたため。S1-05 の消去（`echelon`）を右辺つきに広げて使い回した |
+| S1-06 | テスト「歯数比での相殺」の M の rpm は資料に無いので 30rpm にした | 速度 0 のつり合いでは停動トルクだけで決まり、rpm によらないため |
+| S1-06 | `e2e/fixtures/opposing-motors.json` は `two-spur.json` の `gear_2` を 12 歯にし、`shaft_2` に `motor_2`（M 60rpm `direction 1`）を足したもの。spec は `e2e/force-balance.spec.ts` | 資料の指定どおりの配置で、ID の付け方を既存のフィクスチャに合わせたため |
