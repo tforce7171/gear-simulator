@@ -1,7 +1,7 @@
 ---
 id: S1-22
 title: ロックの表示、干渉の警告、一時停止
-status: doing
+status: done
 depends: [S1-07, S1-08, S1-16]
 ---
 
@@ -113,4 +113,4 @@ depends: [S1-07, S1-08, S1-16]
 ## 完了の条件
 - [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
 - [x] design.md と後続のタスク資料に、必要な変更を反映した（§7 の `AppState.sim.paused`、§10 の `__gearSim` の API）
-- [ ] `status: done` にしてコミットした
+- [x] `status: done` にしてコミットした
