@@ -1,0 +1,57 @@
+{
+  "shafts": {
+    "shaft_a": {
+      "id": "shaft_a",
+      "placement": {
+        "kind": "root",
+        "origin": [0, 20, 0],
+        "axis": "y"
+      }
+    },
+    "shaft_b": {
+      "id": "shaft_b",
+      "placement": {
+        "kind": "mesh",
+        "parentGearId": "gear_a",
+        "childGearId": "gear_b",
+        "angle": 0
+      }
+    },
+    "shaft_c": {
+      "id": "shaft_c",
+      "placement": {
+        "kind": "mesh",
+        "parentGearId": "gear_b",
+        "childGearId": "gear_c",
+        "angle": 0
+      }
+    }
+  },
+  "gears": {
+    "gear_a": {
+      "id": "gear_a",
+      "kind": "spur",
+      "shaftId": "shaft_a",
+      "size": "M",
+      "teeth": 20,
+      "offset": 0
+    },
+    "gear_b": {
+      "id": "gear_b",
+      "kind": "spur",
+      "shaftId": "shaft_b",
+      "size": "M",
+      "teeth": 20,
+      "offset": 0
+    },
+    "gear_c": {
+      "id": "gear_c",
+      "kind": "spur",
+      "shaftId": "shaft_c",
+      "size": "M",
+      "teeth": 20,
+      "offset": 0
+    }
+  },
+  "motors": {}
+}

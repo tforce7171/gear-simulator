@@ -3,6 +3,7 @@ import {
   Color,
   DirectionalLight,
   GridHelper,
+  Group,
   OrthographicCamera,
   PerspectiveCamera,
   Plane,
@@ -13,8 +14,9 @@ import {
   WebGLRenderer,
 } from 'three';
 import type { Vec3 } from '../core/math/vec3';
+import { createPicker, type PickHit } from './picking';
 import type { SceneView } from './scene-view';
-import { createSceneSync } from './sync';
+import { createSceneSync, type Highlight } from './sync';
 
 const BACKGROUND = 0x1e2126;
 const GRID_SIZE = 400; // mm
@@ -41,6 +43,12 @@ export interface Renderer extends SceneView {
   readonly canvas: HTMLCanvasElement;
   // ページ座標の点の下にあるもの: 部品に当たればその点、なければ床（y = 0）との交点、どちらも無ければ null
   pickPoint(pageX: number, pageY: number): Vec3 | null;
+  // ページ座標の点の下の部品（優先順位つき。S1-16）。activeCamera() でレイを飛ばす
+  pick(pageX: number, pageY: number): PickHit | null;
+  // ピッキングの対象を入れる Group。ハンドル（S1-17・S1-19）・候補（S1-18）もここに足す
+  readonly pickRoot: Group;
+  // 選択とマウスを乗せた部品のハイライト（S1-16）
+  setHighlight(highlight: Highlight): void;
 }
 
 // キャンバスに描く SceneView を作る。canvas の大きさ（ResizeObserver）に追従する。
@@ -68,7 +76,10 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
   let active: PerspectiveCamera | OrthographicCamera = camera;
 
   const objects = createSceneSync();
-  scene.add(objects.root);
+  const pickRoot = new Group();
+  pickRoot.add(objects.root);
+  scene.add(pickRoot);
+  const picker = createPicker({ canvas, root: pickRoot, camera: () => active });
 
   // 描画バッファとカメラの縦横比を、canvas の表示の大きさに合わせる（S1-15。パネルを除いた描画領域）
   function resize(): void {
@@ -99,6 +110,8 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
     activeCamera: () => active,
     canvas,
     pickPoint(pageX, pageY) {
+      const hit = picker.pick(pageX, pageY);
+      if (hit !== null) return hit.point;
       const rect = canvas.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) return null;
       ndc.set(
@@ -107,11 +120,12 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
       );
       active.updateMatrixWorld();
       raycaster.setFromCamera(ndc, active);
-      const hit = raycaster.intersectObject(objects.root, true)[0];
-      if (hit !== undefined) return [hit.point.x, hit.point.y, hit.point.z];
       if (raycaster.ray.intersectPlane(floor, floorHit) === null) return null;
       return [floorHit.x, floorHit.y, floorHit.z];
     },
+    pick: picker.pick,
+    pickRoot,
+    setHighlight: objects.setHighlight,
     sync: objects.sync,
     update: objects.update,
     render() {

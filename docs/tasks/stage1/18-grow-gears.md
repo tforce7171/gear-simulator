@@ -47,7 +47,7 @@ depends: [S1-10, S1-16]
     paletteSize: SizeKey,
   ): { size: SizeKey; teeth: number };
   ```
-- `src/render/candidates.ts`: 候補の仮の歯車の表示（形状データは S1-02 の共有のものを使い、材質だけ半透明にする）。ピッキングの種類は `'candidate'`
+- `src/render/candidates.ts`: 候補の仮の歯車の表示（形状データは S1-02 の共有のものを使い、材質だけ半透明にする）。ピッキングの種類は `'candidate'`（S1-16 の `setPickTarget(object, 'candidate', id)` で印を付け、`Renderer.pickRoot` に足す。クリックは `main.ts` の `selectAt` で `kind: 'candidate'` を見て生やす処理へ分ける。`selectionForPick` は候補に null を返すので、そのままだと選択が外れる）
 - S1-13 の振り分け（`routePointerDown`）に、候補のための区別を足す（例: `overInteractive` を `'none' | 'app' | 'click-only'` にする）。S1-13 の Vitest も合わせて直す
 - `__gearSim` に追加（design.md §10 も更新する）
   ```ts
