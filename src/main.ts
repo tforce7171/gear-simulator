@@ -7,6 +7,7 @@ import { selectionForPick } from './app/selection';
 import { createLayoutMemo, createStore } from './app/store';
 import { boundsOf } from './core/layout/bounds';
 import { resolveLayout } from './core/layout/resolve';
+import { nextTheme } from './core/theme';
 import { installGearSim } from './debug/gear-sim';
 import { type ContextRequest, createCameraInput } from './input/camera';
 import { createKeyboard, isTypingTarget } from './input/keyboard';
@@ -46,7 +47,20 @@ onLanguageChange(applyLanguage);
 
 const store = createStore(demoScene);
 const layoutOf = createLayoutMemo();
-const renderer = createRenderer(canvas);
+const renderer = createRenderer(canvas, {
+  theme: store.getState().settings.theme,
+  quality: store.getState().settings.quality,
+});
+// テーマと品質（S1-24）: 設定が変わったら描画に反映する（同じ値なら renderer 側で何もしない）
+store.subscribe(({ settings }) => renderer.applyTheme(settings.theme, settings.quality));
+const themeButton = shell.toolbar.button('theme');
+themeButton.disabled = false;
+themeButton.addEventListener('click', () => {
+  store.dispatch({
+    type: 'updateSettings',
+    patch: { theme: nextTheme(store.getState().settings.theme) },
+  });
+});
 const keyboard = createKeyboard(window);
 const cameraInput = createCameraInput({
   camera: renderer.camera,
@@ -305,6 +319,7 @@ installGearSim({
     const { locked, interfering } = warningParts(scene, layoutOf(scene), motion);
     return { locked: [...locked].sort(), interfering: [...interfering].sort() };
   },
+  getRenderInfo: () => renderer.renderInfo(),
   getInfoOverlay: () => ({
     enabled: store.getState().view.infoOverlay,
     arrows: infoOverlay.arrows(),

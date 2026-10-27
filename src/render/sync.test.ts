@@ -1,4 +1,4 @@
-import type { Mesh, MeshStandardMaterial, Object3D } from 'three';
+import { type Mesh, MeshStandardMaterial, type Object3D } from 'three';
 import { describe, expect, it } from 'vitest';
 import { demoScene } from '../app/demo-scene';
 import { initialMotionState } from '../core/kinematics/motion';
@@ -194,5 +194,45 @@ describe('ロックと干渉の表示（S1-22）', () => {
 
     sync.setPreviewStyle({ ids: new Set(['gear_2']), ghost: true, invalid: false });
     expect(materialOf(sync.root, 'gear_2').transparent).toBe(true);
+  });
+});
+
+describe('テーマの材質の差し替え（S1-24）', () => {
+  const layout = resolveLayout(demoScene);
+
+  it('基の材質を差し替えると部品の材質が変わり、古い材質は dispose される', () => {
+    const sync = createSceneSync();
+    sync.sync(demoScene, layout);
+    const before = materialOf(sync.root, 'gear_1');
+    let disposed = 0;
+    before.addEventListener('dispose', () => {
+      disposed++;
+    });
+    const gear = new MeshStandardMaterial({ color: 0xc9a24a, metalness: 1, roughness: 0.32 });
+    sync.setBaseMaterials({
+      gear,
+      shaft: new MeshStandardMaterial(),
+      motor: new MeshStandardMaterial(),
+    });
+    expect(materialOf(sync.root, 'gear_1')).toBe(gear);
+    expect(disposed).toBe(1);
+    // 選択の材質も新しい基から作り直す（色は基のまま、発光が水色）
+    sync.setHighlight({ selected: 'gear_1', hovered: null });
+    const selected = materialOf(sync.root, 'gear_1');
+    expect(selected).not.toBe(gear);
+    expect(selected.color.getHex()).toBe(0xc9a24a);
+    expect(selected.metalness).toBe(1);
+  });
+
+  it('歯車とシャフトは影を落とす', () => {
+    const sync = createSceneSync();
+    sync.sync(demoScene, layout);
+    const meshes: Mesh[] = [];
+    sync.root.traverse((o) => {
+      const m = o as Mesh;
+      if (m.isMesh === true && (m.material as { visible: boolean }).visible) meshes.push(m);
+    });
+    expect(meshes.length).toBeGreaterThan(0);
+    for (const m of meshes) expect(m.castShadow).toBe(true);
   });
 });

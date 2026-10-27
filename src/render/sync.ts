@@ -34,7 +34,7 @@ import {
   type WarningParts,
 } from './warning-effects';
 
-// 仮の見た目の寸法（mm）。形と質感は S1-24 で整える
+// シャフトの見た目の寸法（mm）。質感はテーマ（S1-24。render/themes.ts）が setBaseMaterials で渡す
 const SHAFT_RADIUS = 1.5;
 // モーターの箱の一辺（大きさごと。S1-20）
 export const MOTOR_BOX: Readonly<Record<SizeKey, number>> = { S: 6, M: 8, L: 11 };
@@ -147,6 +147,18 @@ function pulseLocked(set: MaterialSet, timeSec: number): void {
   for (const emphasis of EMPHASES) set[`locked-${emphasis}`].emissiveIntensity = intensity;
 }
 
+// 部品の種類ごとの基の材質（テーマが決める。S1-24）
+export interface BaseMaterials {
+  readonly gear: MeshStandardMaterial;
+  readonly shaft: MeshStandardMaterial;
+  readonly motor: MeshStandardMaterial;
+}
+
+// 材質の組の全部を捨てる（基の材質も含む。テクスチャは持ち主が捨てる）
+function disposeSet(set: MaterialSet): void {
+  for (const material of new Set(Object.values(set))) material.dispose();
+}
+
 function sameSet(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
   if (a.size !== b.size) return false;
   for (const id of a) if (!b.has(id)) return false;
@@ -184,6 +196,11 @@ export interface SceneSync {
   setPreviewStyle(style: PreviewStyle | null): void;
   // ロック中・干渉中の部品（S1-22）。中身が変わったときだけ材質を選び直す
   setWarnings(warnings: WarningParts): void;
+  // 部品の種類ごとの基の材質を差し替える（テーマ。S1-24）。ハイライト・仮の部品・ロック・干渉の
+  // 材質も作り直し、古いものは dispose する。渡した材質はこの後 SceneSync が持ち、差し替えで捨てる
+  setBaseMaterials(materials: BaseMaterials): void;
+  // 部品の形・位置・向き・材質が変わるたびに増える数（影マップを描き直すかの判断に使う。S1-24）
+  version(): number;
   gearCount(): number;
 }
 
@@ -191,13 +208,14 @@ export interface SceneSync {
 // 部品の参照が変わったものだけ作り直し、位置と向きはレイアウトから毎回置き直す
 export function createSceneSync(cache: GeometryCache = createGeometryCache()): SceneSync {
   const root = new Group();
-  const gearMaterials = materialSet(
+  // テーマ（S1-24）が setBaseMaterials で差し替えるまでの材質
+  let gearMaterials = materialSet(
     new MeshStandardMaterial({ color: 0xa0a4aa, metalness: 0.3, roughness: 0.5 }),
   );
-  const shaftMaterials = materialSet(
+  let shaftMaterials = materialSet(
     new MeshStandardMaterial({ color: 0x7a7f87, metalness: 0.4, roughness: 0.4 }),
   );
-  const motorMaterials = materialSet(
+  let motorMaterials = materialSet(
     new MeshStandardMaterial({ color: 0x5c6068, metalness: 0.1, roughness: 0.7 }),
   );
   const motorGeometries: Readonly<Record<SizeKey, BoxGeometry>> = {
@@ -216,6 +234,7 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
   const motors = new Map<MotorId, MotorEntry>();
   let lastScene: Scene | undefined;
   let lastLayout: Layout | undefined;
+  let version = 0;
 
   function removeGear(id: GearId, entry: GearEntry): void {
     root.remove(entry.pivot);
@@ -246,6 +265,9 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
       let entry = gears.get(gear.id);
       if (entry === undefined) {
         const body = new Mesh(cache.acquire(gear.kind, gear.size, gear.teeth), gearMaterials.none);
+        // 影（S1-24）: 歯車は影を落とし、受ける。品質が軽量なら renderer 側で影の計算ごと止める
+        body.castShadow = true;
+        body.receiveShadow = true;
         const pivot = new Group();
         pivot.add(body);
         setPickTarget(pivot, 'gear', gear.id);
@@ -278,6 +300,7 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
         const geometry = new CylinderGeometry(SHAFT_RADIUS, SHAFT_RADIUS, length, 16);
         geometry.rotateX(Math.PI / 2); // 円柱の向きをローカルの z（= 軸 w）にする
         const object = new Mesh(geometry, shaftMaterials.none);
+        object.castShadow = true;
         const proxyGeometry = new CylinderGeometry(SHAFT_PICK_RADIUS, SHAFT_PICK_RADIUS, length, 8);
         proxyGeometry.rotateX(Math.PI / 2);
         const proxy = new Mesh(proxyGeometry, pickProxyMaterial);
@@ -310,12 +333,13 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
       let entry = motors.get(motor.id);
       if (entry === undefined) {
         const object = new Mesh(motorGeometries[motor.size], motorMaterials.none);
+        object.castShadow = true;
         setPickTarget(object, 'motor', motor.id);
         root.add(object);
         entry = { motor, object, base: new Quaternion() };
         motors.set(motor.id, entry);
       }
-      // シャフトの負側の端のさらに外に置く（仮。S1-24 で整える）
+      // シャフトの負側の端のさらに外に置く
       const along = placed.span[0] - MOTOR_GAP - MOTOR_BOX[motor.size] / 2;
       placeOnAxis(
         entry.object,
@@ -346,6 +370,7 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
 
   // 作り直した部品にも効くように、sync と setHighlight のたびに全部品の材質を選び直す
   function applyHighlight(): void {
+    version++;
     for (const [id, entry] of gears) entry.body.material = gearMaterials[levelOf(id)];
     for (const [id, entry] of shafts) entry.object.material = shaftMaterials[levelOf(id)];
     // モーターはシャフトとして選ばれるので、シャフトと同じに光らせる（仮の部品の見た目も同じ）
@@ -403,17 +428,29 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
       for (const [id, entry] of gears) {
         const placed = layout.gears[id];
         if (placed === undefined) continue;
-        entry.body.rotation.z =
+        const angle =
           placed.basePhase + (motion.angles[entry.gear.shaftId] ?? 0) + shakeOf(id, timeSec);
+        if (entry.body.rotation.z !== angle) version++;
+        entry.body.rotation.z = angle;
       }
       for (const [id, entry] of shafts) shake(entry.object, entry.base, shakeOf(id, timeSec));
       for (const [id, entry] of motors) shake(entry.object, entry.base, shakeOf(id, timeSec));
       if (warnings.locked.size > 0) {
+        version++; // 震えている
         pulseLocked(gearMaterials, timeSec);
         pulseLocked(shaftMaterials, timeSec);
         pulseLocked(motorMaterials, timeSec);
       }
     },
+    setBaseMaterials(materials) {
+      const old = [gearMaterials, shaftMaterials, motorMaterials];
+      gearMaterials = materialSet(materials.gear);
+      shaftMaterials = materialSet(materials.shaft);
+      motorMaterials = materialSet(materials.motor);
+      applyHighlight();
+      for (const set of old) disposeSet(set);
+    },
+    version: () => version,
     gearCount: () => gears.size,
   };
 }

@@ -13,6 +13,7 @@ import { resolveLayout } from '../core/layout/resolve';
 import type { Layout } from '../core/layout/types';
 import { createRandomIdGenerator, type IdGenerator } from '../core/scene/ids';
 import type { Scene, SizeKey } from '../core/scene/types';
+import { DEFAULT_QUALITY, DEFAULT_THEME, type Quality, type ThemeId } from '../core/theme';
 import type { InputDeviceSetting, TrackpadScroll } from '../input/wheel';
 import { pruneSelection } from './selection';
 
@@ -20,11 +21,15 @@ import { pruneSelection } from './selection';
 export interface Settings {
   readonly inputDevice: InputDeviceSetting; // 入力デバイス（S1-14）
   readonly trackpadScroll: TrackpadScroll; // 2 本指スクロールの割り当て（S1-14）
+  readonly theme: ThemeId; // テーマ（S1-24）
+  readonly quality: Quality; // 描画の品質（S1-24）
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   inputDevice: 'auto',
   trackpadScroll: 'pan',
+  theme: DEFAULT_THEME,
+  quality: DEFAULT_QUALITY,
 };
 
 // 表示の状態（design.md §7 の AppState.view）。保存しない

@@ -8,6 +8,7 @@ import type { HandConstraint, MotionState } from '../core/kinematics/types';
 import type { Layout } from '../core/layout/types';
 import type { Vec3 } from '../core/math/vec3';
 import type { GearId, Scene } from '../core/scene/types';
+import type { Quality, ThemeId } from '../core/theme';
 import type { CameraPose } from '../input/camera';
 import type { HandleKind } from '../input/handle-drag';
 import type { ViewName } from '../input/views';
@@ -78,6 +79,17 @@ export interface GearSimDebug {
    * arrows は今描いている回転方向の矢印（gearId の昇順。止まっている歯車は含まない）
    */
   getInfoOverlay(): { enabled: boolean; arrows: Array<{ gearId: GearId; direction: 1 | -1 }> };
+  /**
+   * 描画の状態（S1-24）。theme・quality は描画に適用済みの値、shadowMapEnabled は影の計算をしているか、
+   * pixelRatio は描画の解像度、textures は GPU にあるテクスチャの数（renderer.info.memory.textures）
+   */
+  getRenderInfo(): {
+    theme: ThemeId;
+    quality: Quality;
+    shadowMapEnabled: boolean;
+    pixelRatio: number;
+    textures: number;
+  };
 }
 
 declare global {
