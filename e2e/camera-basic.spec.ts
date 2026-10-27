@@ -12,7 +12,7 @@ const twoGears = JSON.parse(
 // 決まった視点。歯車 2 枚（中心 [0, 4, 0] と [0, 4, 40]）を斜め上から見る
 const VIEW = { position: [0, 250, 250] as Vec3, target: [0, 0, 20] as Vec3 };
 // 部品から十分離れた床の点（「何もない所」）
-const EMPTY_FLOOR: Vec3 = [100, 0, 20];
+const EMPTY_FLOOR: Vec3 = [70, 0, 20];
 const TIP_RADIUS = 22; // 中・20 歯の歯先円半径
 const GEAR_CENTERS: readonly Vec3[] = [
   [0, 4, 0],
@@ -37,6 +37,15 @@ async function project(page: Page, world: Vec3): Promise<{ x: number; y: number 
   const point = await page.evaluate((w) => window.__gearSim?.projectToScreen(w), world);
   if (point === undefined) throw new Error('__gearSim が無い');
   return point;
+}
+
+// 描画領域（canvas）の範囲。S1-15 からパネルとツールバーの分だけページより小さい
+async function canvasBox(
+  page: Page,
+): Promise<{ x: number; y: number; width: number; height: number }> {
+  const box = await page.locator('canvas').boundingBox();
+  if (box === null) throw new Error('canvas が無い');
+  return box;
 }
 
 // 移り終わる（100ms のあいだに位置も注視点も動かない）まで待って、その視点を返す
@@ -87,13 +96,11 @@ test('決まった視点で、何もない所の床の点が画面の内側に�
   expectVecClose(pose.target, VIEW.target);
   expect(pose.projection).toBe('perspective');
   const p = await project(page, EMPTY_FLOOR);
-  const size = page.viewportSize();
-  expect(size).not.toBeNull();
-  if (size === null) return;
-  expect(p.x).toBeGreaterThan(0);
-  expect(p.x).toBeLessThan(size.width);
-  expect(p.y).toBeGreaterThan(0);
-  expect(p.y).toBeLessThan(size.height);
+  const box = await canvasBox(page);
+  expect(p.x).toBeGreaterThan(box.x);
+  expect(p.x).toBeLessThan(box.x + box.width);
+  expect(p.y).toBeGreaterThan(box.y);
+  expect(p.y).toBeLessThan(box.y + box.height);
 });
 
 test('何もない所で左ドラッグ → 回転する（position が変わり、target は変わらない）', async ({
@@ -186,10 +193,9 @@ test('右クリック（動かさない）→ クリック位置のコンテキ�
 });
 
 test('右上でホイール → 距離が縮み、target がカーソル側へ動く', async ({ page }) => {
-  const size = page.viewportSize();
-  if (size === null) throw new Error('viewport が無い');
-  const cx = size.width / 2;
-  const cy = size.height / 2;
+  const box = await canvasBox(page);
+  const cx = box.x + box.width / 2;
+  const cy = box.y + box.height / 2;
   await page.mouse.move(cx + 200, cy - 150);
   await page.mouse.wheel(0, -300);
   const pose = await settledCamera(page);
@@ -221,7 +227,8 @@ test('何にも当たらない所（空）でダブルクリック → 何もし
   // 真横から見ると、画面の上半分は床にも当たらない
   const side = { position: [0, 4, 300] as Vec3, target: [0, 4, 20] as Vec3 };
   await setCamera(page, side);
-  await page.mouse.dblclick(20, 20);
+  const box = await canvasBox(page);
+  await page.mouse.dblclick(box.x + 20, box.y + 20);
   await page.waitForTimeout(300);
   const pose = await settledCamera(page);
   expectVecClose(pose.position, side.position);
@@ -230,14 +237,13 @@ test('何にも当たらない所（空）でダブルクリック → 何もし
 
 // 遠くへ外した視点から fit した後、すべての歯車の中心が画面の内側に写ること
 async function expectAllGearsVisible(page: Page): Promise<void> {
-  const size = page.viewportSize();
-  if (size === null) throw new Error('viewport が無い');
+  const box = await canvasBox(page);
   for (const c of GEAR_CENTERS) {
     const p = await project(page, c);
-    expect(p.x).toBeGreaterThan(0);
-    expect(p.x).toBeLessThan(size.width);
-    expect(p.y).toBeGreaterThan(0);
-    expect(p.y).toBeLessThan(size.height);
+    expect(p.x).toBeGreaterThan(box.x);
+    expect(p.x).toBeLessThan(box.x + box.width);
+    expect(p.y).toBeGreaterThan(box.y);
+    expect(p.y).toBeLessThan(box.y + box.height);
   }
 }
 
@@ -245,11 +251,11 @@ const AWAY = { position: [700, 80, -600] as Vec3, target: [600, 0, -500] as Vec3
 
 test('歯車から外して遠くへ動かした視点で Home → すべての歯車が画面に入る', async ({ page }) => {
   await setCamera(page, AWAY);
-  const size = page.viewportSize();
-  if (size === null) throw new Error('viewport が無い');
+  const box = await canvasBox(page);
   // 外した視点では、歯車の中心は画面の外か後ろにある
   const off = await project(page, GEAR_CENTERS[0] as Vec3);
-  const visible = off.x > 0 && off.x < size.width && off.y > 0 && off.y < size.height;
+  const visible =
+    off.x > box.x && off.x < box.x + box.width && off.y > box.y && off.y < box.y + box.height;
   expect(visible).toBe(false);
 
   await page.keyboard.press('Home');
