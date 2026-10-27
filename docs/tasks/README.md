@@ -47,7 +47,7 @@
 | [S1-23](stage1/23-info-overlay.md) | 情報表示 | S1-07, S1-15 | done |
 | [S1-24](stage1/24-themes.md) | テーマと質感 | S1-04 | done |
 | [S1-25](stage1/25-audio-basic.md) | 音（基本） | S1-07, S1-24 | done |
-| [S1-26](stage1/26-audio-spatial.md) | 音（空間） | S1-13, S1-25 | doing |
+| [S1-26](stage1/26-audio-spatial.md) | 音（空間） | S1-13, S1-25 | done |
 | [S1-27](stage1/27-storage.md) | 保存（IndexedDB） | S1-11, S1-15 | todo |
 | [S1-28](stage1/28-json-io.md) | JSON のエクスポートとインポート | S1-27 | todo |
 | [S1-29](stage1/29-context-menu.md) | コンテキストメニュー | S1-14, S1-20, S1-23 | todo |
