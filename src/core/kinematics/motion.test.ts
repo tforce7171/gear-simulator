@@ -319,6 +319,17 @@ describe('stepMotion: 一時停止', () => {
     step(s, initialMotionState(), 1, { paused: true, hand: { shaftId: B, angle: 1 } });
     expect(JSON.stringify(s.scene)).toBe(before);
   });
+
+  it('paused: false に戻すと、つり合いの解に戻る（S1-22）', () => {
+    const s = drivenPair();
+    const running = step(s, initialMotionState(), 0);
+    const paused = step(s, running, 0.5, { paused: true });
+    expect(Object.values(paused.omegas).every((w) => w === 0)).toBe(true);
+    const resumed = step(s, paused, 0, { paused: false });
+    expect(resumed.omegas[A]).toBeCloseTo(running.omegas[A] ?? Number.NaN, DIGITS);
+    expect(resumed.omegas[B]).toBeCloseTo(running.omegas[B] ?? Number.NaN, DIGITS);
+    expect(Math.abs(resumed.omegas[A] ?? 0)).toBeGreaterThan(0);
+  });
 });
 
 describe('stepMotion: 手で回す', () => {

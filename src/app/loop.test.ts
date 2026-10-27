@@ -44,3 +44,48 @@ describe('runFrame の手の拘束（S1-21）', () => {
     expect(store.getState().motion.angles.shaft_1).toBeCloseTo(0.2 * Math.PI, 9);
   });
 });
+
+describe('runFrame の一時停止（S1-22）', () => {
+  const view: SceneView = {
+    sync() {},
+    update() {},
+    render() {},
+    projectToScreen: () => ({ x: 0, y: 0 }),
+  };
+
+  it('sim.paused なら角度が進まず ω は 0', () => {
+    const store = createStore(demoScene);
+    store.dispatch({ type: 'togglePause' });
+    runFrame({ store, view, layoutOf: createLayoutMemo() }, 0.1);
+    const { motion } = store.getState();
+    expect(motion.angles.shaft_1).toBe(0);
+    expect(motion.omegas.shaft_1).toBe(0);
+  });
+
+  it('一時停止中でも手で回せる', () => {
+    const store = createStore(demoScene);
+    store.dispatch({ type: 'togglePause' });
+    store.setHand({ shaftId: 'shaft_2', angle: 1 });
+    runFrame({ store, view, layoutOf: createLayoutMemo() }, 0.1);
+    expect(store.getState().motion.angles.shaft_2).toBeCloseTo(1, 9);
+  });
+
+  it('ロックと干渉の部品を描画に渡す', () => {
+    const store = createStore(demoScene);
+    const calls: Array<{ locked: string[]; interfering: string[] }> = [];
+    runFrame(
+      {
+        store,
+        view: {
+          ...view,
+          setWarnings(w) {
+            calls.push({ locked: [...w.locked], interfering: [...w.interfering] });
+          },
+        },
+        layoutOf: createLayoutMemo(),
+      },
+      0.1,
+    );
+    expect(calls).toEqual([{ locked: [], interfering: [] }]);
+  });
+});

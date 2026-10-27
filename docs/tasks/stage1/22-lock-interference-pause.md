@@ -1,7 +1,7 @@
 ---
 id: S1-22
 title: ロックの表示、干渉の警告、一時停止
-status: todo
+status: doing
 depends: [S1-07, S1-08, S1-16]
 ---
 

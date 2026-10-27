@@ -69,6 +69,8 @@ export const en = {
   'properties.motor.off': 'OFF',
   'properties.motor.remove': 'Remove',
   'toast.close': 'Close',
+  // Pause indicator (S1-22)
+  'sim.paused': 'Paused (Space to resume)',
   // Axis gizmo (S1-14)
   'gizmo.label': 'View directions',
   'gizmo.front': 'View from front (Numpad 1)',

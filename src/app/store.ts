@@ -34,12 +34,13 @@ export interface ViewState {
 
 export const DEFAULT_VIEW: ViewState = { watchMode: false };
 
-// 運動の入力（design.md §7 の AppState.sim）。保存せず、Undo の対象にしない。paused は S1-22 で足す
+// 運動の入力（design.md §7 の AppState.sim）。保存せず、Undo の対象にしない
 export interface SimState {
+  readonly paused: boolean; // 全モーターの一時停止（S1-22）。シーンのモーターの on は変えない
   readonly hand: HandConstraint | null; // 手で回しているシャフトと目標の角度（S1-21）。回していなければ null
 }
 
-export const DEFAULT_SIM: SimState = { hand: null };
+export const DEFAULT_SIM: SimState = { paused: false, hand: null };
 
 // 部品パレットで選んでいるもの（design.md §7 の AppState.palette。S1-17）。S2-05 で種類を足す
 export interface PaletteState {
@@ -79,7 +80,9 @@ export type AppAction =
   // 選択を置き換える（null で外す）。シーンに無い ID は null として扱う（S1-16）
   | { readonly type: 'select'; readonly id: string | null }
   // パレットで選ぶ歯車の大きさ（S1-17）
-  | { readonly type: 'setPaletteSize'; readonly size: SizeKey };
+  | { readonly type: 'setPaletteSize'; readonly size: SizeKey }
+  // 全モーターの一時停止を切り替える（S1-22）。シーンと履歴は変えない
+  | { readonly type: 'togglePause' };
 
 export interface StoreOptions {
   readonly ids?: IdGenerator; // 新しい部品の ID（既定はランダム）
@@ -96,8 +99,9 @@ export interface Store {
 }
 
 // シーンを読み込んだ直後の運動: 角度は 0、ω・ロック・負けたモーターは今のシーンから求めた値
-export function initialMotion(scene: Scene, layout: Layout): MotionState {
-  return solveMotion(scene, layout, initialMotionState());
+// paused: 一時停止中なら全モーターを止めた状態で解く（S1-22）
+export function initialMotion(scene: Scene, layout: Layout, paused = false): MotionState {
+  return solveMotion(scene, layout, initialMotionState(), { paused });
 }
 
 // 編集でシーンが変わったとき: 角度はそのまま引き継ぎ、ω・ロック・負けたモーターを新しいシーンで求め直す
@@ -108,7 +112,9 @@ function withEdit(state: AppState, edited: EditState | null): AppState {
   const motion =
     edited.scene === state.scene
       ? state.motion
-      : solveMotion(edited.scene, resolveLayout(edited.scene), state.motion);
+      : solveMotion(edited.scene, resolveLayout(edited.scene), state.motion, {
+          paused: state.sim.paused,
+        });
   return { ...state, scene: edited.scene, history: edited.history, motion };
 }
 
@@ -130,8 +136,9 @@ function reduce(state: AppState, action: AppAction, ids: IdGenerator): AppState 
         ...state,
         scene: action.scene,
         history: emptyHistory(),
+        // 一時停止は保つ（シーンを差し替えても切り替わらない。S1-22）
         sim: { ...state.sim, hand: null },
-        motion: initialMotion(action.scene, resolveLayout(action.scene)),
+        motion: initialMotion(action.scene, resolveLayout(action.scene), state.sim.paused),
       };
     case 'command': {
       const options = action.coalesceKey === undefined ? {} : { coalesceKey: action.coalesceKey };
@@ -163,6 +170,12 @@ function reduce(state: AppState, action: AppAction, ids: IdGenerator): AppState 
       return state.palette.size === action.size
         ? state
         : { ...state, palette: { ...state.palette, size: action.size } };
+    case 'togglePause': {
+      const paused = !state.sim.paused;
+      // 運動はすぐに解き直す（次のフレームを待たずに ω が 0 になる・戻る）。角度は引き継ぐ
+      const motion = solveMotion(state.scene, resolveLayout(state.scene), state.motion, { paused });
+      return { ...state, sim: { ...state.sim, paused }, motion };
+    }
   }
 }
 

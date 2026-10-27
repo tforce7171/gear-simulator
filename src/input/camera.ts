@@ -117,6 +117,9 @@ export interface CameraInput {
   // 経路が 'app'（左ボタンで部品・ハンドル・候補の上。Alt・Space なし）の pointerdown（S1-17）。
   // 受け取った側がドラッグを始める。解除する関数を返す
   onAppPointerDown(listener: (e: PointerEvent) => void): () => void;
+  // カメラのドラッグが DRAG_THRESHOLD_PX 以上動いて始まったとき（Space の押して離すの判定に使う。
+  // S1-22）。解除する関数を返す
+  onDragStart(listener: () => void): () => void;
   fitAll(): void; // 全体表示。部品が無ければ初期の視点に戻す
   fitTo(ids: readonly string[]): void; // 指定した部品に寄る。範囲が無ければ全体表示
   dollyToPoint(world: Vec3): void; // その点を注視点にし、距離を半分にして寄る
@@ -173,6 +176,7 @@ export function createCameraInput(deps: CameraInputDeps): CameraInput {
   let hitTest: HitTest = noHit;
   const contextListeners = new Set<(e: ContextRequest) => void>();
   const appPointerListeners = new Set<(e: PointerEvent) => void>();
+  const dragStartListeners = new Set<() => void>();
   let drag: Drag | null = null;
   let spaceHeld = false;
   let lastTime: number | null = null;
@@ -410,6 +414,7 @@ export function createCameraInput(deps: CameraInputDeps): CameraInput {
       if (!exceedsDragThreshold(drag.down, now)) return;
       // しきい値を超えるまでの分も含めて動かす（drag.last はまだ押した位置）
       drag.dragging = true;
+      for (const listener of [...dragStartListeners]) listener();
     }
     applyDrag(drag.route, now.x - drag.last.x, now.y - drag.last.y);
     drag.last = now;
@@ -521,7 +526,7 @@ export function createCameraInput(deps: CameraInputDeps): CameraInput {
   window.addEventListener('blur', onBlur);
 
   const unbind = [
-    // Space は押している間だけ平行移動の修飾キー（押して離すでの一時停止は S1-22）
+    // Space は押している間だけ平行移動の修飾キー（押して離すでの一時停止は main.ts。S1-22）
     keyboard.bind(
       { key: ' ' },
       {
@@ -595,6 +600,12 @@ export function createCameraInput(deps: CameraInputDeps): CameraInput {
       appPointerListeners.add(listener);
       return () => {
         appPointerListeners.delete(listener);
+      };
+    },
+    onDragStart(listener) {
+      dragStartListeners.add(listener);
+      return () => {
+        dragStartListeners.delete(listener);
       };
     },
     fitAll,

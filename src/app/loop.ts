@@ -3,6 +3,7 @@ import { resolveLayout } from '../core/layout/resolve';
 import type { Layout } from '../core/layout/types';
 import type { Scene } from '../core/scene/types';
 import type { SceneView } from '../render/scene-view';
+import { warningParts } from '../render/warning-effects';
 import type { Store } from './store';
 
 // タブが裏に回ったときなどの飛びを防ぐ、1 フレームの経過時間の上限（秒）
@@ -23,17 +24,27 @@ export interface LoopDeps {
   readonly displayScene?: () => Scene;
 }
 
-// 1 フレーム分: 運動を進めてストアに入れ、描画に渡す
-export function runFrame({ store, view, layoutOf, displayScene }: LoopDeps, dt: number): void {
+// 1 フレーム分: 運動を進めてストアに入れ、描画に渡す。timeSec はロックの震え・光の時刻（秒）
+export function runFrame(
+  { store, view, layoutOf, displayScene }: LoopDeps,
+  dt: number,
+  timeSec = 0,
+): void {
   const { scene, motion, sim } = store.getState();
   const layout = layoutOf(scene);
   const shown = displayScene?.() ?? scene;
   const shownLayout = shown === scene ? layout : resolveLayout(shown);
   view.sync(shown, shownLayout);
-  // 手で回している間は、つかんだシャフトを目標の角度にする（S1-21）
-  const next = stepMotion(scene, layout, motion, dt, sim.hand === null ? {} : { hand: sim.hand });
+  // 一時停止中は全モーターを止めて解く（S1-22）。手で回している間は、つかんだシャフトを
+  // 目標の角度にする（S1-21。一時停止中でも効く）
+  const next = stepMotion(scene, layout, motion, dt, {
+    paused: sim.paused,
+    ...(sim.hand === null ? {} : { hand: sim.hand }),
+  });
   store.setMotion(next);
-  view.update(next, shownLayout);
+  // ロック・干渉の表示は、運動を求めたシーン（ストアのシーン）で決める（S1-22）
+  view.setWarnings?.(warningParts(scene, layout, next));
+  view.update(next, shownLayout, timeSec);
   view.render();
 }
 
@@ -42,7 +53,7 @@ export function startLoop(deps: LoopDeps): () => void {
   let prev: number | null = null;
   let handle = 0;
   const tick = (now: number): void => {
-    runFrame(deps, frameDt(prev, now));
+    runFrame(deps, frameDt(prev, now), now / 1000);
     prev = now;
     deps.onFrame?.();
     handle = requestAnimationFrame(tick);
