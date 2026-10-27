@@ -14,6 +14,8 @@ const TOOLBAR_IDS = [
   'mute',
   'settings',
 ] as const;
+// 動作が付いて有効になっているボタン
+const ENABLED_IDS: ReadonlySet<string> = new Set(['info']);
 
 type Box = { x: number; y: number; width: number; height: number };
 type Counts = { pointerdown: number; wheel: number };
@@ -39,7 +41,9 @@ test('8 つのツールバーのボタンが表の順に左から並ぶ', async 
   for (const id of TOOLBAR_IDS) {
     const button = page.getByTestId(`toolbar-${id}`);
     await expect(button).toBeVisible();
-    await expect(button).toBeDisabled();
+    // 動作を付けたボタン（S1-23 の情報表示）だけ有効。他は担当のタスクで有効にする
+    if (ENABLED_IDS.has(id)) await expect(button).toBeEnabled();
+    else await expect(button).toBeDisabled();
     const box = await button.boundingBox();
     expect(box).not.toBeNull();
     if (box === null) return;

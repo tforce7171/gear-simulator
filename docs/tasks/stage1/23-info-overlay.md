@@ -1,7 +1,7 @@
 ---
 id: S1-23
 title: 情報表示
-status: todo
+status: doing
 depends: [S1-07, S1-15]
 ---
 

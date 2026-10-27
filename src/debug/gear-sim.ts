@@ -7,7 +7,7 @@ import type { Lang } from '../core/i18n';
 import type { HandConstraint, MotionState } from '../core/kinematics/types';
 import type { Layout } from '../core/layout/types';
 import type { Vec3 } from '../core/math/vec3';
-import type { Scene } from '../core/scene/types';
+import type { GearId, Scene } from '../core/scene/types';
 import type { CameraPose } from '../input/camera';
 import type { HandleKind } from '../input/handle-drag';
 import type { ViewName } from '../input/views';
@@ -73,6 +73,11 @@ export interface GearSimDebug {
    * 歯車・シャフト・モーター、干渉は組に含まれる部品で、ロック中のものは interfering に入れない
    */
   getWarningParts(): { locked: string[]; interfering: string[] };
+  /**
+   * 情報表示（S1-23）。enabled はツールバーの ON/OFF（OFF でも選択中の歯車には出る）。
+   * arrows は今描いている回転方向の矢印（gearId の昇順。止まっている歯車は含まない）
+   */
+  getInfoOverlay(): { enabled: boolean; arrows: Array<{ gearId: GearId; direction: 1 | -1 }> };
 }
 
 declare global {

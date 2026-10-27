@@ -18,6 +18,7 @@ import type { HandleSpec, Ray } from '../input/handle-drag';
 import { type CandidateSpec, createCandidateView } from './candidates';
 import { createGeometryCache } from './gear-geometry';
 import { createHandleView, createReattachView, type ReattachRing } from './handles';
+import { createInfoArrowView, type InfoArrowSpec } from './info-arrows';
 import { createPicker, type PickHit, type PickKind } from './picking';
 import type { SceneView } from './scene-view';
 import { createSceneSync, type Highlight, type PreviewStyle } from './sync';
@@ -64,6 +65,11 @@ export interface Renderer extends SceneView {
   setReattachRings(rings: readonly ReattachRing[], highlighted: number | null): void;
   // ページ座標の点を通る、activeCamera() からのレイ（向きは単位ベクトル）。canvas が大きさ 0 なら null
   rayAt(pageX: number, pageY: number): Ray | null;
+  // 情報表示の回転方向の矢印（S1-23）。空の一覧で消す
+  setInfoArrows(arrows: readonly InfoArrowSpec[]): void;
+  // ワールド座標の点の、canvas の左上からの位置（CSS ピクセル）。カメラの後ろ・視野の外なら
+  // visible: false（S1-23 のラベル）
+  projectToCanvas(world: Vec3): { x: number; y: number; visible: boolean };
 }
 
 // キャンバスに描く SceneView を作る。canvas の大きさ（ResizeObserver）に追従する。
@@ -103,6 +109,9 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
   // 付け直しの候補の輪はピッキングの対象にしない
   const reattach = createReattachView();
   scene.add(reattach.root);
+  // 情報表示の矢印もピッキングの対象にしない（S1-23）
+  const infoArrows = createInfoArrowView();
+  scene.add(infoArrows.root);
   const picker = createPicker({ canvas, root: pickRoot, camera: () => active });
 
   // 描画バッファとカメラの縦横比を、canvas の表示の大きさに合わせる（S1-15。パネルを除いた描画領域）
@@ -166,6 +175,23 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
       return {
         origin: [origin.x, origin.y, origin.z],
         direction: [direction.x, direction.y, direction.z],
+      };
+    },
+    setInfoArrows: infoArrows.set,
+    projectToCanvas(world) {
+      active.updateMatrixWorld();
+      projected.set(world[0], world[1], world[2]).project(active);
+      const width = canvas.clientWidth;
+      const height = canvas.clientHeight;
+      const visible =
+        Math.abs(projected.x) <= 1 &&
+        Math.abs(projected.y) <= 1 &&
+        projected.z >= -1 &&
+        projected.z <= 1;
+      return {
+        x: ((projected.x + 1) / 2) * width,
+        y: ((1 - projected.y) / 2) * height,
+        visible,
       };
     },
     sync: objects.sync,
