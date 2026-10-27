@@ -56,7 +56,7 @@ depends: [S1-07, S1-15]
   - 速度比は S1-05 の関数を使う（引数の形は S1-05 の実装に合わせてよい）。
 - `src/render/` に矢印の描画、`src/ui/` にラベルの重ね表示。ラベルの要素には `data-testid="info-label"` と `data-gear-id` を付ける。
 - 表示する歯車の決め方を純粋関数にする: `visibleInfoGearIds(scene, selection, infoOverlay): GearId[]`
-- 辞書のキー（日・英）: ツールバーのボタン名、`ギア比`／`Ratio`。
+- 辞書のキー（日・英）: `ギア比`／`Ratio`。ツールバーのボタン名（`toolbar.info`・`toolbar.info.tooltip`）は S1-15 で足し済み。
 - `__gearSim` に追加
   ```ts
   getInfoOverlay(): { enabled: boolean; arrows: Array<{ gearId: GearId; direction: 1 | -1 }> };
