@@ -5,6 +5,7 @@ import type { MotionState } from '../core/kinematics/types';
 import type { Layout } from '../core/layout/types';
 import type { Vec3 } from '../core/math/vec3';
 import type { Scene } from '../core/scene/types';
+import type { CameraPose } from '../input/camera';
 
 export interface GearSimDebug {
   /** 最初のフレームを描いたら true */
@@ -26,6 +27,12 @@ export interface GearSimDebug {
   getLanguage(): Lang;
   /** 画面の言語を切り替える（タブの題名と <html lang> も変わる） */
   setLanguage(lang: Lang): void;
+  /** 今のカメラの視点（移っている途中ならその時点の値） */
+  getCamera(): CameraPose;
+  /** カメラを transition なしで即座にその視点にする */
+  setCamera(pose: Pick<CameraPose, 'position' | 'target'>): void;
+  /** 最後のコンテキストメニューの要求（右クリックしたページ座標）。まだ無ければ null */
+  getLastContextRequest(): { x: number; y: number } | null;
 }
 
 declare global {

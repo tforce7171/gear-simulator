@@ -2,8 +2,11 @@ import { demoScene } from './app/demo-scene';
 import { getLanguage, onLanguageChange, setLanguage, t } from './app/i18n';
 import { startLoop } from './app/loop';
 import { createLayoutMemo, createStore } from './app/store';
+import { boundsOf } from './core/layout/bounds';
 import { installGearSim } from './debug/gear-sim';
-import { createRenderer } from './render/renderer';
+import { type ContextRequest, createCameraInput } from './input/camera';
+import { createKeyboard } from './input/keyboard';
+import { createRenderer, INITIAL_CAMERA_POSITION, INITIAL_CAMERA_TARGET } from './render/renderer';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#app');
 if (!canvas) throw new Error('canvas #app が見つからない');
@@ -18,7 +21,32 @@ onLanguageChange(applyLanguage);
 
 const store = createStore(demoScene);
 const layoutOf = createLayoutMemo();
-const view = createRenderer(canvas);
+const renderer = createRenderer(canvas);
+const keyboard = createKeyboard(window);
+const cameraInput = createCameraInput({
+  camera: renderer.camera,
+  canvas,
+  keyboard,
+  boundsOf: (ids) => {
+    const { scene } = store.getState();
+    return boundsOf(scene, layoutOf(scene), ids);
+  },
+  pickPoint: renderer.pickPoint,
+  initialPose: { position: INITIAL_CAMERA_POSITION, target: INITIAL_CAMERA_TARGET },
+});
+// コンテキストメニューの中身は S1-29。それまではテスト用に最後の要求だけ覚えておく
+let lastContextRequest: ContextRequest | null = null;
+cameraInput.onContextRequest((request) => {
+  lastContextRequest = request;
+});
+// 描く前にカメラを進める
+const view = {
+  ...renderer,
+  render() {
+    cameraInput.update();
+    renderer.render();
+  },
+};
 
 let ready = false;
 installGearSim({
@@ -33,6 +61,9 @@ installGearSim({
   projectToScreen: (world) => view.projectToScreen(world),
   getLanguage,
   setLanguage,
+  getCamera: () => cameraInput.getPose(),
+  setCamera: (pose) => cameraInput.setPose(pose, false),
+  getLastContextRequest: () => lastContextRequest,
 });
 
 startLoop({
