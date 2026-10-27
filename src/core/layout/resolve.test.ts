@@ -58,7 +58,7 @@ describe('resolveLayout（暫定）', () => {
     expect(layout.gears.gear_2?.pitchRadius).toBe(12);
   });
 
-  it('meshes は木の親子だけ、interferences は空', () => {
+  it('meshes は木の親子だけ、かみ合っている組は干渉にしない', () => {
     expect(layout.meshes).toEqual([{ a: 'gear_1', b: 'gear_2', source: 'tree' }]);
     expect(layout.interferences).toEqual([]);
   });
@@ -103,5 +103,38 @@ describe('resolveLayout（暫定）', () => {
     expect(l.shafts.shaft_9).toBeUndefined();
     expect(l.gears.gear_9).toBeUndefined();
     expect(l.meshes).toHaveLength(1);
+  });
+
+  it('interferences: 重なる 2 枚の歯車（別々の根のシャフト）→ その組だけ', () => {
+    const scene: Scene = {
+      shafts: {
+        shaft_1: { id: 'shaft_1', placement: { kind: 'root', origin: [0, 20, 0], axis: 'y' } },
+        shaft_2: { id: 'shaft_2', placement: { kind: 'root', origin: [10, 20, 0], axis: 'y' } },
+      },
+      gears: {
+        gear_1: { id: 'gear_1', kind: 'spur', shaftId: 'shaft_1', size: 'S', teeth: 12, offset: 0 },
+        gear_2: { id: 'gear_2', kind: 'spur', shaftId: 'shaft_2', size: 'S', teeth: 12, offset: 0 },
+      },
+      motors: {},
+    };
+    expect(resolveLayout(scene).interferences).toEqual([['gear_1', 'gear_2']]);
+  });
+
+  it('interferences: 他の歯車を貫くシャフトも組に入る', () => {
+    const scene: Scene = {
+      shafts: {
+        shaft_1: { id: 'shaft_1', placement: { kind: 'root', origin: [0, 20, 0], axis: 'y' } },
+        shaft_2: { id: 'shaft_2', placement: { kind: 'root', origin: [3, 16, 0], axis: 'y' } },
+      },
+      gears: {
+        gear_1: { id: 'gear_1', kind: 'spur', shaftId: 'shaft_1', size: 'S', teeth: 12, offset: 0 },
+        // shaft_2 の span は [0, 12]（y 16〜28）で、gear_1（y 20〜24、半径 7）を貫く
+        gear_2: { id: 'gear_2', kind: 'spur', shaftId: 'shaft_2', size: 'S', teeth: 12, offset: 0 },
+        gear_3: { id: 'gear_3', kind: 'spur', shaftId: 'shaft_2', size: 'S', teeth: 12, offset: 8 },
+      },
+      motors: {},
+    };
+    // gear_2（y 16〜20）と gear_3（y 24〜28）は gear_1 と面で接するだけ
+    expect(resolveLayout(scene).interferences).toEqual([['gear_1', 'shaft_2']]);
   });
 });
