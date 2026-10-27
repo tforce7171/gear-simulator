@@ -83,6 +83,8 @@ export const SHAFT_END_MARGIN = 4; // mm（S1-09）
 export const EMPTY_SHAFT_HALF_LENGTH = 10; // mm（S1-09）
 export const PERIMETER_CANDIDATE_COUNT = 8; // 外周の候補の方向の数（S1-10）
 export const HISTORY_LIMIT = 100; // Undo の履歴に残すシーンの数の上限（S1-11）
+export const DEFAULT_TEETH = { S: 30, M: 20, L: 16 } as const; // 新しく置く・生やす歯車の歯数（S1-17）
+export const GRID_SNAP = 5; // mm。起点のシャフトの床上の位置と高さの吸着の単位（S1-17）
 ```
 
 各タスクで足す定数（足したタスクがこの一覧の値と合わせる）:
@@ -96,7 +98,7 @@ export const HISTORY_LIMIT = 100; // Undo の履歴に残すシーンの数の�
 | `PERIMETER_CANDIDATE_COUNT` | 8（45° 刻み） | S1-10 |
 | `HISTORY_LIMIT` | 100 | S1-11 |
 | `DEFAULT_TEETH` | `{ S: 30, M: 20, L: 16 }` | S1-17 |
-| `GRID_SNAP` | 5 mm（起点シャフトの床上の位置） | S1-17 |
+| `GRID_SNAP` | 5 mm（起点シャフトの床上の位置。高さのハンドルの吸着にも使う） | S1-17 |
 
 音・カメラ・UI だけで使う定数は、各タスクの資料に書く。
 
@@ -345,6 +347,15 @@ interface Settings {
   - 眺めるモード: `CameraInputDeps.isWatching`（`AppState.view.watchMode`）が真の間、`update()` で毎フレーム `watchAzimuthDelta`（`src/input/watch.ts`）だけ方位角を回す。ユーザーのカメラ操作（ドラッグ中・ホイール・gesture・ダブルクリック・F・Home・テンキー・軸の目印）の時刻を覚え、そこから 2 秒は止める。`setCamera`（`__gearSim`）は操作に数えない。
   - 軸の目印（`src/render/axis-gizmo.ts`）: `UiShell.gizmoSlot` に、球をボタン（`data-testid="gizmo-<ViewName>"`、`data-view`）、軸の線を SVG で置く。`main.ts` が毎フレーム描く前に `update(activeCamera)` を呼ぶ。球の位置は純粋関数 `layoutGizmo`（`axis-gizmo-layout.ts`）で求める。
 
+- **起点を置く・ハンドル**（S1-17）:
+  - ストア: `AppState.palette.size`（初期値 `'M'`。`DEFAULT_PALETTE`）とアクション `setPaletteSize { size }`。`command` アクションに `selectCreated?: boolean` を足した（成功して部品を作ったら、最後に作った部品＝起点では歯車を選ぶ）。
+  - 部品パレットの中身は `src/ui/palette.ts`（`createPalette`）。大きさのボタン `data-testid="palette-size-<S|M|L>"`（`role="radio"`、選んでいるものは `aria-checked="true"`）と、起点のシャフトの項目 `palette-root-shaft`。項目のドラッグは項目に `setPointerCapture` して受ける。
+  - 編集の操作は `src/app/interactions.ts` の `createInteractions` にまとめる（起点を置くドラッグ、ハンドルのドラッグ、R、Esc）。ドラッグ中の仮のシーンは `displayScene()` で、`startLoop` の `displayScene`（`LoopDeps`。運動はストアのシーンで進め、描くのだけ仮のシーン）と `main.ts` の `pickAt` がこれを描く。置く前の仮の部品の ID は `__ghost_shaft`・`__ghost_gear`。描画領域の上かどうかは `document.elementFromPoint` が canvas か（パネル・軸の目印の上は外）。
+  - 仮の部品の見た目は `Renderer.setPreviewStyle({ ids, ghost, invalid } | null)`（`render/sync.ts` の `PreviewStyle`）。`ghost` は半透明、`invalid` は赤（色そのものを赤にする。選択の水色より優先）。ハンドルのドラッグで新たな干渉を生む位置では、動く部品（`movedParts`: そのシャフトとその先のシャフト・歯車・モーター）を赤くする。
+  - ハンドル: 一覧は `src/input/handle-drag.ts` の `listHandles(scene, layout, selection)`（`HandleSpec { kind, targetId, position }`）、描画は `src/render/handles.ts`（`Renderer.setHandles(handles, activeId)`。奥行きを無視して最後に重ねて描く）。ピッキングの ID は `handlePickId` = `'<kind>:<targetId>'`。種類ごとの「レイ → 編集コマンド」は `HANDLE_DRAGS`、形は `HANDLE_BUILDERS` に登録する（S1-19 が `'arc'`・`'axial'` を足す）。ドラッグの共通の振る舞いは `startHandleDrag(scene, handle, startRay)` のセッション（`update(ray)` / `state()` = `{ scene, invalid }` / `finish()` = 確定するコマンドか null）。新たな干渉の判定は `src/core/layout/interference-diff.ts` の `newInterferences(before, after)`。
+  - 位置のハンドルは原点の真下の床（`[x, 0, z]`）、高さのハンドルは同じ縦の線の上で、シャフトの部品の最も低い所の 6 mm 下（10 mm より下にはしない）。どちらもドラッグ開始時からの移動量を原点に足して `GRID_SNAP` に吸着する（高さは 0 以上）。レイの計算は `src/input/placement.ts`（`intersectRayPlane`・`closestHeightOnVerticalLine`・`snap`・`rootHeight`・`nextAxis`・`rootPlacementCommand`）。`Renderer.rayAt(pageX, pageY)` が `activeCamera()` のレイを返す。
+  - `CameraInput.onAppPointerDown(listener)`: 経路が `'app'` の pointerdown を知らせる（Alt・Space の付いた左ボタンはカメラの経路なので来ない）。`main.ts` はハンドルに当たればハンドルのドラッグを始める（S1-21 の手で回すも、ここから始める）。ハンドルのクリックでは選択を変えない。
+  - キー: R → 起点を置くドラッグ中は仮の部品の向き、それ以外は選んでいる `root`・`detached` のシャフト（またはその上の歯車）の `setShaftAxis`（`mesh` のシャフトでは何もしない）。Esc → ドラッグ中ならやめて元に戻す（選択は外さない）。そうでなければ選択を外す。ドラッグ中に Undo などでシーンが変わったら、ハンドルのドラッグはやめる。
 - **画面の骨組み**（S1-15。`src/ui/shell.ts` の `createUiShell(root)`）: `index.html` の `#root` を CSS グリッドで分け、上にツールバー（44px）、左に部品パレット（200px）、右にプロパティパネル（260px）、中央に描画領域を置く。`main.ts` が canvas を作って `UiShell.canvasHost` に入れる。描画領域の右下に軸の目印の置き場 `UiShell.gizmoSlot`（96×96px。S1-14）。
   - ツールバーのボタンは `UiShell.toolbar.button(id)`（`ToolbarButtonId`）で受け取る。最初は `disabled` なので、各担当タスク（S1-23・S1-24・S1-25・S1-27・S1-28・S1-30）が動作を付けて `disabled = false` にする。`data-testid` は `toolbar-<id>`。文字は `toolbar.<id>`（文字と `aria-label`）・`toolbar.<id>.tooltip`（`title`）。
   - パレットの中身は `UiShell.palette.body` に入れる（S1-17・S1-18）。プロパティパネルの中身は `UiShell.properties.setContent(el)`、`null` で案内文（`properties.empty`）に戻す（S1-20）。
@@ -416,6 +427,9 @@ interface GearSimDebug {
   getGizmoTargets(): Array<{ view: ViewName; x: number; y: number }>; // 軸の目印の球の中心のページ座標（S1-14）
   pick(x: number, y: number): PickHit | null; // ページ座標の下の部品（優先順位つき。S1-16）
   select(id: string | null): void;   // 選択を置き換える。null で外す。シーンに無い ID は null と同じ（S1-16）
+  // 今出ているハンドル。position はドラッグを始めるのに適した点（projectToScreen して押す）。
+  // move・height の targetId はシャフト（S1-17）。'arc'・'axial' は S1-19
+  getHandles(): Array<{ kind: 'move' | 'height' | 'arc' | 'axial'; targetId: string; position: Vec3 }>;
 }
 
 // src/render/picking.ts（S1-16）
@@ -437,7 +451,7 @@ API はタスクで必要になった時点で足していく。足したらこ�
 | S1-13 | `getCamera` / `setCamera` / `getLastContextRequest`（済） |
 | S1-14 | `getInputDevice` / `updateSettings` / `setWatchMode` / `getGizmoTargets`（済） |
 | S1-16 | `getSelection` / `pick` / `select`（済） |
-| S1-17 | `getHandles` |
+| S1-17 | `getHandles`（済。`'arc'`・`'axial'` は S1-19） |
 | S1-18 | `getCandidates` |
 | S1-21 | `getHand` |
 | S1-22 | `isPaused` / `getWarningParts` |

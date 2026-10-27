@@ -1,7 +1,7 @@
 ---
 id: S1-17
 title: 起点のシャフトを置く
-status: todo
+status: doing
 depends: [S1-16]
 ---
 

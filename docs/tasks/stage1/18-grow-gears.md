@@ -38,6 +38,7 @@ depends: [S1-10, S1-16]
 - かさ歯車・ウォームでの 90° の候補（段階 2: S2-02、S2-03）
 
 ## 作るもの
+- S1-17 で済んだもの: パレットの大きさは `AppState.palette.size`（ボタンは `data-testid="palette-size-<S|M|L>"`、`src/ui/palette.ts`）。`'app'` の経路の pointerdown は `CameraInput.onAppPointerDown` で受けられる。仮のシーンの表示は `src/app/interactions.ts` の `displayScene` の仕組みに足せる（design.md §7「起点を置く・ハンドル」）
 - `src/app/grow.ts`（純粋関数）
   ```ts
   export type CandidateKind = GrowCandidate['kind']; // 'perimeter' | 'coaxial'（S1-10）

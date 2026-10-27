@@ -37,6 +37,7 @@ depends: [S1-07, S1-08, S1-16]
 - 編集中の仮の部品を赤くする表示（S1-17・S1-19）
 
 ## 作るもの
+- S1-17 の仮の部品の赤（`render/sync.ts` の `PreviewStyle` の `invalid`。色そのものを赤 `0xe0403a` にした材質）とも見分けられるようにする。材質を選ぶのは `applyHighlight` の `levelOf`（仮の部品の見た目 → 選択 → マウス）なので、ロック・干渉の表示もここで組み合わせる
 - `src/render/warning-effects.ts`（計算部分は純粋関数）
   ```ts
   export const LOCK_SHAKE_AMPLITUDE = 0.01; // rad
