@@ -22,6 +22,7 @@ depends: [S1-10, S1-16]
   | 同じ軸（親のシャフトに通す） | パレットで選んでいる大きさ（S1-17） | `DEFAULT_TEETH[大きさ]` |
   - 歯数は生やした後にプロパティパネル（S1-20）で変える。生やす前に歯数を選ぶ UI は作らない
   - S1-10 の列挙関数に、この大きさと歯数を渡す（引数の形は S1-10 に合わせる）。候補の位置や干渉の有無は、生やす歯車の大きさと歯数によって変わるため
+  - S1-10 の `listGrowCandidates(scene, gearId, { perimeterTeeth, coaxialSize, coaxialTeeth })` に、外周は `growSpec(parent, 'perimeter', …).teeth`、同じ軸は `growSpec(parent, 'coaxial', …)` の大きさと歯数を渡す。戻り値の `GrowCandidate` は、`kind: 'perimeter'` → `growGear { mode: 'perimeter', parentGearId, angle, teeth }`、`kind: 'coaxial'` → `growGear { mode: 'coaxial', shaftId, offset, size, teeth }` にそのまま変換する。仮の歯車の表示には `center`・`axis`（外周の候補では `basePhase` も）を使う
 - 候補をクリック（`DRAG_THRESHOLD_PX` 未満）すると、S1-11 の `growGear` で歯車を足す
   - 外周の候補: 新しい `mesh` のシャフト（`parentGearId` = 選んでいた歯車、`childGearId` = 新しい歯車、`angle` = 候補の角度）と歯車ができる
   - 同じ軸の候補: 選んでいた歯車のシャフトに、候補の `offset` で新しい歯車を通す
@@ -39,7 +40,7 @@ depends: [S1-10, S1-16]
 ## 作るもの
 - `src/app/grow.ts`（純粋関数）
   ```ts
-  export type CandidateKind = 'mesh' | 'coaxial';
+  export type CandidateKind = GrowCandidate['kind']; // 'perimeter' | 'coaxial'（S1-10）
   export function growSpec(
     parent: Gear,
     kind: CandidateKind,
@@ -65,14 +66,14 @@ depends: [S1-10, S1-16]
 
 ## テストケース
 ### Vitest
-- [ ] `growSpec`: 親が中・25 歯で `'mesh'`、パレットが大 → `{ size: 'M', teeth: 20 }`
+- [ ] `growSpec`: 親が中・25 歯で `'perimeter'`、パレットが大 → `{ size: 'M', teeth: 20 }`
 - [ ] `growSpec`: 親が中・25 歯で `'coaxial'`、パレットが大 → `{ size: 'L', teeth: 16 }`
-- [ ] `growSpec`: 親が小で `'mesh'` → `{ size: 'S', teeth: 30 }`
+- [ ] `growSpec`: 親が小で `'perimeter'` → `{ size: 'S', teeth: 30 }`
 ### Playwright（`e2e/grow.spec.ts`）
 準備: `one-root.json` を読み込み、斜め上から見下ろす視点にする。候補の位置は `getCandidates()` の `center` を `projectToScreen` して得る。
 - [ ] 何も選んでいない → `getCandidates()` が空
-- [ ] A をクリック → `'mesh'` と `'coaxial'` の候補がそれぞれ 1 つ以上ある
-- [ ] `'mesh'` の候補をクリック → 歯車が 2 枚、シャフトが 2 本。新しいシャフトは `placement.kind: 'mesh'`、`parentGearId: A`、`childGearId` が新しい歯車。新しい歯車は `size: 'M'`、`teeth: 20`。`getLayout().meshes` に A と新しい歯車の組（`source: 'tree'`）がある。2 つの中心の距離が 40（ピッチ円半径の和）。`getLayout().interferences` が空。`getSelection()` が新しい歯車で、`getCandidates()` は新しい歯車の候補になっている
+- [ ] A をクリック → `'perimeter'` と `'coaxial'` の候補がそれぞれ 1 つ以上ある
+- [ ] `'perimeter'` の候補をクリック → 歯車が 2 枚、シャフトが 2 本。新しいシャフトは `placement.kind: 'mesh'`、`parentGearId: A`、`childGearId` が新しい歯車。新しい歯車は `size: 'M'`、`teeth: 20`。`getLayout().meshes` に A と新しい歯車の組（`source: 'tree'`）がある。2 つの中心の距離が 40（ピッチ円半径の和）。`getLayout().interferences` が空。`getSelection()` が新しい歯車で、`getCandidates()` は新しい歯車の候補になっている
 - [ ] Ctrl+Z → 歯車 1 枚、シャフト 1 本に戻る
 - [ ] パレットで「大」を選び、A を選んで `'coaxial'` の候補をクリック → A のシャフトに `size: 'L'`、`teeth: 16` の歯車が増え、シャフトは増えない。`offset` が −12 か 8（A の面に接する両側。design.md §4 の `offset` の定義で、どちらも `AXIAL_SNAP` の倍数）
 - [ ] 外周の候補を 3 回続けてクリックしていく（毎回、新しく選ばれた歯車の候補から 1 つ）→ 4 枚の鎖になり、`interferences` が空
