@@ -333,6 +333,7 @@ interface Settings {
 - **カメラと入力**（S1-13）: `src/render/renderer.ts` の `createRenderer` は `SceneView` に加えて `camera`・`canvas`・`pickPoint(pageX, pageY)`（部品に当たればその点、なければ床 y = 0 との交点、どちらも無ければ null）を返す。カメラは `src/input/camera.ts` の `createCameraInput` が camera-controls で動かし、`main.ts` が描く前に毎フレーム `update()` を呼ぶ。マウスのボタンは camera-controls に渡さず、`src/input/pointer-route.ts` の `routePointerDown` で振り分けて自前で `rotate` / `truck` を呼ぶ（ホイールだけ camera-controls の `dollyToCursor`）。カメラのドラッグは、どのボタンも押した位置から `DRAG_THRESHOLD_PX`（4px）動いてから始まる。
   - 「部品の上か」は `CameraInput.setHitTest((pageX, pageY) => PointerTarget)` で差し替える（`'none' | 'app' | 'click-only'`。既定は常に `'none'`。S1-16 がピッキングに差し替え、S1-18 が候補のための `'click-only'` を足した）。左ボタンは `'app'` なら経路 `'app'`、`'click-only'`（候補）ならカメラの回転（クリックは `selection-input` が受ける）。経路が `'app'` のポインターはカメラが無視する（受け取り手は S1-16 以降が canvas に付ける）。
   - 右クリック（ドラッグなし）は `CameraInput.onContextRequest(listener)` で通知する（S1-29 が使う）。ブラウザ標準のメニューは canvas の `contextmenu` で止める。
+- **コンテキストメニュー**（S1-29。`src/ui/context-menu/`）: 項目の並び・表示名のキー（`contextMenu.<action>`）・チェックの印は `items.ts` の純粋関数 `buildContextMenuItems(target, state)`、位置は `placeMenu`（カーソルの右下、はみ出すなら左・上に反転、それでも足りなければ画面の端に寄せる）。`controller.ts` の `createContextMenu` が、`onContextRequest` の位置で部品の本体（歯車・モーター・シャフト。ハンドル・候補は除く `bodyAt`）を当て、部品なら `selectionForPick` で選択を置き換えて部品のメニュー、何もなければ選択を変えずに何もない所のメニューを開く。項目の動作はストアのアクション（`deleteParts`・`addMotor`・`removeMotor`・`setWatchMode`・`setInfoOverlay`）と `CameraInput.dollyToPoint`・`fitAll`。メニューから付けるモーターは大きさ中（`CONTEXT_MENU_MOTOR_SIZE`。回転数・向き・ON は `addMotor` の初期値）。表示（`menu.ts`）は `document.body` に `position: fixed` の `role="menu"`（`data-testid="context-menu"`、項目は `data-action`）を置き、項目を選ぶ・Esc・Tab・外での押下とホイール・リサイズ・`blur` で閉じる。メニューの中のキーは `stopAppKeys` で window のショートカットに届けない（Esc で選択が外れない。`main.ts` の Esc も、メニューが開いていれば閉じるだけにする）。
   - キー入力は `src/input/keyboard.ts` の `createKeyboard(window).bind({ key | code, ctrl?, alt?, shift? }, { onDown, onUp })` にまとめる。フォーカスがテキストの入力先（`isTypingTarget`）なら `onDown` を呼ばない。`ctrl`・`alt` は省略すると「押されていない」、`shift` は「どちらでもよい」。文字キーは `event.key`（大文字・小文字を区別しない）、テンキーは `event.code`。Space（押している間は平行移動の修飾キー）・F・Home は `camera.ts` が登録する。
   - F で寄る先の選択は `CameraInputDeps.getSelection`（S1-16 で `AppState.selection` を渡す。それまでは省略して常に全体表示）。全体表示の範囲は `src/core/layout/bounds.ts` の `boundsOf`。
 - **選択とピッキング**（S1-16）:
@@ -484,6 +485,7 @@ interface GearSimDebug {
   getInputDevice(): InputDevice;     // 'mouse' | 'trackpad'。今使っている（判別した、または固定した）デバイス（S1-14）
   updateSettings(patch: Partial<Settings>): void; // 設定の一部を変える。S1-30 の設定画面も同じ経路（S1-14）
   setWatchMode(on: boolean): void;   // 眺めるモードの ON/OFF（S1-14）
+  getView(): { infoOverlay: boolean; watchMode: boolean }; // 表示の状態（AppState.view。S1-29）
   getGizmoTargets(): Array<{ view: ViewName; x: number; y: number }>; // 軸の目印の球の中心のページ座標（S1-14）
   pick(x: number, y: number): PickHit | null; // ページ座標の下の部品（優先順位つき。S1-16）
   select(id: string | null): void;   // 選択を置き換える。null で外す。シーンに無い ID は null と同じ（S1-16）
@@ -551,7 +553,7 @@ API はタスクで必要になった時点で足していく。足したらこ�
 | S1-25 | `getAudio`（済。`{ contextState, muted, material, voices }`。S1-26、S2-05、S3-05 で中身を広げる） |
 | S1-26 | `getAudio` を広げた（済。`voices[].position`・`background`・`motors`・`lockSounds`。新しい関数は足していない） |
 | S1-27 | `getStorageStatus`（済。`{ lastAutosaveAt, pendingAutosave, currentWorkId }`） |
-| S1-29 | `getView` |
+| S1-29 | `getView`（済。`{ infoOverlay, watchMode }`） |
 | S1-30 | `getSettings` |
 
 - トーストは `__gearSim` を通さず、Playwright から `page.evaluate` で `/src/ui/toast.ts` を動的 import して呼ぶ（S1-15）。`tsconfig.json` の `paths`（`/src/*` → `./src/*`）で、この形の import にも型が付く。時間で消えることは `page.clock.install()` で開いたあと `pauseAt` で時計を止め、`runFor` で進めて確かめる。
