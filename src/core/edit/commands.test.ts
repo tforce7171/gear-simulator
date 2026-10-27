@@ -606,3 +606,57 @@ describe('ランダムな操作列', () => {
     expect(kinds).toContain('deleteParts');
   });
 });
+
+// S1-17: A（起点）→ B → C の木で、向きと原点を変える
+describe('起点のシャフトの向きと原点（S1-17）', () => {
+  function chain(): Scene {
+    const ctx: CommandContext = { ids: createSequentialIdGenerator() };
+    let scene = emptyScene();
+    const commands: Command[] = [
+      { type: 'addRootShaft', axis: 'y', origin: [0, 20, 0], gear: { size: 'M', teeth: 20 } },
+      { type: 'growGear', mode: 'perimeter', parentGearId: 'gear_1', angle: 0, teeth: 20 },
+      { type: 'growGear', mode: 'perimeter', parentGearId: 'gear_2', angle: 0, teeth: 20 },
+    ];
+    for (const command of commands) scene = ok(applyCommand(scene, command, ctx)).scene;
+    return scene;
+  }
+
+  it('A を x にすると A の axis だけが変わり、3 本とも x でかみ合いのまま', () => {
+    const scene = chain();
+    const next = ok(apply(scene, { type: 'setShaftAxis', shaftId: 'shaft_1', axis: 'x' })).scene;
+    const p = next.shafts.shaft_1?.placement;
+    if (p?.kind !== 'root') throw new Error('not root');
+    expect(p.axis).toBe('x');
+    expect(next.shafts.shaft_2?.placement).toBe(scene.shafts.shaft_2?.placement);
+    expect(next.shafts.shaft_3?.placement).toBe(scene.shafts.shaft_3?.placement);
+    const layout = resolveLayout(next);
+    for (const id of ['shaft_1', 'shaft_2', 'shaft_3']) expect(layout.shafts[id]?.axis).toBe('x');
+    const pairs = layout.meshes.map((m) => [m.a, m.b]);
+    expect(pairs).toContainEqual(['gear_1', 'gear_2']);
+    expect(pairs).toContainEqual(['gear_2', 'gear_3']);
+    const dist = (a: string, b: string): number => {
+      const ca = layout.gears[a]?.center;
+      const cb = layout.gears[b]?.center;
+      if (ca === undefined || cb === undefined) throw new Error('missing gear');
+      return Math.hypot(ca[0] - cb[0], ca[1] - cb[1], ca[2] - cb[2]);
+    };
+    const pitchSum = (layout.gears.gear_1?.pitchRadius ?? 0) * 2; // 同じ大きさ・歯数
+    expect(dist('gear_1', 'gear_2')).toBeCloseTo(pitchSum, 9);
+    expect(dist('gear_2', 'gear_3')).toBeCloseTo(pitchSum, 9);
+  });
+
+  it('A を [10, 0, 0] 動かすと B と C の中心も [10, 0, 0] 動く', () => {
+    const scene = chain();
+    const before = resolveLayout(scene);
+    const next = ok(
+      apply(scene, { type: 'moveShaft', shaftId: 'shaft_1', origin: [10, 20, 0] }),
+    ).scene;
+    const after = resolveLayout(next);
+    for (const id of ['gear_2', 'gear_3']) {
+      const b = before.gears[id]?.center;
+      const a = after.gears[id]?.center;
+      if (a === undefined || b === undefined) throw new Error('missing gear');
+      expectVec(a, [b[0] + 10, b[1], b[2]]);
+    }
+  });
+});

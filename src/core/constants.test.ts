@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   COLLISION_EPS,
+  DEFAULT_TEETH,
   GEAR_SIZES,
+  GRID_SNAP,
   MOTOR_RPM_RANGE,
   MOTOR_SIZES,
   PERIMETER_CANDIDATE_COUNT,
@@ -35,5 +37,19 @@ describe('constants', () => {
 
   it('PERIMETER_CANDIDATE_COUNT は 8（design.md §3）', () => {
     expect(PERIMETER_CANDIDATE_COUNT).toBe(8);
+  });
+});
+
+describe('S1-17 の定数', () => {
+  it('DEFAULT_TEETH と GRID_SNAP は design.md §3 の値', () => {
+    expect(DEFAULT_TEETH).toEqual({ S: 30, M: 20, L: 16 });
+    expect(GRID_SNAP).toBe(5);
+  });
+
+  it('DEFAULT_TEETH は各大きさの歯数の範囲に入る', () => {
+    for (const size of ['S', 'M', 'L'] as const) {
+      expect(DEFAULT_TEETH[size]).toBeGreaterThanOrEqual(GEAR_SIZES[size].minTeeth);
+      expect(DEFAULT_TEETH[size]).toBeLessThanOrEqual(GEAR_SIZES[size].maxTeeth);
+    }
   });
 });

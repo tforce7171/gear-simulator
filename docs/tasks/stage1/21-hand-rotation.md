@@ -42,6 +42,7 @@ depends: [S1-07, S1-16]
 - 慣性（要件 §14。投げるように回して惰性で回り続ける動きは作らない）
 
 ## 作るもの
+- S1-17 で済んだもの: `'app'` の経路の pointerdown は `CameraInput.onAppPointerDown` で知らされる（`main.ts` はハンドルに当たったときだけハンドルのドラッグを始めている。歯車・シャフト・モーターに当たったときに手で回すを始める）。Esc は `main.ts` の 1 つの登録で、まず `interactions.cancel()`（ドラッグをやめたら選択は外さない）を呼んでいるので、手で回すのをやめる処理もそこに足す
 - S1-07 の `stepMotion` の `opts.hand` を使う（design.md §6。手の拘束の解き方は S1-07 で作ってある）
   ```ts
   interface HandConstraint { shaftId: ShaftId; angle: number } // 目標の角度（rad）

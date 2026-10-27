@@ -108,6 +108,9 @@ export interface CameraInput {
   setHitTest(hitTest: HitTest): void;
   // 右クリック（ドラッグなし）でのコンテキストメニューの要求。解除する関数を返す
   onContextRequest(listener: (e: ContextRequest) => void): () => void;
+  // 経路が 'app'（左ボタンで部品・ハンドル・候補の上。Alt・Space なし）の pointerdown（S1-17）。
+  // 受け取った側がドラッグを始める。解除する関数を返す
+  onAppPointerDown(listener: (e: PointerEvent) => void): () => void;
   fitAll(): void; // 全体表示。部品が無ければ初期の視点に戻す
   fitTo(ids: readonly string[]): void; // 指定した部品に寄る。範囲が無ければ全体表示
   dollyToPoint(world: Vec3): void; // その点を注視点にし、距離を半分にして寄る
@@ -163,6 +166,7 @@ export function createCameraInput(deps: CameraInputDeps): CameraInput {
 
   let hitTest: HitTest = noHit;
   const contextListeners = new Set<(e: ContextRequest) => void>();
+  const appPointerListeners = new Set<(e: PointerEvent) => void>();
   let drag: Drag | null = null;
   let spaceHeld = false;
   let lastTime: number | null = null;
@@ -369,8 +373,12 @@ export function createCameraInput(deps: CameraInputDeps): CameraInput {
       spaceHeld,
       overInteractive: e.button === 0 ? hitTest(e.pageX, e.pageY) : false,
     });
-    // 'app' は部品の側が受け取る（受け取り手は S1-16 以降）。カメラは動かさない
-    if (route === 'none' || route === 'app') return;
+    // 'app' は部品の側が受け取る（ハンドルは S1-17）。カメラは動かさない
+    if (route === 'app') {
+      for (const listener of [...appPointerListeners]) listener(e);
+      return;
+    }
+    if (route === 'none') return;
     // 中ボタンの自動スクロールを止める
     if (e.button === 1) e.preventDefault();
     markUserInput();
@@ -575,6 +583,12 @@ export function createCameraInput(deps: CameraInputDeps): CameraInput {
       contextListeners.add(listener);
       return () => {
         contextListeners.delete(listener);
+      };
+    },
+    onAppPointerDown(listener) {
+      appPointerListeners.add(listener);
+      return () => {
+        appPointerListeners.delete(listener);
       };
     },
     fitAll,

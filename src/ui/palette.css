@@ -1,0 +1,98 @@
+/* 部品パレットの中身（S1-17） */
+.gs-palette__section {
+  margin: 4px 0 14px;
+}
+
+.gs-palette__label {
+  margin: 0 0 6px;
+  color: var(--gs-text-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.gs-palette__sizes {
+  display: flex;
+  gap: 4px;
+}
+
+.gs-palette__size {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 28px;
+  padding: 0 2px;
+  overflow: hidden;
+  border: 1px solid var(--gs-button-border);
+  border-radius: 4px;
+  background: var(--gs-button-bg);
+  color: var(--gs-text);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.gs-palette__size:hover {
+  background: #404651;
+}
+
+.gs-palette__size.is-selected {
+  border-color: #7aa2d6;
+  background: #3a4a60;
+}
+
+.gs-palette__size:focus-visible,
+.gs-palette__item:focus-visible {
+  outline: 2px solid #7aa2d6;
+  outline-offset: 1px;
+}
+
+.gs-palette__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--gs-button-border);
+  border-radius: 4px;
+  background: var(--gs-button-bg);
+  cursor: grab;
+  touch-action: none;
+}
+
+.gs-palette__item:hover {
+  background: #404651;
+}
+
+.gs-palette__item.is-dragging {
+  cursor: grabbing;
+  border-color: #7aa2d6;
+}
+
+/* 縦のシャフトに歯車が 1 枚載った形の目印 */
+.gs-palette__icon {
+  position: relative;
+  flex: none;
+  width: 24px;
+  height: 24px;
+}
+
+.gs-palette__icon::before {
+  content: "";
+  position: absolute;
+  left: 11px;
+  top: 0;
+  width: 2px;
+  height: 24px;
+  background: #9aa1ab;
+}
+
+.gs-palette__icon::after {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 9px;
+  width: 20px;
+  height: 6px;
+  border-radius: 3px;
+  background: #c8ccd2;
+}

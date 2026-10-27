@@ -8,6 +8,7 @@ import type { Layout } from '../core/layout/types';
 import type { Vec3 } from '../core/math/vec3';
 import type { Scene } from '../core/scene/types';
 import type { CameraPose } from '../input/camera';
+import type { HandleKind } from '../input/handle-drag';
 import type { ViewName } from '../input/views';
 import type { InputDevice } from '../input/wheel';
 import type { PickHit } from '../render/picking';
@@ -52,6 +53,11 @@ export interface GearSimDebug {
   pick(x: number, y: number): PickHit | null;
   /** 選択を置き換える。null で外す。シーンに無い ID は null と同じ（S1-16） */
   select(id: string | null): void;
+  /**
+   * 今出ているハンドル（S1-17。'arc'・'axial' は S1-19）。position はドラッグを始めるのに適した点
+   * （projectToScreen して押す）。targetId は move・height ではシャフト
+   */
+  getHandles(): Array<{ kind: HandleKind; targetId: string; position: Vec3 }>;
 }
 
 declare global {
