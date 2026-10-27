@@ -1,7 +1,7 @@
 ---
 id: S1-21
 title: 手で回す
-status: doing
+status: done
 depends: [S1-07, S1-16]
 ---
 
@@ -101,4 +101,4 @@ depends: [S1-07, S1-16]
 ## 完了の条件
 - [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
 - [x] design.md と後続のタスク資料に、必要な変更を反映した（§6 の手で回すときの扱い、§10 の `__gearSim` の API）
-- [ ] `status: done` にしてコミットした
+- [x] `status: done` にしてコミットした
