@@ -1,7 +1,7 @@
 ---
 id: S1-03
 title: シーンのデータ形式と、かみ合いの幾何
-status: todo
+status: doing
 depends: [S1-02]
 ---
 
@@ -108,31 +108,31 @@ depends: [S1-02]
 - S1-02 の `gearShapeKey` などの引数の型を `SizeKey` に差し替える
 
 ## 受け入れ条件
-- [ ] design.md §4 の型が `src/core/scene/types.ts` にあり、以降のタスクはここから import できる
-- [ ] 位相を合わせた 2 枚の歯形が、回しても重ならない（下のテスト）
+- [x] design.md §4 の型が `src/core/scene/types.ts` にあり、以降のタスクはここから import できる
+- [x] 位相を合わせた 2 枚の歯形が、回しても重ならない（下のテスト）
 
 ## テストケース
 ### Vitest
-- [ ] `axisFrame` の 3 つとも `cross(u, v)` が `w` に一致する
-- [ ] `radialDirection('y', 0) ≈ [0, 0, 1]`、`radialDirection('y', π/2) ≈ [1, 0, 0]`、`radialDirection('x', 0) ≈ [0, 1, 0]`、`radialDirection('z', π/2) ≈ [0, 1, 0]`
-- [ ] `pitchRadius('S', 12) === 6`、`pitchRadius('M', 20) === 20`、`outsideRadius('L', 16) === 27`
-- [ ] `centerDistance('S', 12, 24) === 18`、`centerDistance('M', 12, 12) === 24`、`centerDistance('L', 40, 12) === 78`
-- [ ] `meshPhase(0, 12, 24, 0) ≈ π/24`（偶数の歯数の子は半ピッチずらす）
-- [ ] `meshPhase(0, 12, 13, 0) ≡ 0`（奇数の歯数の子は位相 0 で谷が向き合う。丸め誤差で `2π/13` の直前になりうるので、`2π/13` を法として比べる。以下の位相の比較もすべて同じ）
-- [ ] `meshPhase(π/24, 12, 24, 0) ≈ π/48`（親が 1/4 ピッチ回っていると、子は `−(12/24)·π/24` だけずれる）
-- [ ] `meshPhase(0, 12, 24, π/2) ≈ π/24`
-- [ ] 周期性: 任意の `φ_A` について `meshPhase(φ_A + 2π/z_A, …)` と `meshPhase(φ_A, …)` が一致する
-- [ ] 転がり: `meshPhase(φ_A + δ, z_A, z_B, α) ≡ meshPhase(φ_A, z_A, z_B, α) − (z_A/z_B)·δ`（`2π/z_B` を法として。δ = 0.01, 0.1）
-- [ ] `samePhase(0, 2π/13 − 1e-9, 13) === true`（法の境目）、`samePhase(0, 0.01, 13) === false`、`samePhase(π/24, π/24 + 2π/24, 24) === true`
-- [ ] `shaftAxis`: `root`（`axis 'x'`）の子の `mesh`、さらにその子 → どちらも `'x'`。`detached`（`axis 'z'`）→ `'z'`
-- [ ] 歯形が重ならない（S1-02 の `spurOutline` を使う 2D の検査）
+- [x] `axisFrame` の 3 つとも `cross(u, v)` が `w` に一致する
+- [x] `radialDirection('y', 0) ≈ [0, 0, 1]`、`radialDirection('y', π/2) ≈ [1, 0, 0]`、`radialDirection('x', 0) ≈ [0, 1, 0]`、`radialDirection('z', π/2) ≈ [0, 1, 0]`
+- [x] `pitchRadius('S', 12) === 6`、`pitchRadius('M', 20) === 20`、`outsideRadius('L', 16) === 27`
+- [x] `centerDistance('S', 12, 24) === 18`、`centerDistance('M', 12, 12) === 24`、`centerDistance('L', 40, 12) === 78`
+- [x] `meshPhase(0, 12, 24, 0) ≈ π/24`（偶数の歯数の子は半ピッチずらす）
+- [x] `meshPhase(0, 12, 13, 0) ≡ 0`（奇数の歯数の子は位相 0 で谷が向き合う。丸め誤差で `2π/13` の直前になりうるので、`2π/13` を法として比べる。以下の位相の比較もすべて同じ）
+- [x] `meshPhase(π/24, 12, 24, 0) ≈ π/48`（親が 1/4 ピッチ回っていると、子は `−(12/24)·π/24` だけずれる）
+- [x] `meshPhase(0, 12, 24, π/2) ≈ π/24`
+- [x] 周期性: 任意の `φ_A` について `meshPhase(φ_A + 2π/z_A, …)` と `meshPhase(φ_A, …)` が一致する
+- [x] 転がり: `meshPhase(φ_A + δ, z_A, z_B, α) ≡ meshPhase(φ_A, z_A, z_B, α) − (z_A/z_B)·δ`（`2π/z_B` を法として。δ = 0.01, 0.1）
+- [x] `samePhase(0, 2π/13 − 1e-9, 13) === true`（法の境目）、`samePhase(0, 0.01, 13) === false`、`samePhase(π/24, π/24 + 2π/24, 24) === true`
+- [x] `shaftAxis`: `root`（`axis 'x'`）の子の `mesh`、さらにその子 → どちらも `'x'`。`detached`（`axis 'z'`）→ `'z'`
+- [x] 歯形が重ならない（S1-02 の `spurOutline` を使う 2D の検査）
   - A: 大きさ S・20 歯、中心 (0, 0)、位相 0。B: 大きさ S・30 歯、角度 α の方向に `centerDistance('S', 20, 30) = 25` の位置、位相 `meshPhase(0, 20, 30, α)`
   - α ∈ {0, 0.7, 2.5} と、A の回転角 θ_A ∈ {0, 0.05, 0.13, 1.0}（B は `−(20/30)·θ_A`）の全ての組で、一方の輪郭の頂点が他方の輪郭の内側に 1e-3·m より深く入らない
   - 同じ配置で B の位相を半ピッチ（π/30）ずらすと、内側に深く入る頂点がある（検査が効いていることの確認）
   - 歯数の少ない組（12 歯どうし）は歯元の簡略化で重なりうるので、この検査には使わない
-- [ ] `createSequentialIdGenerator()`: `gen('shaft') → 'shaft_1'`、`gen('gear') → 'gear_1'`、`gen('shaft') → 'shaft_2'`
-- [ ] `createRandomIdGenerator()`: `'gear_'` で始まり、1000 回呼んで重複しない
-- [ ] `validateScene`
+- [x] `createSequentialIdGenerator()`: `gen('shaft') → 'shaft_1'`、`gen('gear') → 'gear_1'`、`gen('shaft') → 'shaft_2'`
+- [x] `createRandomIdGenerator()`: `'gear_'` で始まり、1000 回呼んで重複しない
+- [x] `validateScene`
   - `emptyScene()` → ok
   - 起点のシャフト 1 本（`axis: 'y'`、`origin: [0, 0, 0]`）と S・12 歯の歯車 1 枚、S のモーター（60rpm）→ ok
   - 上に `mesh` のシャフト（親 = その歯車、子 = 新しい S・24 歯、`offset 0`、`angle π/2`）を足す → ok
@@ -154,6 +154,6 @@ depends: [S1-02]
 - なし
 
 ## 完了の条件
-- [ ] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
-- [ ] design.md と後続のタスク資料に、必要な変更を反映した（軸の基底 `u`・`v`、角度の向き、basePhase の定義と式を design.md §2・§5 に書く）
+- [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
+- [x] design.md と後続のタスク資料に、必要な変更を反映した（軸の基底 `u`・`v`、角度の向き、basePhase の定義と式を design.md §2・§5 に書く）
 - [ ] `status: done` にしてコミットした
