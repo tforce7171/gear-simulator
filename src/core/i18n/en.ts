@@ -125,4 +125,13 @@ export const en = {
   'import.error.invalidScene.teeth':
     'A gear has a tooth count outside the range for its size, or not a whole number (at {path})',
   'import.error.invalidScene.rpm': 'A motor speed is outside the range of 1 to 120 rpm (at {path})',
+  // Context menu (S1-29)
+  'contextMenu.label': 'Actions',
+  'contextMenu.delete': 'Delete',
+  'contextMenu.attachMotor': 'Attach motor',
+  'contextMenu.detachMotor': 'Remove motor',
+  'contextMenu.focusHere': 'Zoom here',
+  'contextMenu.frameAll': 'Frame all',
+  'contextMenu.toggleWatch': 'Watch mode',
+  'contextMenu.toggleInfo': 'Info overlay',
 } satisfies Record<MessageKey, string>;
