@@ -35,7 +35,7 @@ core → app → render → 画面 → `window.__gearSim` → Playwright の一�
 - 描画（`src/render/`）
   - S1-01 の `main.ts` の three の初期化を `src/render/` に移す
   - シーンとレイアウトから Three.js のオブジェクトを同期する。前回と参照が変わった部品だけを作り直す（design.md §7）
-  - 歯車: S1-02 の `GeometryCache` の形状を使う。ローカルの x・y・z を、S1-03 の `axisFrame` の `u`・`v`・`w` に合わせて置き、毎フレーム `w` まわりに `basePhase + シャフトの角度` だけ回す
+  - 歯車: S1-02 の `GeometryCache` の形状を使う。ローカルの x・y・z を、S1-03 の `axisFrame` の `u`・`v`・`w` に合わせて置き、毎フレーム `w` まわりに `basePhase + シャフトの角度` だけ回す（形状は中心が原点、歯幅の方向がローカルの z、0 番目の歯がローカルの +x。中心に穴は無い。design.md §5）
   - シャフト: 細い円柱（太さは render 側の定数で仮に決める）。長さは `span`
   - モーター: シャフトの端に箱を置く程度の仮の見た目（形と位置は S1-24 で整える）
   - 光源とカメラは固定（カメラは全体が入る位置から原点付近を見る）。カメラ操作は S1-13
