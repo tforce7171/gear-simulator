@@ -1,7 +1,7 @@
 ---
 id: S1-07
 title: ロック判定と状態の出力
-status: todo
+status: doing
 depends: [S1-06]
 ---
 
