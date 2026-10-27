@@ -1,7 +1,7 @@
 ---
 id: S1-21
 title: 手で回す
-status: todo
+status: doing
 depends: [S1-07, S1-16]
 ---
 
