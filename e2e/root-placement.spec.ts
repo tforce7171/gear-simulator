@@ -214,9 +214,12 @@ test.describe('起点のハンドルと向き（chain-three.json）', () => {
   test('A を選ぶと move と height。height を 60px 上へ → 原点の y が増え、B・C もついてくる。Ctrl+Z で戻る', async ({
     page,
   }) => {
+    // 歯車を選んでいるので、シャフト上の位置の 'axial'（S1-19）も出る
     const handles = await getHandles(page);
-    expect(handles.map((h) => h.kind).sort()).toEqual(['height', 'move']);
-    expect(handles.every((h) => h.targetId === 'shaft_a')).toBe(true);
+    expect(handles.map((h) => h.kind).sort()).toEqual(['axial', 'height', 'move']);
+    expect(handles.filter((h) => h.kind !== 'axial').every((h) => h.targetId === 'shaft_a')).toBe(
+      true,
+    );
 
     const before = await getLayout(page);
     const from = await handlePoint(page, 'height');
@@ -299,7 +302,8 @@ test.describe('起点のハンドルと向き（chain-three.json）', () => {
 
   test('B を選んで R → 何も変わらない（mesh のシャフト）', async ({ page }) => {
     await page.evaluate(() => window.__gearSim?.select('gear_b'));
-    expect(await getHandles(page)).toEqual([]);
+    // mesh のシャフトの子なので、外周の角度の 'arc'（S1-19）だけ
+    expect((await getHandles(page)).map((h) => h.kind)).toEqual(['arc']);
     await page.keyboard.press('r');
     expect(await getScene(page)).toEqual(chainThree);
   });

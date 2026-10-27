@@ -17,8 +17,8 @@ import type { Vec3 } from '../core/math/vec3';
 import type { HandleSpec, Ray } from '../input/handle-drag';
 import { type CandidateSpec, createCandidateView } from './candidates';
 import { createGeometryCache } from './gear-geometry';
-import { createHandleView } from './handles';
-import { createPicker, type PickHit } from './picking';
+import { createHandleView, createReattachView, type ReattachRing } from './handles';
+import { createPicker, type PickHit, type PickKind } from './picking';
 import type { SceneView } from './scene-view';
 import { createSceneSync, type Highlight, type PreviewStyle } from './sync';
 
@@ -47,8 +47,9 @@ export interface Renderer extends SceneView {
   readonly canvas: HTMLCanvasElement;
   // ページ座標の点の下にあるもの: 部品に当たればその点、なければ床（y = 0）との交点、どちらも無ければ null
   pickPoint(pageX: number, pageY: number): Vec3 | null;
-  // ページ座標の点の下の部品（優先順位つき。S1-16）。activeCamera() でレイを飛ばす
-  pick(pageX: number, pageY: number): PickHit | null;
+  // ページ座標の点の下の部品（優先順位つき。S1-16）。activeCamera() でレイを飛ばす。
+  // kinds を渡すと、その種類だけを調べる（S1-19）
+  pick(pageX: number, pageY: number, kinds?: readonly PickKind[]): PickHit | null;
   // ピッキングの対象を入れる Group。ハンドル（S1-17・S1-19）・候補（S1-18）もここに足す
   readonly pickRoot: Group;
   // 選択とマウスを乗せた部品のハイライト（S1-16）
@@ -59,6 +60,8 @@ export interface Renderer extends SceneView {
   setHandles(handles: readonly HandleSpec[], activeId: string | null): void;
   // 出す生やす候補と、マウスを乗せた候補の番号（S1-18）。同じ一覧の参照なら作り直さない
   setCandidates(candidates: readonly CandidateSpec[], hovered: number | null): void;
+  // 付け直しのドラッグ（S1-19）の候補の輪と、強調する輪の番号。空の一覧で消す
+  setReattachRings(rings: readonly ReattachRing[], highlighted: number | null): void;
   // ページ座標の点を通る、activeCamera() からのレイ（向きは単位ベクトル）。canvas が大きさ 0 なら null
   rayAt(pageX: number, pageY: number): Ray | null;
 }
@@ -97,6 +100,9 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
   const handles = createHandleView();
   pickRoot.add(handles.root);
   scene.add(pickRoot);
+  // 付け直しの候補の輪はピッキングの対象にしない
+  const reattach = createReattachView();
+  scene.add(reattach.root);
   const picker = createPicker({ canvas, root: pickRoot, camera: () => active });
 
   // 描画バッファとカメラの縦横比を、canvas の表示の大きさに合わせる（S1-15。パネルを除いた描画領域）
@@ -152,6 +158,7 @@ export function createRenderer(canvas: HTMLCanvasElement): Renderer {
     setPreviewStyle: objects.setPreviewStyle,
     setHandles: handles.set,
     setCandidates: candidates.set,
+    setReattachRings: reattach.set,
     rayAt(pageX, pageY) {
       if (!setRay(pageX, pageY)) return null;
       const { origin, direction } = raycaster.ray;
