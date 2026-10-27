@@ -1,7 +1,7 @@
 ---
 id: S1-14
 title: カメラ（応用）
-status: doing
+status: done
 depends: [S1-13, S1-15]
 ---
 
@@ -144,4 +144,4 @@ Mac のトラックパッドでも自然に操作でき、決まった方向か�
 ## 完了の条件
 - [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
 - [x] design.md と後続のタスク資料に、必要な変更を反映した（§7 の AppState の項目と `__gearSim` の API が design.md と合っているか確かめる）
-- [ ] `status: done` にしてコミットした
+- [x] `status: done` にしてコミットした
