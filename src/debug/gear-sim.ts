@@ -1,5 +1,6 @@
 // window.__gearSim（開発用・テスト用ビルドのみ。design.md §10）
 import type { Command } from '../core/edit/commands';
+import type { Lang } from '../core/i18n';
 import type { MotionState } from '../core/kinematics/types';
 import type { Layout } from '../core/layout/types';
 import type { Vec3 } from '../core/math/vec3';
@@ -21,6 +22,10 @@ export interface GearSimDebug {
   redo(): void;
   /** ワールド座標の点の、ページ座標（CSS ピクセル） */
   projectToScreen(world: Vec3): { x: number; y: number };
+  /** 現在の画面の言語 */
+  getLanguage(): Lang;
+  /** 画面の言語を切り替える（タブの題名と <html lang> も変わる） */
+  setLanguage(lang: Lang): void;
 }
 
 declare global {

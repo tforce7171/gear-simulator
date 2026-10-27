@@ -71,3 +71,8 @@
 | S1-11 | ストアの `dispatch` は状態が変わったときだけ購読者に知らせる。コマンド・Undo・Redo でシーンが変わったら、角度を引き継いで `solveMotion` で ω・ロックを求め直す。`createStore(scene, { ids })` で ID の生成関数を注入できる（既定はランダム） | 失敗したコマンドで自動保存（S1-27）などが動かないようにし、`dispatch` の直後の `getMotion()` が新しいシーンと合うようにするため |
 | S1-11 | `__gearSim.dispatch` は design.md §10 のとおり `void` を返し、失敗しても何もしない（警告も出さない） | 失敗は `getScene()` が変わらないことで確かめられ、`console.error` を出すとテストが失敗するため |
 | S1-11 | Playwright のテストは、アプリの ID がランダムなので、`shaft_1` などを前のコマンドで増えた部品の ID に読み替えた | 資料は「ID はランダムの生成関数を使う」としており、テストの ID はそのままでは使えないため |
+| S1-12 | 差し込みの処理を `core/i18n/index.ts` の `interpolate(message, params)` に分けて公開し、差し込みのテストはそれを直接呼んだ（テスト用のキーは辞書に足さない） | 資料が認めている方法で、辞書に画面で使わないキーを残さないため |
+| S1-12 | 型のテストは `expectTypeOf(en).toMatchTypeOf<…>()` ではなく同じ意味の `toExtend<…>()` を使った。`@ts-expect-error` を付けた `translate('ja', 'no.such.key')` は、実行すると `undefined` を返すだけなので、呼ばない関数の中に書いた | 入っている expect-type 1.4 で `toMatchTypeOf` が非推奨になっているため。型の検査だけが目的なため |
+| S1-12 | `placeholdersOf` は差し込みの名前を重複なく、現れた順に返す。名前は英数字と `_` だけ（`/\{([A-Za-z0-9_]+)\}/`） | 資料は返す順と名前の文字を決めていなかったため。比較は集合で行う |
+| S1-12 | `app/i18n.ts` の `setLanguage` は、今と同じ言語なら購読者に知らせない。`navigator` が無い環境（Vitest の node）でも読み込めるようにした | ストアの `dispatch` が変わったときだけ知らせるのに合わせた。`app/i18n.test.ts` で通知と解除を確かめるため |
+| S1-12 | `index.html` の `<title>` と `<html lang>` は書き換えず、起動時に `main.ts` が現在の言語に合わせる | 資料は `main.ts` で合わせるとしているため |
