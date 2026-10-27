@@ -1,7 +1,7 @@
 ---
 id: S1-05
 title: 運動学: かみ合いのグラフ、速度比、矛盾の検出
-status: todo
+status: doing
 depends: [S1-04]
 ---
 
