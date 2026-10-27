@@ -1,7 +1,7 @@
 ---
 id: S1-01
 title: プロジェクトの土台
-status: todo
+status: doing
 depends: []
 ---
 
