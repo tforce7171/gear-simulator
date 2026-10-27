@@ -1,7 +1,7 @@
 ---
 id: S1-25
 title: 音（基本）
-status: doing
+status: done
 depends: [S1-07, S1-24]
 ---
 
@@ -88,29 +88,29 @@ depends: [S1-07, S1-24]
   ```
 
 ## 受け入れ条件
-- [ ] ページを開いただけでは `AudioContext` を作らない。最初のクリックかキー入力で音が出始める。
-- [ ] モーターで回すと、遅い組はカチカチ、速い組はうなりに聞こえる。速度を上げ下げすると途切れずに移り変わる。
-- [ ] `M` キーとツールバーのボタンでミュートが切り替わる。
-- [ ] 音の処理でコンソールエラーが出ない。
+- [x] ページを開いただけでは `AudioContext` を作らない。最初のクリックかキー入力で音が出始める。
+- [x] モーターで回すと、遅い組はカチカチ、速い組はうなりに聞こえる。速度を上げ下げすると途切れずに移り変わる。
+- [x] `M` キーとツールバーのボタンでミュートが切り替わる。
+- [x] 音の処理でコンソールエラーが出ない。
 
 ## テストケース
 ### Vitest
-- [ ] `toothPassFrequency(12, 2π)` = 12（60 rpm × 12 枚）。`toothPassFrequency(36, -2π)` = 36（向きは関係しない）。
-- [ ] `clickToneMix`: f = 0 → `{ click: 1, tone: 0 }`、10 → `{1, 0}`、15 → `{1, 0}`、22.5 → 両方 ≈ 0.7071、30 → `{0, 1}`、200 → `{0, 1}`。全域で `click² + tone² ≈ 1`。
-- [ ] `toneParams`: f = 5000 → frequency 2000。f = 30 → level = 0.6 × 材質の連続音の音量。f = 400 と 800 → level が同じ。
-- [ ] `toothPassTimes(0, 2π × 3.5 / 12, 12, 0.1)` → 3 個、昇順、すべて 0 以上 0.1 以下。1 個目 ≈ `0.1 × (1/3.5)`。
-- [ ] `toothPassTimes` は逆回転（next < prev）でも同じ個数を返す。跨がない（0 → 0.1 rad、12 枚）→ `[]`。
-- [ ] `clickParams` に `() => 0.5` を渡すと揺らぎ 0（部分音が表の値ちょうど）。`() => 0` / `() => 1` で −3% / +3%。
-- [ ] `MATERIALS` の全周波数が 20〜20000 Hz、全減衰時間が正。
-- [ ] `computeMeshVoices`: S1-23 のシーン A（12 枚 60 rpm → 36 枚 → 24 枚）で 2 組、f はともに 12 Hz（`g1|g2` は 12×1 回転/秒、`g2|g3` は 36 × 1/3 回転/秒）。モーター OFF で f はともに 0。
-- [ ] `meshKey('gear_b', 'gear_a') === 'gear_a|gear_b'`。
+- [x] `toothPassFrequency(12, 2π)` = 12（60 rpm × 12 枚）。`toothPassFrequency(36, -2π)` = 36（向きは関係しない）。
+- [x] `clickToneMix`: f = 0 → `{ click: 1, tone: 0 }`、10 → `{1, 0}`、15 → `{1, 0}`、22.5 → 両方 ≈ 0.7071、30 → `{0, 1}`、200 → `{0, 1}`。全域で `click² + tone² ≈ 1`。
+- [x] `toneParams`: f = 5000 → frequency 2000。f = 30 → level = 0.6 × 材質の連続音の音量。f = 400 と 800 → level が同じ。
+- [x] `toothPassTimes(0, 2π × 3.5 / 12, 12, 0.1)` → 3 個、昇順、すべて 0 以上 0.1 以下。1 個目 ≈ `0.1 × (1/3.5)`。
+- [x] `toothPassTimes` は逆回転（next < prev）でも同じ個数を返す。跨がない（0 → 0.1 rad、12 枚）→ `[]`。
+- [x] `clickParams` に `() => 0.5` を渡すと揺らぎ 0（部分音が表の値ちょうど）。`() => 0` / `() => 1` で −3% / +3%。
+- [x] `MATERIALS` の全周波数が 20〜20000 Hz、全減衰時間が正。
+- [x] `computeMeshVoices`: S1-23 のシーン A（12 枚 60 rpm → 36 枚 → 24 枚）で 2 組、f はともに 12 Hz（`g1|g2` は 12×1 回転/秒、`g2|g3` は 36 × 1/3 回転/秒）。モーター OFF で f はともに 0。
+- [x] `meshKey('gear_b', 'gear_a') === 'gear_a|gear_b'`。
 
 ### Playwright
-- [ ] 起動直後 `getAudio().contextState === 'none'`。キャンバスをクリック → `'running'` になる（`expect.poll`）。
-- [ ] シーン A のモーターを 120 rpm にしたシーンを読み込み、クリック → `voices` が 2 件。`g1|g2` の frequency 24、click ≈ 0.588、tone ≈ 0.809（24 Hz はクロスフェードの範囲）。
-- [ ] `M` → `muted === true`、ツールバーのボタンが `aria-pressed="true"`。もう一度 `M` → false。
-- [ ] 21 組のかみ合いが回るシーン（`e2e/fixtures/chain-22.json`、歯車 22 枚の列）→ `voices.length === 16`。
-- [ ] 上のすべてでコンソールエラー 0 件。
+- [x] 起動直後 `getAudio().contextState === 'none'`。キャンバスをクリック → `'running'` になる（`expect.poll`）。
+- [x] シーン A のモーターを 120 rpm にしたシーンを読み込み、クリック → `voices` が 2 件。`g1|g2` の frequency 24、click ≈ 0.588、tone ≈ 0.809（24 Hz はクロスフェードの範囲）。
+- [x] `M` → `muted === true`、ツールバーのボタンが `aria-pressed="true"`。もう一度 `M` → false。
+- [x] 21 組のかみ合いが回るシーン（`e2e/fixtures/chain-22.json`、歯車 22 枚の列）→ `voices.length === 16`。
+- [x] 上のすべてでコンソールエラー 0 件。
 
 ## 人が手で確かめる項目
 - 真鍮で金属らしいカチカチとうなり、`setMaterial('wood')` で木のコトコトに聞こえるか。
@@ -118,6 +118,6 @@ depends: [S1-07, S1-24]
 - 回転数を変えたとき、ミュートを切り替えたときに、プツッという雑音が出ないか。
 
 ## 完了の条件
-- [ ] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
-- [ ] design.md と後続のタスク資料に、必要な変更を反映した（`settings.muted`、`__gearSim.getAudio` を design.md §7・§10 に書く）
-- [ ] `status: done` にしてコミットした
+- [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
+- [x] design.md と後続のタスク資料に、必要な変更を反映した（`settings.muted`、`__gearSim.getAudio` を design.md §7・§10 に書く）
+- [x] `status: done` にしてコミットした
