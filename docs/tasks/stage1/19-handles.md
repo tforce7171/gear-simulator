@@ -1,7 +1,7 @@
 ---
 id: S1-19
 title: 外周の角度の円弧ハンドル、シャフト上の位置のドラッグ
-status: doing
+status: done
 depends: [S1-18]
 ---
 
@@ -149,4 +149,4 @@ depends: [S1-18]
 ## 完了の条件
 - [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
 - [x] design.md と後続のタスク資料に、必要な変更を反映した（§10 の `__gearSim` の API）
-- [ ] `status: done` にしてコミットした
+- [x] `status: done` にしてコミットした
