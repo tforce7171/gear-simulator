@@ -4,3 +4,6 @@
 
 | タスク | 項目 | 確かめ方 | 結果 |
 |---|---|---|---|
+| S1-01 | ブラウザの入っていない環境でも Playwright が動く | Playwright のブラウザを入れていない環境（`~/.cache/ms-playwright` が無い）で `pnpm install` → `pnpm e2e:install` → `pnpm verify` が通ることを確かめる | |
+| S1-01 | `pnpm dev` でブラウザに床のグリッドが出る | `pnpm dev` を起動し、表示された URL を実際のブラウザで開いて、暗い背景に床のグリッドが見え、ウィンドウの大きさを変えると追従することを目で確かめる | |
+| S1-01 | `screenshots/empty-scene.png` に床のグリッドが見える | `pnpm e2e` のあと `screenshots/empty-scene.png` を開いて、床のグリッドが描かれていることを目で確かめる | |

@@ -1,0 +1,82 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.6.3/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "ignoreUnknown": false,
+    "includes": ["**", "!docs", "!.claude", "!**/*.md"]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended"
+    }
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single"
+    }
+  },
+  "assist": {
+    "enabled": true,
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["src/core/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "three": "src/core は純粋関数のみ。three を import しない（design.md §1）",
+                  "camera-controls": "src/core は純粋関数のみ。camera-controls を import しない（design.md §1）"
+                },
+                "patterns": [
+                  {
+                    "group": ["three/**"],
+                    "message": "src/core は純粋関数のみ。three を import しない（design.md §1）"
+                  },
+                  {
+                    "group": [
+                      "**/render",
+                      "**/render/**",
+                      "**/input",
+                      "**/input/**",
+                      "**/ui",
+                      "**/ui/**",
+                      "**/audio",
+                      "**/audio/**",
+                      "**/storage",
+                      "**/storage/**",
+                      "**/app",
+                      "**/app/**",
+                      "**/debug",
+                      "**/debug/**"
+                    ],
+                    "message": "src/core から外の層（render・input・ui・audio・storage・app・debug）を import しない（design.md §1）"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

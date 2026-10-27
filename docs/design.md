@@ -298,15 +298,19 @@ interface SaveFile {
 
 - `pnpm verify` = `biome check . && tsc --noEmit && vitest run && playwright test`。コミット前に必ず通す。
 - **Vitest**: `src/**/*.test.ts`。`core` は厚くテストする。浮動小数の比較は `toBeCloseTo` を使う。
-- **Playwright**: Chromium のみ。`webServer` で `vite --mode e2e` を起動する。WebGL は SwiftShader（`--use-angle=swiftshader`）で動かす。
-  - 共通フィクスチャで、コンソールエラーと pageerror を集め、テストの終わりに 0 件であることを確かめる。
+- **型検査**: `tsconfig.json` は `strict: true` と `noUncheckedIndexedAccess: true`（配列や Record の添字アクセスは `T | undefined` になる）を採る。`noEmit` で、`src/`・`e2e/`・設定ファイルを対象にする。
+- **Biome**: `docs/`・`.claude/`・Markdown は検査しない（資料の書式を崩さないため）。`src/core/**` には `noRestrictedImports` で three・camera-controls と外の層への import を禁止し、表しきれない規則は `src/core/import-rules.test.ts` で補う。
+- **Playwright**: Chromium のみ。`webServer` で `vite --mode e2e --port 5174 --strictPort` を起動する。WebGL は SwiftShader で動かす（起動引数 `--use-angle=swiftshader` と `--enable-unsafe-swiftshader`。GPU の無い環境でも動く）。ブラウザが無い環境では `pnpm e2e:install`（`playwright install chromium`）を先に実行する。
+  - 共通フィクスチャ（`e2e/fixtures/test.ts`）で、コンソールエラーと pageerror を集め、テストの終わりに 0 件であることを確かめる。すべての spec はこの `test` を import する。
+  - Playwright は `__gearSim.isReady()` が `true` になる（最初のフレームを描いた）のを待ってから操作する。
   - 準備に時間のかかるシーンは `e2e/fixtures/*.json` を `__gearSim.loadScene()` で読み込んで作る。
 - `core` の部品（S1-05〜S1-11）を作ったタスクは、そのタスクの中でアプリ（`app/`）にも組み込み、画面で使われる状態にする。ただし S1-10（候補の列挙）は選択の仕組み（S1-16）が必要なので、組み込みは S1-18 で行う。
-- **見た目の確認**（`e2e/visual/`）: スクリーンショットを `screenshots/<場面名>.png` に保存する（git では無視する）。自動で判定するのは「真っ黒・真っ白でない」（画素の分散がしきい値以上）ことだけ。
-- **`window.__gearSim`**: `import.meta.env.MODE !== 'production'` のときだけ公開する。
+- **見た目の確認**（`e2e/visual/`）: スクリーンショットを `screenshots/<場面名>.png` に保存する（git では無視する）。自動で判定するのは「真っ黒・真っ白でない」（画素の分散がしきい値以上）ことだけ。`e2e/fixtures/visual.ts` の `captureScene(page, name)` を使う（しきい値は `e2e/fixtures/blank.ts` の `BLANK_VARIANCE_THRESHOLD` = 輝度の分散 4）。
+- **`window.__gearSim`**: `import.meta.env.MODE !== 'production'` のときだけ公開する（`src/debug/gear-sim.ts` の `installGearSim`。型は `GearSimDebug` で、API を足すタスクがこの型を広げる）。
 
 ```ts
 interface GearSimDebug {
+  isReady(): boolean; // 最初のフレームを描いたら true（S1-01）
   getScene(): Scene;
   getLayout(): Layout;
   getMotion(): MotionState;
@@ -322,7 +326,7 @@ API はタスクで必要になった時点で足していく。足したらこ�
 
 | タスク | 追加する API |
 |---|---|
-| S1-01 | `isReady` |
+| S1-01 | `isReady`（済） |
 | S1-11 | `undo` / `redo` |
 | S1-12 | `getLanguage` / `setLanguage` |
 | S1-13 | `getCamera` / `setCamera` / `getLastContextRequest` |

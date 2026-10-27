@@ -1,7 +1,7 @@
 ---
 id: S1-01
 title: プロジェクトの土台
-status: todo
+status: done
 depends: []
 ---
 
@@ -107,6 +107,6 @@ depends: []
 - `screenshots/empty-scene.png` に床のグリッドが見えること
 
 ## 完了の条件
-- [ ] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
-- [ ] design.md と後続のタスク資料に、必要な変更を反映した（`__gearSim.isReady()` を design.md §10 に足す。SwiftShader の起動引数、`noUncheckedIndexedAccess` を採ったことを design.md §10 に書く）
-- [ ] `status: done` にしてコミットした
+- [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
+- [x] design.md と後続のタスク資料に、必要な変更を反映した（`__gearSim.isReady()` を design.md §10 に足す。SwiftShader の起動引数、`noUncheckedIndexedAccess` を採ったことを design.md §10 に書く）
+- [x] `status: done` にしてコミットした

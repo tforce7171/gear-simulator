@@ -22,7 +22,7 @@
 
 | ID | 題名 | 依存 | 状態 |
 |---|---|---|---|
-| [S1-01](stage1/01-project-setup.md) | プロジェクトの土台 | - | todo |
+| [S1-01](stage1/01-project-setup.md) | プロジェクトの土台 | - | done |
 | [S1-02](stage1/02-involute-profile.md) | インボリュート歯形の生成と形状データの共有 | S1-01 | todo |
 | [S1-03](stage1/03-scene-and-mesh-geometry.md) | シーンのデータ形式と、かみ合いの幾何 | S1-02 | todo |
 | [S1-04](stage1/04-vertical-slice.md) | 最小の縦通し: 固定シーンを描画して回す | S1-03 | todo |
