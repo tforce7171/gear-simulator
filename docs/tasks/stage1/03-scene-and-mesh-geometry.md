@@ -89,6 +89,7 @@ depends: [S1-02]
   }
   export function validateScene(scene: Scene): { ok: true } | { ok: false; errors: SceneError[] };
   ```
+  - S1-28 で `SceneError` の `path` を読み込みのエラー（`SaveFileError.path`）に使うようにし、`validateScene` はすべてのエラーに `path` を付ける。生の値の形を確かめる `src/core/scene/parse.ts` の `parseScene(raw: unknown)` と、その `code` `'invalidShape'` を足した。
 - `src/core/geometry/mesh.ts`
   ```ts
   export function pitchRadius(size: SizeKey, teeth: number): number;

@@ -229,3 +229,11 @@
 | S1-27 | 更新日時の表示は `Intl.DateTimeFormat`（日本語は `ja-JP`、英語は `en-US`、`dateStyle: 'medium'`・`timeStyle: 'medium'`）。ダイアログを開いている間に言語を変えても日時の書式は開いたときのまま（文言は変わる） | 「言語に合わせた書式」を満たす最小の形。一覧は開くたびに作り直すため |
 | S1-27 | `<dialog>` は閉じたとき `close` イベントを待たずにすぐ DOM から取り除く | 全体の verify の負荷が高いとき、`close` イベントが遅れて「閉じたのに残っている」状態で通しテストが一度失敗したため |
 | S1-27 | `loadScene`（`__gearSim`）と Undo は `currentWork` を変えない。作品を開いた後に Undo しても「いま開いている作品」はその作品のまま | 資料は決めていなかった。`loadScene` はテストの準備用で、Undo は作品を閉じる操作ではないため |
+| S1-28 | `invalid-scene` のトーストは、`path` の最後が `teeth` なら歯数の文言（`import.error.invalidScene.teeth`）、`rpm` なら回転数の文言（`import.error.invalidScene.rpm`）、それ以外は汎用の文言（`import.error.invalidScene`）にし、どれも `{path}` を差し込んだ。辞書のキーは資料の「6 種類」に、この 2 つを足して 8 つになった | テストケースが「`invalid-teeth.json` → 歯数の範囲の文言」を求めているが、`SaveFileError` は `code` と `path` だけなので、`path` から詳しい文言を選ぶ形にした |
+| S1-28 | 形の確認（`parseScene`）の失敗は `SceneError` の `code` を `'invalidShape'` とし、形の失敗が 1 つでもあれば `validateScene` を呼ばずに返す。`SaveFileError.path` は最初のエラーの `path`（コレクションが無ければ `'shafts'` など、`scene` 自体がオブジェクトでなければ `path` なし） | 型どおりでない値を `validateScene` に渡さないため。資料は複数のエラーのどれを返すかを決めていなかった |
+| S1-28 | キーが種類の接頭辞（`shaft_`・`gear_`・`motor_`）で始まらない部品は `<コレクション>.<キー>`、`id` が接頭辞で始まる文字列でない部品は `<コレクション>.<キー>.id` を `path` にした | 資料の「ID の接頭辞が種類に合う」をキーと `id` の両方で確かめるため。`__proto__` のようなキーもここで弾ける |
+| S1-28 | 5 MB は 5 × 1024 × 1024 バイト（`MAX_SAVE_FILE_BYTES`）。`parseSaveFile` は文字列の UTF-8 のバイト数で、インポートはファイルの `size` で判定する（`size` で超えていれば読まない） | 資料は MB の定義を決めていなかった。「読まずに too-large」を、ファイルでは読む前に、文字列では解析の前に満たすため |
+| S1-28 | `migrate` は各移行の結果の `version` を n+1 に書き換える。移行の関数が例外を投げたら `invalid-scene` | 移行の書き忘れで version が進まず無限に回ることを防ぐため。例外を投げない約束を守るため |
+| S1-28 | ファイルを読む（`File.text()`）のに失敗したときは `invalid-json` の文言を出す | 資料に読み込み自体の失敗の種類が無く、利用者にとっては「読めないファイル」と同じため |
+| S1-28 | インポートに成功してもトーストは出さない。エクスポートもトーストを出さない（ブラウザのダウンロードの表示に任せる） | 資料は成功時の通知を決めていなかった。シーンが変わる・ダウンロードが始まることで分かるため |
+| S1-28 | ファイル選択は隠した `<input type="file">`（`data-testid="import-file"`）を `document.body` に置き、「インポート」でその `click()` を呼ぶ。同じファイルを続けて選べるよう、選んだ後に `value` を空にする | 資料は形を決めていなかった。Playwright は `filechooser` のイベントでも、この入力への `setInputFiles` でも渡せる |

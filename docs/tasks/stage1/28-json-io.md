@@ -1,7 +1,7 @@
 ---
 id: S1-28
 title: JSON のエクスポートとインポート
-status: todo
+status: done
 depends: [S1-27]
 ---
 
@@ -116,6 +116,6 @@ depends: [S1-27]
 - エラーの文言が、日本語・英語ともに何をすればよいか分かる表現か。
 
 ## 完了の条件
-- [ ] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
-- [ ] design.md と後続のタスク資料に、必要な変更を反映した（`parseSaveFile` の結果の型とエラーの種類、5 MB の上限、知らないフィールドを捨てることを design.md §9 に書く。S1-03 の資料の `SceneError` に `path` を足したことを書く）
-- [ ] `status: done` にしてコミットした
+- [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
+- [x] design.md と後続のタスク資料に、必要な変更を反映した（`parseSaveFile` の結果の型とエラーの種類、5 MB の上限、知らないフィールドを捨てることを design.md §9 に書く。S1-03 の資料の `SceneError` に `path` を足したことを書く）
+- [x] `status: done` にしてコミットした

@@ -112,4 +112,17 @@ export const en = {
   'storage.failed': 'Could not read or write the browser storage (IndexedDB)',
   'storage.openFailed': 'Could not open the work (the data is broken)',
   'storage.restoreFailed': 'Could not restore the autosave, so an empty scene was started',
+  // JSON import failures (S1-28)
+  'import.error.tooLarge': 'The file is too large to import (up to 5 MB)',
+  'import.error.invalidJson':
+    'Could not read the file (it is not JSON). Choose a .json file exported from this app',
+  'import.error.notGearSimulator':
+    'This is not a file from this app. Choose a .json file exported from this app',
+  'import.error.invalidVersion': 'The file version is invalid (the file is broken)',
+  'import.error.unsupportedVersion':
+    'This file was made by a newer version of the app and cannot be imported. Please update the app',
+  'import.error.invalidScene': 'The file contains an invalid value (at {path})',
+  'import.error.invalidScene.teeth':
+    'A gear has a tooth count outside the range for its size, or not a whole number (at {path})',
+  'import.error.invalidScene.rpm': 'A motor speed is outside the range of 1 to 120 rpm (at {path})',
 } satisfies Record<MessageKey, string>;

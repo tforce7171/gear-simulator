@@ -12,6 +12,7 @@ export interface SceneError {
 }
 
 export type SceneErrorCode =
+  | 'invalidShape' // 生の値の形が型と違う（parseScene、S1-28）
   | 'idMismatch'
   | 'missingRef'
   | 'invalidKind'

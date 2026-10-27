@@ -1,7 +1,11 @@
+import { MAX_SAVE_FILE_BYTES } from '../constants';
+import { parseScene } from '../scene/parse';
 import type { Scene } from '../scene/types';
-import { validateScene } from '../scene/validate';
 
-// 保存形式（design.md §9）。JSON のエクスポート、作品と自動保存はすべてこの形式を使う
+// 保存形式（design.md §9）。JSON のエクスポート、作品と自動保存はすべてこの形式を使う。
+// 読み込みは parseSaveFile（文字列）→ parseSaveFileObject の 1 か所で、
+// 形式の確認 → migrate で最新版まで変換 → core/scene の parseScene（形と意味の検証）の順に通す。
+// 検証の規則は core/scene に置き、ここには重ねて書かない
 
 export const CURRENT_SAVE_VERSION = 1;
 
@@ -11,50 +15,137 @@ export interface SaveFile {
   readonly scene: Scene;
 }
 
-// 読み込みの失敗の理由。S1-28 が種類を足して詳しくする
+export type SaveFileErrorCode =
+  | 'too-large' // 5 MB 超
+  | 'invalid-json' // JSON として読めない
+  | 'not-gear-simulator' // format が違う、オブジェクトでない
+  | 'invalid-version' // version が 1 以上の整数でない
+  | 'unsupported-version' // 最新より新しい（または移行が無い）
+  | 'invalid-scene'; // 検証の失敗
+
 export interface SaveFileError {
-  readonly code: string;
+  readonly code: SaveFileErrorCode;
+  readonly path?: string; // 'gears.gear_1.teeth' の形（invalid-scene のとき）
 }
 
 export type ParseResult =
-  | { readonly ok: true; readonly file: SaveFile }
+  | { readonly ok: true; readonly file: SaveFile; readonly migratedFrom: number | null }
   | { readonly ok: false; readonly error: SaveFileError };
+
+// バージョン n の生データ → n+1 の生データ
+export type Migration = (raw: Record<string, unknown>) => Record<string, unknown>;
+
+// いまは登録なし。段階 3 で anchors を足すとき（design.md §4）に 1 → 2 を書く
+export const MIGRATIONS: Readonly<Record<number, Migration>> = {};
 
 export function toSaveFile(scene: Scene): SaveFile {
   return { format: 'gear-simulator', version: CURRENT_SAVE_VERSION, scene };
+}
+
+// 2 スペースの字下げ、末尾に改行
+export function serializeSaveFile(file: SaveFile): string {
+  return `${JSON.stringify(file, null, 2)}\n`;
 }
 
 function isPlainObject(x: unknown): x is Record<string, unknown> {
   return typeof x === 'object' && x !== null && !Array.isArray(x);
 }
 
-function fail(code: string): ParseResult {
-  return { ok: false, error: { code } };
+function fail(code: SaveFileErrorCode, path?: string): { ok: false; error: SaveFileError } {
+  return { ok: false, error: path === undefined ? { code } : { code, path } };
 }
 
-// 読み込みの 1 か所（自動保存の復元・作品を開く。S1-28 でインポートも）。例外を投げない。
-// S1-28 が移行と形の確認をこの中に足す
-export function parseSaveFileObject(raw: unknown): ParseResult {
-  if (!isPlainObject(raw) || raw.format !== 'gear-simulator') return fail('not-gear-simulator');
-  if (typeof raw.version !== 'number' || !Number.isInteger(raw.version) || raw.version < 1) {
+// UTF-8 にしたときのバイト数
+function utf8Length(text: string): number {
+  let bytes = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    const c = text.charCodeAt(i);
+    if (c < 0x80) bytes += 1;
+    else if (c < 0x800) bytes += 2;
+    else if (c >= 0xd800 && c <= 0xdbff && i + 1 < text.length) {
+      bytes += 4; // サロゲートペア
+      i += 1;
+    } else bytes += 3;
+  }
+  return bytes;
+}
+
+function isTooLarge(text: string): boolean {
+  // UTF-16 の 1 単位は UTF-8 で 1〜3 バイトなので、長さだけで決まることが多い
+  if (text.length > MAX_SAVE_FILE_BYTES) return true;
+  if (text.length * 3 <= MAX_SAVE_FILE_BYTES) return false;
+  return utf8Length(text) > MAX_SAVE_FILE_BYTES;
+}
+
+// version から latest まで順に移行する。version の確かめもここで行う
+export function migrate(
+  raw: Record<string, unknown>,
+  migrations: Readonly<Record<number, Migration>> = MIGRATIONS,
+  latest: number = CURRENT_SAVE_VERSION,
+): { ok: true; raw: Record<string, unknown>; from: number } | { ok: false; error: SaveFileError } {
+  const from = raw.version;
+  if (typeof from !== 'number' || !Number.isInteger(from) || from < 1) {
     return fail('invalid-version');
   }
-  if (raw.version > CURRENT_SAVE_VERSION) return fail('unsupported-version');
-  const scene = raw.scene;
-  if (
-    !isPlainObject(scene) ||
-    !isPlainObject(scene.shafts) ||
-    !isPlainObject(scene.gears) ||
-    !isPlainObject(scene.motors)
-  ) {
-    return fail('invalid-scene');
+  if (from > latest) return fail('unsupported-version');
+  let current = raw;
+  for (let n = from; n < latest; n += 1) {
+    const step = Object.hasOwn(migrations, n) ? migrations[n] : undefined;
+    if (step === undefined) return fail('unsupported-version');
+    try {
+      current = { ...step(current), version: n + 1 };
+    } catch {
+      return fail('invalid-scene');
+    }
   }
-  // 部品の形までは確かめていないので、validateScene が例外を投げうる（形の確認は S1-28）
+  return { ok: true, raw: current, from };
+}
+
+// IndexedDB から読んだ値（自動保存・作品）と、parseSaveFile が JSON から作った値の読み込み。例外を投げない
+export function parseSaveFileObject(raw: unknown): ParseResult {
+  if (!isPlainObject(raw) || raw.format !== 'gear-simulator') return fail('not-gear-simulator');
+  const migrated = migrate(raw);
+  if (!migrated.ok) return migrated;
+  const parsed = parseScene(migrated.raw.scene);
+  if (!parsed.ok) {
+    const path = parsed.errors[0]?.path;
+    return fail('invalid-scene', path === '' ? undefined : path);
+  }
+  return {
+    ok: true,
+    file: toSaveFile(parsed.scene),
+    migratedFrom: migrated.from === CURRENT_SAVE_VERSION ? null : migrated.from,
+  };
+}
+
+// JSON の文字列（インポートしたファイル）の読み込み。5 MB を超えたら解析しない。例外を投げない
+export function parseSaveFile(text: string): ParseResult {
+  if (isTooLarge(text)) return fail('too-large');
+  let raw: unknown;
   try {
-    const typed = scene as unknown as Scene;
-    if (!validateScene(typed).ok) return fail('invalid-scene');
-    return { ok: true, file: { format: 'gear-simulator', version: raw.version, scene: typed } };
+    raw = JSON.parse(text);
   } catch {
-    return fail('invalid-scene');
+    return fail('invalid-json');
   }
+  return parseSaveFileObject(raw);
+}
+
+const pad = (n: number, width = 2): string => String(n).padStart(width, '0');
+
+// ファイル名に使えない文字（\ / : * ? " < > | と制御文字）
+// biome-ignore lint/suspicious/noControlCharactersInRegex: 制御文字を置き換えるため
+const INVALID_FILE_CHARS = /[\\/:*?"<>|\u0000-\u001f\u007f]/g;
+
+// エクスポートのファイル名。作品名があれば <作品名>.json、なければ gear-simulator-YYYYMMDD-HHmmss.json（ローカル時刻）
+export function exportFileName(now: Date, workName: string | null): string {
+  if (workName !== null) {
+    const name = workName
+      .replace(INVALID_FILE_CHARS, '_')
+      .trim()
+      .replace(/[.\s]+$/, '');
+    if (name !== '') return `${name}.json`;
+  }
+  const date = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
+  const time = `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  return `gear-simulator-${date}-${time}.json`;
 }

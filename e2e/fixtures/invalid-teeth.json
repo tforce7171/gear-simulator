@@ -1,0 +1,70 @@
+{
+  "format": "gear-simulator",
+  "version": 1,
+  "scene": {
+    "shafts": {
+      "shaft_s1": {
+        "id": "shaft_s1",
+        "placement": {
+          "kind": "root",
+          "origin": [0, 20, 0],
+          "axis": "y"
+        }
+      },
+      "shaft_s2": {
+        "id": "shaft_s2",
+        "placement": {
+          "kind": "mesh",
+          "parentGearId": "gear_g1",
+          "childGearId": "gear_g2",
+          "angle": 0
+        }
+      },
+      "shaft_s3": {
+        "id": "shaft_s3",
+        "placement": {
+          "kind": "mesh",
+          "parentGearId": "gear_g2",
+          "childGearId": "gear_g3",
+          "angle": 0
+        }
+      }
+    },
+    "gears": {
+      "gear_g1": {
+        "id": "gear_g1",
+        "kind": "spur",
+        "shaftId": "shaft_s1",
+        "size": "S",
+        "teeth": 81,
+        "offset": 0
+      },
+      "gear_g2": {
+        "id": "gear_g2",
+        "kind": "spur",
+        "shaftId": "shaft_s2",
+        "size": "S",
+        "teeth": 36,
+        "offset": 0
+      },
+      "gear_g3": {
+        "id": "gear_g3",
+        "kind": "spur",
+        "shaftId": "shaft_s3",
+        "size": "S",
+        "teeth": 24,
+        "offset": 0
+      }
+    },
+    "motors": {
+      "motor_m1": {
+        "id": "motor_m1",
+        "shaftId": "shaft_s1",
+        "size": "S",
+        "rpm": 60,
+        "direction": 1,
+        "on": true
+      }
+    }
+  }
+}

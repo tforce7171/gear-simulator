@@ -2,6 +2,7 @@ import { Vector3 } from 'three';
 import { getLanguage, onLanguageChange, setLanguage, t } from './app/i18n';
 import { createInfoOverlay } from './app/info-overlay';
 import { createInteractions } from './app/interactions';
+import { createJsonIo } from './app/json-io';
 import { startLoop } from './app/loop';
 import { restoreScene } from './app/restore';
 import { selectionForPick } from './app/selection';
@@ -31,6 +32,7 @@ import { motorCenter } from './render/sync';
 import { warningParts } from './render/warning-effects';
 import { createAutosaver } from './storage/autosave';
 import * as db from './storage/db';
+import { createFilePicker, downloadText } from './ui/file-io';
 import { createInfoLabels } from './ui/info-labels';
 import { createPalette } from './ui/palette';
 import { createPauseIndicator } from './ui/pause-indicator';
@@ -338,6 +340,22 @@ worksButton.disabled = false;
 worksButton.addEventListener('click', () => {
   void works.openList();
 });
+// JSON のエクスポートとインポート（S1-28）。インポートは replaceScene で読み込み、全体表示する
+const jsonIo = createJsonIo({
+  store,
+  download: downloadText,
+  fitAll: () => cameraInput.fitAll(),
+  showToast,
+});
+const exportButton = shell.toolbar.button('export');
+exportButton.disabled = false;
+exportButton.addEventListener('click', () => jsonIo.exportScene());
+const importPicker = createFilePicker(document.body, '.json,application/json', (file) => {
+  void jsonIo.importFile(file);
+});
+const importButton = shell.toolbar.button('import');
+importButton.disabled = false;
+importButton.addEventListener('click', () => importPicker.open());
 // 右下の軸の目印（S1-14）。球をクリックすると、その軸の側から見る
 const gizmo = createAxisGizmo(shell.gizmoSlot, (v) => cameraInput.setView(v));
 // コンテキストメニューの中身は S1-29。それまではテスト用に最後の要求だけ覚えておく
