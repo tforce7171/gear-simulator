@@ -332,6 +332,10 @@ interface Settings {
 
 - 辞書は `core/i18n/ja.ts` と `core/i18n/en.ts`。`ja` のキーを正とし、`en` は同じキーを持つことを型で強制する。
 - 言語は設定から切り替える。初期値はブラウザの言語（`ja` で始まれば日本語、それ以外は英語）。
+- 純粋な部分は `core/i18n/index.ts`（`Lang`・`MessageKey`・`MessageParams`・`detectLanguage`・`translate`・`interpolate`・`placeholdersOf`）。差し込みは `{name}` の形で、`params` に無い差し込みはそのまま残す。`ja` と `en` の差し込みの集合は同じにする（Vitest で確かめる）。
+- 実行時の言語は `app/i18n.ts` が持つ（`t`・`getLanguage`・`setLanguage`・`onLanguageChange`。DOM には触れない）。画面の文字列はすべて `t()` で出し、言語が変わったら `onLanguageChange` で書き換える。`setLanguage` は言語が変わったときだけ購読者に知らせる。
+- `main.ts` が、言語が変わるたびに `document.title = t('app.title')` と `<html lang>` を合わせる。
+- 辞書のキーは各 UI タスクが、そのタスクで `ja.ts` と `en.ts` の両方に足す。
 
 ## 9. 保存形式
 
@@ -376,6 +380,8 @@ interface GearSimDebug {
   redo(): void;
   // 画面上の位置を求める。Playwright でクリックやドラッグの座標に使う
   projectToScreen(world: Vec3): { x: number; y: number };
+  getLanguage(): Lang;               // 現在の画面の言語（S1-12）
+  setLanguage(lang: Lang): void;     // タブの題名と <html lang> も変わる（S1-12）
 }
 ```
 
@@ -386,7 +392,7 @@ API はタスクで必要になった時点で足していく。足したらこ�
 | S1-01 | `isReady`（済） |
 | S1-04 | `getScene` / `getLayout` / `getMotion` / `loadScene` / `projectToScreen`（済） |
 | S1-11 | `dispatch` / `undo` / `redo`（済） |
-| S1-12 | `getLanguage` / `setLanguage` |
+| S1-12 | `getLanguage` / `setLanguage`（済） |
 | S1-13 | `getCamera` / `setCamera` / `getLastContextRequest` |
 | S1-14 | `getInputDevice` / `updateSettings` / `setWatchMode` / `getGizmoTargets` |
 | S1-16 | `pick` / `select` |
