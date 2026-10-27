@@ -5,6 +5,8 @@ import { createInteractions } from './app/interactions';
 import { startLoop } from './app/loop';
 import { selectionForPick } from './app/selection';
 import { createLayoutMemo, createStore } from './app/store';
+import { createAudioEngine } from './audio/engine';
+import { computeMeshVoices } from './core/audio-model';
 import { boundsOf } from './core/layout/bounds';
 import { resolveLayout } from './core/layout/resolve';
 import { nextTheme } from './core/theme';
@@ -250,6 +252,25 @@ const properties = createProperties({
   dispatch: (action) => store.dispatch(action),
 });
 store.subscribe(() => properties.refresh());
+// 音（S1-25）。AudioContext は最初のユーザー操作（pointerdown・keydown）で作って resume する。
+// 描画領域に限らずどこを操作しても始めるので、window で capture する。ミュート中でも作る（主音量 0）
+const audio = createAudioEngine({ muted: store.getState().settings.muted });
+const startAudio = (): void => audio.start();
+window.addEventListener('pointerdown', startAudio, { capture: true });
+window.addEventListener('keydown', startAudio, { capture: true });
+const muteButton = shell.toolbar.button('mute');
+muteButton.disabled = false;
+const applyMute = (muted: boolean): void => {
+  muteButton.setAttribute('aria-pressed', String(muted));
+  audio.setMuted(muted);
+};
+applyMute(store.getState().settings.muted);
+const toggleMute = (): void => {
+  store.dispatch({ type: 'updateSettings', patch: { muted: !store.getState().settings.muted } });
+};
+muteButton.addEventListener('click', toggleMute);
+keyboard.bind({ key: 'm' }, { onDown: toggleMute });
+store.subscribe((state) => applyMute(state.settings.muted));
 // 右下の軸の目印（S1-14）。球をクリックすると、その軸の側から見る
 const gizmo = createAxisGizmo(shell.gizmoSlot, (v) => cameraInput.setView(v));
 // コンテキストメニューの中身は S1-29。それまではテスト用に最後の要求だけ覚えておく
@@ -324,6 +345,7 @@ installGearSim({
     enabled: store.getState().view.infoOverlay,
     arrows: infoOverlay.arrows(),
   }),
+  getAudio: () => audio.state(),
 });
 
 startLoop({
@@ -331,7 +353,10 @@ startLoop({
   view,
   layoutOf,
   displayScene: () => interactions.displayScene(),
-  onFrame: () => {
+  onFrame: (dt) => {
+    // 音は運動を進めた後の状態で更新する（S1-25）
+    const { scene, motion } = store.getState();
+    audio.update(computeMeshVoices(scene, layoutOf(scene), motion), motion.angles, dt);
     ready = true;
   },
 });

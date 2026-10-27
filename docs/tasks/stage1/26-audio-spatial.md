@@ -48,6 +48,13 @@ depends: [S1-13, S1-25]
   - 一時停止中（Space、`sim.paused`）とモーター OFF では鳴らさない。
 - **逆に回される（backDriven）**: モーターのうなりに、きしみを足す。`grind = clamp(strain − 1, 0, 1)`。帯域ノイズ（中心 = うなりの周波数 × 3、Q = 4）を 7 Hz の不規則な振幅変調で鳴らし、音量 `0.15 × grind`。`backDriven` に入っているモーターだけ。
 
+### S1-25 で決まったこと（前提）
+- `computeMeshVoices` は `Layout.meshes` の順に全組（止まっている組も）を返す。`MeshVoice` は `{ key, gearId, shaftId, teeth, frequency, click, tone }`（`gearId` は key の先頭の歯車で、クリックの時刻をそのシャフトの角度と歯数で求める。`frequency` はクランプしない歯の通過頻度）。ここに `position` を足す。
+- 鳴らす組の選び方は `activeVoices(voices, max)`（f > 0 を並びの順に最初の max 組）で、`src/audio/engine.ts` の `AudioEngine.update(voices, angles, dt)` の中で呼んでいる。これを `selectVoices` に置き換える（リスナーの位置を `update` に渡すか、選んだ結果を渡す形にする）。
+- 音源の出し入れは `engine.ts` が key ごとに `createMeshVoiceSynth`（`src/audio/mesh-voice.ts`）を作り、外れたら 100 ms でフェードアウトして捨てる。かみ合い 1 組の出力はその `GainNode`（`destination` に主音量を渡している）で、`PannerNode` はここに挟む。
+- 主音量（`MASTER_GAIN` 0.5、ミュートで 50 ms の直線で 0）の後にリミッター（`DynamicsCompressorNode`）がある。背景のうなり・専用音も主音量につなげばミュートが効く。
+- `e2e/fixtures/chain-22.json` は `shaft_c01`（root、原点 (0, 20, 0)、軸 y、モーター 小 60 rpm）から `gear_c01`〜`gear_c22`（小・24 枚）を角度 π/2（+X の向き）で一直線に生やしたもの。中心は x = 0, 24, 48, …, 504。
+
 ## 範囲外
 - 品質（S1-24）に合わせた `panningModel` の切り替え（`HRTF` 固定でよい。重ければ S1-31 の計測で見直す）
 - テーマに合わせた材質の切り替え（S1-30）
