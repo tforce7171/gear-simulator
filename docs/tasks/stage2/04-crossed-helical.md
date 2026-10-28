@@ -68,24 +68,24 @@ depends: [S2-01, S2-03]
 
 ## テストケース
 ### Vitest
-- [ ] `canMesh`: ねじ歯車同士（同じ大きさ）→ 真。ねじ歯車とハスバ歯車・平歯車 → 偽
-- [ ] `resolveLayout(crossed-pair)`: B のシャフトの軸 `'z'`、B の中心 `[4, 140, 0]`。`meshes` に `kind: 'crossedHelical'`。`interferences` が空
-- [ ] 運動: `crossed-pair`（A 2π rad/s）→ B は −π rad/s（s = (x × y)·z = 1）
-- [ ] 運動: `side: -1`（B の中心 `[4, 20, 0]`）→ B は +π rad/s
-- [ ] 運動: `axisStep: 1` にする（B のシャフトの軸 `'y'`、u は z、`side: 1` → 中心 `[4, 80, 60]`）→ s = (x × z)·y = −1 → B は +π rad/s
-- [ ] 逆側の駆動: モーターを B のシャフトに移す（30 rpm = π rad/s）→ A は −2π rad/s。ロックしない
-- [ ] 形状: 中・20 歯で、両端の断面の歯の角度の差が `8 / 20` = 0.4 rad
-- [ ] 候補: A から列挙した外周の候補（新しいシャフトを作るもの）がすべて `'skew'` で、シャフトの軸が `'y'` か `'z'`。平行な軸（`'x'`）の候補はない
+- [x] `canMesh`: ねじ歯車同士（同じ大きさ）→ 真。ねじ歯車とハスバ歯車・平歯車 → 偽
+- [x] `resolveLayout(crossed-pair)`: B のシャフトの軸 `'z'`、B の中心 `[4, 140, 0]`。`meshes` に `kind: 'crossedHelical'`。`interferences` が空
+- [x] 運動: `crossed-pair`（A 2π rad/s）→ B は −π rad/s（s = (x × y)·z = 1）
+- [x] 運動: `side: -1`（B の中心 `[4, 20, 0]`）→ B は +π rad/s
+- [x] 運動: `axisStep: 1` にする（B のシャフトの軸 `'y'`、u は z、`side: 1` → 中心 `[4, 80, 60]`）→ s = (x × z)·y = −1 → B は +π rad/s
+- [x] 逆側の駆動: モーターを B のシャフトに移す（30 rpm = π rad/s）→ A は −2π rad/s。ロックしない
+- [x] 形状: 中・20 歯で、両端の断面の歯の角度の差が `8 / 20` = 0.4 rad
+- [x] 候補: A から列挙した外周の候補（新しいシャフトを作るもの）がすべて `'skew'` で、シャフトの軸が `'y'` か `'z'`。平行な軸（`'x'`）の候補はない
 ### Playwright
-- [ ] `crossed-pair.json` → B のシャフトの ω が `-Math.PI`（`toBeCloseTo`）、`locks` が空
-- [ ] A を選び、候補を 1 つクリック → 新しいシャフトが `placement.kind === 'skew'`、`interferences` が空
+- [x] `crossed-pair.json` → B のシャフトの ω が `-Math.PI`（`toBeCloseTo`）、`locks` が空
+- [x] A を選び、候補を 1 つクリック → 新しいシャフトが `placement.kind === 'skew'`、`interferences` が空
 ### Playwright（見た目）
-- [ ] `crossed-pair.json` のかみ合い部分の拡大を `screenshots/crossed-helical-closeup.png` に保存する
+- [x] `crossed-pair.json` のかみ合い部分の拡大を `screenshots/crossed-helical-closeup.png` に保存する
 
 ## 人が手で確かめる項目
 - 2 枚の歯すじが接点で平行にそろって見え、回転の向きが自然に見える
 
 ## 完了の条件
-- [ ] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
-- [ ] design.md と後続のタスク資料に、必要な変更を反映した（§3、§4、§5、§6）
+- [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
+- [x] design.md と後続のタスク資料に、必要な変更を反映した（§3、§4、§5、§6）
 - [ ] `status: done` にしてコミットした
