@@ -8,7 +8,7 @@ import type { CandidateSpec } from '../render/candidates';
 
 // 歯車を生やす（S1-18）。純粋関数のみ。選んだ歯車の候補を列挙し、候補を編集コマンドに変換する
 
-export type CandidateKind = GrowCandidate['kind']; // 'perimeter' | 'bevel' | 'skew' | 'coaxial'（S1-10、S2-02、S2-03）
+export type CandidateKind = GrowCandidate['kind']; // 'perimeter' | 'bevel' | 'skew' | 'enclose' | 'coaxial'（S1-10、S2-02、S2-03、S3-02）
 
 // 生やす歯車の大きさと歯数。外周は親と同じ大きさ（同じ大きさ同士しかかみ合わない）、
 // 同じ軸はパレットで選んでいる大きさ。歯数はどちらも DEFAULT_TEETH[大きさ]
@@ -61,6 +61,15 @@ export function growCommand(candidate: GrowCandidate): Command {
       side: candidate.side,
     };
   }
+  if (candidate.kind === 'enclose') {
+    return {
+      type: 'growGear',
+      mode: 'enclose',
+      parentGearId: candidate.parentGearId,
+      angle: candidate.angle,
+      teeth: candidate.teeth,
+    };
+  }
   if (candidate.kind === 'skew') {
     return {
       type: 'growGear',
@@ -103,10 +112,13 @@ export function candidateSpec(scene: Scene, candidate: GrowCandidate): Candidate
   const parent = scene.gears[candidate.parentGearId];
   if (parent === undefined) throw new Error(`candidateSpec: no gear ${candidate.parentGearId}`);
   // 外周は −(親の歯数 / 子の歯数)。かさ歯車（S2-02）は apex_親·z·ω_親 + apex_子·z·ω_子 = 0、apex_子 = −side から 親の apex × side。
-  // ねじれた位置の組（S2-03）は z_子·ω_子 + s·z_親·ω_親 = 0（s = (e_親 × u)·e_子）から −s·z_親 / z_子
+  // ねじれた位置の組（S2-03）は z_子·ω_子 + s·z_親·ω_親 = 0（s = (e_親 × u)·e_子）から −s·z_親 / z_子。
+  // 内歯車の組（S3-02。囲む候補、内歯車の親の内側の候補）は同じ向きに回るので +z_親 / z_子
   const parentLayout = resolveLayout(scene).gears[parent.id];
-  const followRatio =
-    candidate.kind === 'bevel'
+  const internalPair = candidate.kind === 'enclose' || parent.kind === 'internal';
+  const followRatio = internalPair
+    ? parent.teeth / candidate.teeth
+    : candidate.kind === 'bevel'
       ? (parent.kind === 'bevel' ? parent.apex : 1) * candidate.side
       : candidate.kind === 'skew'
         ? (-(parentLayout === undefined

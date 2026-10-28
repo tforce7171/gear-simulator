@@ -2,13 +2,22 @@ import {
   BufferGeometry,
   ExtrudeGeometry,
   Float32BufferAttribute,
+  Path,
   Shape,
   ShapeUtils,
   Vector2,
 } from 'three';
-import { CROSSED_HELIX_ANGLE, GEAR_SIZES, HELIX_ANGLE } from '../core/constants';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import {
+  CROSSED_HELIX_ANGLE,
+  GEAR_SIZES,
+  HELIX_ANGLE,
+  INTERNAL_WEB_GAP,
+  INTERNAL_WEB_THICKNESS,
+} from '../core/constants';
 import { BEVEL_COS, bevelConeDistance, bevelToothWidth } from '../core/geometry/bevel';
 import { helicalSliceCount, helicalTwistAt, rotateOutline } from '../core/geometry/helical';
+import { internalOutline, internalRimRadius, internalRootRadius } from '../core/geometry/internal';
 import { spurOutline, type Vec2 } from '../core/geometry/involute';
 import { gearShapeKey } from '../core/geometry/shape-key';
 import {
@@ -199,6 +208,52 @@ export function buildWormGeometry(size: SizeKey): BufferGeometry {
   return geometry;
 }
 
+// 内歯車（S3-02）。ローカルの原点はリング（歯幅の区画）の中心、軸はローカルの z。ウェブは −z の側
+// （webSide 1 の歯車は描画でローカルの z を反転する。gearBodyScaleZ）。
+// - リング: z = −歯幅/2 〜 +歯幅/2。外側はリムの外側の円 R + 3.25m、内側は内歯の輪郭（internalOutline）
+// - つなぎの筒: リングの −z の面から INTERNAL_WEB_GAP、半径 R + 2.25m 〜 R + 3.25m の薄い筒
+// - ウェブ: 筒の端に厚さ m の円板（半径 R + 3.25m）
+// - ボス: ウェブの外側の面から、ウェブと合わせて INTERNAL_WEB_THICKNESS になるまでの短い円柱（シャフトを通す）
+export function buildInternalGeometry(size: SizeKey, teeth: number): BufferGeometry {
+  const { module, faceWidth } = GEAR_SIZES[size];
+  const rim = internalRimRadius(size, teeth);
+  const tubeInner = internalRootRadius(size, teeth) + module;
+  const circle = (r: number, n: number): Vector2[] =>
+    Array.from({ length: n }, (_, i) => {
+      const a = (2 * Math.PI * i) / n;
+      return new Vector2(r * Math.cos(a), r * Math.sin(a));
+    });
+  const segments = Math.max(64, teeth * 4);
+  const extrude = (shape: Shape, from: number, depth: number): BufferGeometry => {
+    const g = new ExtrudeGeometry(shape, { depth, bevelEnabled: false, steps: 1 });
+    g.translate(0, 0, from);
+    return g;
+  };
+
+  const ring = new Shape(circle(rim, segments));
+  ring.holes.push(new Path(internalOutline(module, teeth).map(([x, y]) => new Vector2(x, y))));
+  const tube = new Shape(circle(rim, segments));
+  tube.holes.push(new Path(circle(tubeInner, segments)));
+  const webZ = -faceWidth / 2 - INTERNAL_WEB_GAP;
+  const bossRadius = 3 + module;
+  const parts = [
+    extrude(ring, -faceWidth / 2, faceWidth),
+    extrude(tube, webZ, INTERNAL_WEB_GAP),
+    extrude(new Shape(circle(rim, segments)), webZ - module, module),
+    extrude(
+      new Shape(circle(bossRadius, 24)),
+      webZ - INTERNAL_WEB_THICKNESS,
+      INTERNAL_WEB_THICKNESS - module,
+    ),
+  ];
+  const geometry = mergeGeometries(parts); // ExtrudeGeometry はどれも index を持たない
+  for (const g of parts) g.dispose();
+  if (geometry === null) throw new Error('buildInternalGeometry: merge failed');
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
 // ウォームの形の分割数（軸まわり、軸方向ピッチ 1 つあたり）
 export const WORM_ANGULAR_SEGMENTS = 64;
 export const WORM_AXIAL_SEGMENTS_PER_PITCH = 48;
@@ -233,6 +288,8 @@ function buildGeometry(shape: GearShape, size: SizeKey, teeth: number): BufferGe
     case 'crossedHelical':
       // ねじれ角 45° の右ねじれ（S2-04）。歯幅 b でのねじれの角度は b / r
       return buildHelicalGeometry(size, teeth, 'right', CROSSED_HELIX_ANGLE);
+    case 'internal':
+      return buildInternalGeometry(size, teeth);
     default:
       return assertNever(shape);
   }
@@ -269,7 +326,10 @@ export function createGeometryCache(): GeometryCache {
 }
 
 // 形状データに含めない向きを、歯車の本体の拡大縮小で表す（S2-02）。apex −1 のかさ歯車はローカルの z を反転する
-// （z について鏡映しても z まわりの回転は変わらないので、位相の意味はそのまま。面の向きは three が行列式で反転する）
+// （z について鏡映しても z まわりの回転は変わらないので、位相の意味はそのまま。面の向きは three が行列式で反転する）。
+// webSide 1 の内歯車（S3-02。形状データはウェブが −z）も反転する
 export function gearBodyScaleZ(shape: GearShape): 1 | -1 {
-  return shape.kind === 'bevel' && shape.apex === -1 ? -1 : 1;
+  if (shape.kind === 'bevel' && shape.apex === -1) return -1;
+  if (shape.kind === 'internal' && shape.webSide === 1) return -1;
+  return 1;
 }

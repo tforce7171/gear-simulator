@@ -18,9 +18,21 @@ export type Collider =
       radius: number; // 歯先円半径
       halfWidth: number; // 歯幅 / 2
     }
+  // 中空の円柱（S3-02 の内歯車のリングとつなぎの筒）。内側の半径より内は空洞として扱う
+  | {
+      kind: 'hollow';
+      id: GearId;
+      shaftId: ShaftId;
+      center: Vec3;
+      axis: Axis;
+      innerRadius: number; // 内歯車の歯先円（R − m）
+      radius: number; // 外側の半径（リムの外側 R + 3.25m）
+      halfWidth: number;
+    }
   | { kind: 'segment'; id: ShaftId; start: Vec3; end: Vec3 };
 
 type Cylinder = Extract<Collider, { kind: 'cylinder' }>;
+type Hollow = Extract<Collider, { kind: 'hollow' }>;
 type Segment = Extract<Collider, { kind: 'segment' }>;
 
 type Index = 0 | 1 | 2;
@@ -56,10 +68,66 @@ export function gearCollider(
 }
 
 export function collides(a: Collider, b: Collider): boolean {
+  if (a.kind === 'hollow') return hollowAny(a, b);
+  if (b.kind === 'hollow') return hollowAny(b, a);
   if (a.kind === 'cylinder') {
     return b.kind === 'cylinder' ? cylinderCylinder(a, b) : segmentCylinder(b, a);
   }
   return b.kind === 'cylinder' ? segmentCylinder(a, b) : segmentSegment(a, b);
+}
+
+// 中空の円柱を外側の円柱（空洞を無視した、中の詰まった円柱）として見たもの
+function solidOf(h: Hollow): Cylinder {
+  return {
+    kind: 'cylinder',
+    id: h.id,
+    shaftId: h.shaftId,
+    center: h.center,
+    axis: h.axis,
+    radius: h.radius,
+    halfWidth: h.halfWidth,
+  };
+}
+
+// 中空の円柱と、ほかの部品（S3-02）。軸が平行な部品だけ空洞を考える:
+// 円柱（半径 ρ、軸からの距離 d）は d + ρ ≤ 内側の半径なら空洞に収まり、d − ρ ≥ 外側の半径なら外にあって干渉しない。
+// 線分は、軸に平行で、軸からの距離が内側の半径以下なら空洞を通るので干渉しない。
+// 平行でない部品は、空洞を無視して外側の円柱として扱う（安全側に倒す）
+function hollowAny(h: Hollow, other: Collider): boolean {
+  const solid = solidOf(h);
+  const ia = AXIS_INDEX[h.axis];
+  if (other.kind === 'segment') {
+    const dir = sub(other.end, other.start);
+    const along = Math.abs(dir[ia]);
+    const parallel = length(dir) - along <= 1e-12 * Math.max(1, along);
+    if (parallel && radialDistance(h, other.start) <= h.innerRadius + COLLISION_EPS) return false;
+    return segmentCylinder(other, solid);
+  }
+  const otherAxis = AXIS_INDEX[other.axis];
+  if (otherAxis !== ia) {
+    return other.kind === 'cylinder'
+      ? cylinderCylinder(solid, other)
+      : cylinderCylinder(solid, solidOf(other));
+  }
+  // 平行: 軸方向の区間の重なり
+  const axialOverlap = h.halfWidth + other.halfWidth - Math.abs(h.center[ia] - other.center[ia]);
+  if (axialOverlap <= COLLISION_EPS) return false;
+  const d = radialDistance(h, other.center);
+  if (other.kind === 'cylinder') {
+    if (d + other.radius <= h.innerRadius + COLLISION_EPS) return false; // 空洞に収まる
+    return d - other.radius < h.radius - COLLISION_EPS;
+  }
+  // 中空同士: どちらかがもう一方の空洞に収まるか、外側どうしが離れていれば干渉しない
+  if (d + other.radius <= h.innerRadius + COLLISION_EPS) return false;
+  if (d + h.radius <= other.innerRadius + COLLISION_EPS) return false;
+  return d < h.radius + other.radius - COLLISION_EPS;
+}
+
+// 点から、中空の円柱の軸までの距離
+function radialDistance(h: Hollow, p: Vec3): number {
+  const ia = AXIS_INDEX[h.axis];
+  const d = sub(p, h.center);
+  return Math.sqrt(Math.max(0, dot(d, d) - d[ia] * d[ia]));
 }
 
 // 全ての組を調べる。exempt の組（順序は問わない）と、歯車とそれが載ったシャフトの組は除く。
@@ -174,7 +242,7 @@ function pairKey(a: string, b: string): string {
 }
 
 function onOwnShaft(gear: Collider, shaft: Collider): boolean {
-  return gear.kind === 'cylinder' && shaft.kind === 'segment' && gear.shaftId === shaft.id;
+  return gear.kind !== 'segment' && shaft.kind === 'segment' && gear.shaftId === shaft.id;
 }
 
 // 点 x から閉区間 [lo, hi] までの距離（内側なら 0）

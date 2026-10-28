@@ -15,8 +15,20 @@ import {
   bevelPhase,
 } from '../geometry/bevel';
 import { canMesh, meshGeometryOf, meshKindOf } from '../geometry/can-mesh';
-import { gearEnvelope, gearPitchRadius, sectionWidth } from '../geometry/dimensions';
-import { centerDistance, meshPhase, pitchRadius } from '../geometry/mesh';
+import {
+  centerDistance,
+  gearEnvelope,
+  gearPitchRadius,
+  sectionWidth,
+} from '../geometry/dimensions';
+import {
+  internalHollowRange,
+  internalMeshPhase,
+  internalRimRadius,
+  internalTipRadius,
+  internalWebRange,
+} from '../geometry/internal';
+import { meshPhase, pitchRadius } from '../geometry/mesh';
 import {
   crossedHelicalPhase,
   skewChildFrame,
@@ -176,12 +188,23 @@ function placeChild(
   const axis = parentLayout.axis;
   switch (p.kind) {
     case 'mesh': {
+      // 中心距離は組の種類で決まる（外歯車同士は r_a + r_b、内歯車と外歯車は R − r。S3-02）。
+      // 外歯車が親で子が内歯車なら、子の中心が親の中心から angle の向きに R − r 離れた位置（親を囲む）
       const face = add(parentShaftOrigin, scale(axisVector(axis), parent.offset));
-      const distance = centerDistance(parent.size, parent.teeth, child.teeth);
+      const distance = centerDistance(parent, child);
+      const internal = parent.kind === 'internal' || child.kind === 'internal';
       return {
         origin: add(face, scale(radialDirection(axis, p.angle), distance)),
         axis,
-        phase: meshPhase(parentLayout.basePhase, parent.teeth, child.teeth, p.angle),
+        phase: internal
+          ? internalMeshPhase(
+              parentLayout.basePhase,
+              parent.teeth,
+              parent.kind === 'internal',
+              child.teeth,
+              p.angle,
+            )
+          : meshPhase(parentLayout.basePhase, parent.teeth, child.teeth, p.angle),
       };
     }
     case 'bevel': {
@@ -261,6 +284,7 @@ function skewPhase(
     case 'spur':
     case 'helical':
     case 'bevel':
+    case 'internal':
       return 0; // skew の配置の子にはならない（検証で弾く）
     default:
       return assertNever(child);
@@ -293,7 +317,7 @@ function meshesOf(
     a,
     b,
     source: 'tree',
-    kind: meshKindOf(scene.gears[a] as Gear),
+    kind: meshKindOf(scene.gears[a] as Gear, scene.gears[b] as Gear),
   }));
   const tree = new Set(treePairs.map(([a, b]) => pairKey(a, b)));
   const placed: Array<{ gear: Gear; layout: GearLayout; reach: number }> = [];
@@ -316,15 +340,15 @@ function meshesOf(
       if (!inContact(p.gear, p.layout, q.gear, q.layout)) continue;
       if (tree.has(pairKey(p.gear.id, q.gear.id))) continue;
       const [a, b] = ordered(p.gear.id, q.gear.id);
-      meshes.push({ a, b, source: 'contact', kind: meshKindOf(p.gear) });
+      meshes.push({ a, b, source: 'contact', kind: meshKindOf(p.gear, q.gear) });
     }
   }
   return meshes.sort((m, n) => compare(m.a, n.a) || compare(m.b, n.b));
 }
 
 // かみ合える組（canMesh。同じ大きさで、平歯車同士かねじれの向きが逆のハスバ歯車同士）、軸が同じ、別のシャフト、
-// 軸方向の区間の重なりが COLLISION_EPS より大きく、軸に垂直な方向の中心間の距離がピッチ円半径の和と
-// MESH_DISTANCE_EPS 以内で一致する。安い数値の判定を先に、canMesh を最後にする。
+// 軸方向の区間の重なりが COLLISION_EPS より大きく、軸に垂直な方向の中心間の距離が中心距離（centerDistance。
+// 外歯車同士はピッチ円半径の和、内歯車と平歯車は R − r。S3-02）と MESH_DISTANCE_EPS 以内で一致する。安い数値の判定を先に、canMesh を最後にする。
 // かさ歯車（S2-02）は、どちらもかさ歯車、同じ大きさ・同じ歯数、軸が直交、頂点の距離が MESH_DISTANCE_EPS 以内。
 // ねじれた位置の組（S2-03 のウォームとホイール、S2-04 のねじ歯車）は、かみ合える組、軸が直交、中心を結ぶ線が両方の軸に直交し
 // （軸方向の成分が MESH_DISTANCE_EPS 以内）、その長さがピッチ円半径の和と MESH_DISTANCE_EPS 以内で一致する
@@ -353,7 +377,8 @@ function inContact(a: Gear, la: GearLayout, b: Gear, lb: GearLayout): boolean {
   const faceWidth = GEAR_SIZES[a.size].faceWidth;
   if (faceWidth - Math.abs(axial) <= COLLISION_EPS) return false;
   const radial = Math.sqrt(Math.max(0, dot(d, d) - axial * axial));
-  if (Math.abs(radial - (la.pitchRadius + lb.pitchRadius)) > MESH_DISTANCE_EPS) return false;
+  // 外歯車同士は r_a + r_b、内歯車と外歯車は R − r（S3-02）
+  if (Math.abs(radial - centerDistance(a, b)) > MESH_DISTANCE_EPS) return false;
   return canMesh(a, b);
 }
 
@@ -379,14 +404,39 @@ function collidersOf(
   for (const [id, g] of Object.entries(gears)) {
     const gear = scene.gears[id];
     if (gear === undefined) continue;
-    colliders.push(gearColliderOf(gear, g));
+    colliders.push(...gearCollidersOf(gear, g));
   }
   for (const [id, s] of Object.entries(shafts)) colliders.push(shaftCollider(id, s));
   return colliders;
 }
 
 // 歯車の円柱。かさ歯車（S2-02）は、歯のある円すい台に外接する円柱（大端の中心から頂点の側へ b·cos45°、
-// 半径は大端の歯先）。ウォーム（S2-03）は半径 5m + m、長さ 5πm の円柱、ホイール・ねじ歯車（S2-04）は歯先円の円柱（gearEnvelope）
+// 半径は大端の歯先）。ウォーム（S2-03）は半径 5m + m、長さ 5πm の円柱、ホイール・ねじ歯車（S2-04）は歯先円の円柱（gearEnvelope）。
+// 内歯車（S3-02）は、リングとつなぎの筒の中空の円柱（内側 R − m、外側 R + 3.25m）と、ウェブの円柱（半径 R + 3.25m）の 2 つ
+// （どちらも歯車の ID で、組は 1 つにまとまる）
+function gearCollidersOf(gear: Gear, layout: GearLayout): Collider[] {
+  if (gear.kind !== 'internal') return [gearColliderOf(gear, layout)];
+  const w = axisVector(layout.axis);
+  // 歯車の中心はリングの中心（offset + 歯幅/2）。軸方向の範囲を中心からの相対に直す
+  const ringMid = gear.offset + GEAR_SIZES[gear.size].faceWidth / 2;
+  const part = ([lo, hi]: readonly [number, number]) => ({
+    center: add(layout.center, scale(w, (lo + hi) / 2 - ringMid)),
+    halfWidth: (hi - lo) / 2,
+  });
+  const radius = internalRimRadius(gear.size, gear.teeth);
+  const base = { id: gear.id, shaftId: gear.shaftId, axis: layout.axis };
+  return [
+    {
+      kind: 'hollow',
+      ...base,
+      ...part(internalHollowRange(gear)),
+      innerRadius: internalTipRadius(gear.size, gear.teeth),
+      radius,
+    },
+    { kind: 'cylinder', ...base, ...part(internalWebRange(gear)), radius },
+  ];
+}
+
 function gearColliderOf(gear: Gear, layout: GearLayout): Collider {
   if (gear.kind === 'bevel') {
     const c = bevelCollisionCylinder(layout.center, layout.axis, gear);
@@ -446,7 +496,7 @@ export function resolveAddition(
     if (g !== undefined && inContact(gear, layout, g, other)) meshing.add(id);
   }
 
-  const cylinder = gearColliderOf(gear, layout);
+  const bodies = gearCollidersOf(gear, layout);
   const segment = shaftCollider(gear.shaftId, shaftLayout);
   // 伸びたシャフトの元の線分は、新しい線分に置き換わる（足した歯車とシャフトの組は、載った組なので除かれる）
   const others = collidersOf(scene, base.shafts, base.gears).filter((c) => c.id !== segment.id);
@@ -454,12 +504,14 @@ export function resolveAddition(
   const record = (a: string, b: string) => {
     found.set(pairKey(a, b), a < b ? [a, b] : [b, a]);
   };
-  for (const id of interferingWith(
-    cylinder,
-    others,
-    (c) => c.kind === 'cylinder' && meshing.has(c.id),
-  )) {
-    record(cylinder.id, id);
+  for (const body of bodies) {
+    for (const id of interferingWith(
+      body,
+      others,
+      (c) => c.kind !== 'segment' && meshing.has(c.id),
+    )) {
+      record(body.id, id);
+    }
   }
   for (const id of interferingWith(segment, others, () => false)) record(segment.id, id);
   const interferences = [...found.values()].sort(
@@ -532,6 +584,13 @@ export function spanOf(gears: readonly Gear[]): [number, number] {
     const faceWidth = sectionWidth(gear);
     let gearLo = gear.offset - SHAFT_END_MARGIN;
     let gearHi = gear.offset + faceWidth + SHAFT_END_MARGIN;
+    if (gear.kind === 'internal') {
+      // 内歯車（S3-02）: シャフトはウェブ（ボス）を通り、外側の面から SHAFT_END_MARGIN 伸ばし、内側の面で止める
+      // （中の空洞にシャフトを通さない。内側に置いた歯車と干渉させないため）
+      const [webLo, webHi] = internalWebRange(gear);
+      gearLo = gear.webSide === -1 ? webLo - SHAFT_END_MARGIN : webLo;
+      gearHi = gear.webSide === -1 ? webHi : webHi + SHAFT_END_MARGIN;
+    }
     if (gear.kind === 'bevel') {
       // 大端は区画の頂点と反対側の面、頂点はそこから apex の向きに R
       const bigEnd = gear.offset + (faceWidth / 2) * (1 - gear.apex);

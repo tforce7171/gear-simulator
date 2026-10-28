@@ -37,3 +37,11 @@ export const WORM_DIAMETER_FACTOR = 10;
 export const WORM_LENGTH_PITCHES = 5;
 // ねじ歯車（S2-04）のねじれ角。向きは右（固定）。同じねじれ角・同じ向きの 2 枚が、軸の角度 90°（45° + 45°）でかみ合う
 export const CROSSED_HELIX_ANGLE = Math.PI / 4;
+// 内歯車（S3-02）。歯数は INTERNAL_MIN_TEETH 〜 大きさの最大、かみ合う外歯車との歯数差は INTERNAL_MIN_TOOTH_DIFF 以上。
+// ウェブ（カップの底の円板）はリングの片側の面から INTERNAL_WEB_GAP 離れた位置にあり、軸方向に INTERNAL_WEB_THICKNESS を占める
+// （円板とボス。AXIAL_SNAP の倍数にして、同じ軸に並べたときも 4 mm の格子に乗せる）。
+// INTERNAL_WEB_GAP は SHAFT_END_MARGIN より大きくする（内側の歯車のシャフトの端がウェブに当たらないように）
+export const INTERNAL_MIN_TEETH = 24;
+export const INTERNAL_MIN_TOOTH_DIFF = 12;
+export const INTERNAL_WEB_GAP = 8;
+export const INTERNAL_WEB_THICKNESS = 4;

@@ -1,6 +1,7 @@
 import { AXIAL_SNAP, GEAR_SIZES, MOTOR_RPM_RANGE, WORM_THREADS } from '../constants';
 import { canMesh, meshGeometryOf, placementKindOf } from '../geometry/can-mesh';
-import { isApex, isGearKind, isHand } from './gear-shape';
+import { teethRange } from '../geometry/dimensions';
+import { isApex, isGearKind, isHand, isWebSide } from './gear-shape';
 import { isChildPlacement, type Scene, type ShaftId, type ShaftPlacement } from './types';
 
 // シーンの検証（design.md §4・§9）。不正なら理由の一覧を返す（例外にしない）。
@@ -35,6 +36,7 @@ export type SceneErrorCode =
   | 'meshKindMismatch' // 親と子の種類・形がかみ合わない（S2-01）
   | 'invalidHand' // ハスバ歯車の hand が 'left' でも 'right' でもない（S2-01）
   | 'invalidApex' // かさ歯車の apex が 1 でも -1 でもない（S2-02）
+  | 'invalidWebSide' // 内歯車の webSide が 1 でも -1 でもない（S3-02）
   | 'invalidAxisStep' // bevel・skew の配置の axisStep が 1 でも 2 でもない（S2-02、S2-03）
   | 'invalidSide' // bevel・skew の配置の side が 1 でも -1 でもない（S2-02、S2-03）
   | 'bevelApexMismatch' // bevel の配置の子の apex が −side でない（S2-02）
@@ -192,6 +194,13 @@ export function validateScene(scene: Scene): { ok: true } | { ok: false; errors:
       push('invalidHand', key, `${base}.hand`, `invalid hand "${String(gear.hand)}"`);
     } else if (gear.kind === 'bevel' && !isApex(gear.apex)) {
       push('invalidApex', key, `${base}.apex`, `apex must be 1 or -1: ${String(gear.apex)}`);
+    } else if (gear.kind === 'internal' && !isWebSide(gear.webSide)) {
+      push(
+        'invalidWebSide',
+        key,
+        `${base}.webSide`,
+        `webSide must be 1 or -1: ${String(gear.webSide)}`,
+      );
     }
     if (scene.shafts[gear.shaftId] === undefined) {
       push('missingRef', key, `${base}.shaftId`, `shaft "${gear.shaftId}" not found`);
@@ -211,13 +220,14 @@ export function validateScene(scene: Scene): { ok: true } | { ok: false; errors:
         );
       }
     } else {
-      const { minTeeth, maxTeeth } = GEAR_SIZES[gear.size];
-      if (gear.teeth < minTeeth || gear.teeth > maxTeeth) {
+      // 種類ごとの範囲（内歯車は INTERNAL_MIN_TEETH から。S3-02）。種類が不正なら大きさの範囲
+      const { min, max } = teethRange(isGearKind(gear.kind) ? gear.kind : 'spur', gear.size);
+      if (gear.teeth < min || gear.teeth > max) {
         push(
           'teethOutOfRange',
           key,
           `${base}.teeth`,
-          `teeth ${gear.teeth} out of range [${minTeeth}, ${maxTeeth}] for size ${gear.size}`,
+          `teeth ${gear.teeth} out of range [${min}, ${max}] for ${gear.kind} size ${gear.size}`,
         );
       }
     }

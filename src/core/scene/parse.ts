@@ -180,6 +180,10 @@ export function parseScene(raw: unknown): SceneParseResult {
         // ウォームの teeth が 1（条数）かは validateScene が確かめる（S2-03）
         gears.push([key, { ...common, kind }]);
         break;
+      case 'internal':
+        // webSide が ±1 かは validateScene が確かめる（S3-02）
+        gears.push([key, { ...common, kind, webSide: num(item, 'webSide', base, key) as 1 | -1 }]);
+        break;
       default:
         assertNever(kind);
     }

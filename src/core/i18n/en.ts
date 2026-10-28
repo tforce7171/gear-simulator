@@ -40,6 +40,7 @@ export const en = {
   'gearKind.worm': 'Worm',
   'gearKind.wormWheel': 'Worm wheel',
   'gearKind.crossedHelical': 'Crossed helical gear',
+  'gearKind.internal': 'Internal gear',
   'palette.rootShaft': 'Base shaft',
   'palette.rootShaft.tooltip':
     'Drag onto the floor to place (R to change the direction, Esc to cancel)',

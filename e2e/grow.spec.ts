@@ -23,7 +23,11 @@ const A_SHAFT = 'shaft_a';
 // 斜め上から見下ろす視点
 const OBLIQUE_VIEW = { position: [120, 210, 200] as Vec3, target: [0, 35, 0] as Vec3 };
 
-type Candidate = { index: number; kind: 'perimeter' | 'bevel' | 'skew' | 'coaxial'; center: Vec3 };
+type Candidate = {
+  index: number;
+  kind: 'perimeter' | 'bevel' | 'skew' | 'enclose' | 'coaxial';
+  center: Vec3;
+};
 
 async function open(page: Page, scene: Scene): Promise<void> {
   await page.goto('/');

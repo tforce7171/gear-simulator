@@ -83,7 +83,8 @@ export function meshSnapAngles(
   axis: Axis,
   radius: number,
   childPitchRadius: number,
-  targets: ReadonlyArray<{ center: Vec3; pitchRadius: number }>,
+  // meshDistance はかみ合うときの中心距離（省くと childPitchRadius + pitchRadius。内歯車の組は R − r。S3-02）
+  targets: ReadonlyArray<{ center: Vec3; pitchRadius: number; meshDistance?: number }>,
 ): number[] {
   const { u, v } = axisFrame(axis);
   const angles: number[] = [];
@@ -94,7 +95,7 @@ export function meshSnapAngles(
     const r = Math.hypot(x, y);
     if (r <= ON_AXIS_EPS || radius <= 0) continue;
     const phi = Math.atan2(y, x);
-    const want = childPitchRadius + target.pitchRadius;
+    const want = target.meshDistance ?? childPitchRadius + target.pitchRadius;
     // 余弦定理: want² = radius² + r² − 2·radius·r·cos(α − φ)
     const cos = (radius * radius + r * r - want * want) / (2 * radius * r);
     if (cos > 1 + TANGENT_EPS || cos < -1 - TANGENT_EPS) continue;

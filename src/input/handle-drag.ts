@@ -1,6 +1,6 @@
 import { GRID_SNAP, PERIMETER_CANDIDATE_COUNT } from '../core/constants';
 import { applyCommand, type Command } from '../core/edit/commands';
-import { gearEnvelope } from '../core/geometry/dimensions';
+import { centerDistance, gearEnvelope } from '../core/geometry/dimensions';
 import { newInterferences } from '../core/layout/interference-diff';
 import { meshSnapTargets } from '../core/layout/mesh-snap';
 import { descendantShafts, resolveLayout } from '../core/layout/resolve';
@@ -166,10 +166,17 @@ export function listHandles(scene: Scene, layout: Layout, selection: string | nu
   } else if (p.kind === 'mesh') {
     // bevel のシャフト（S2-02）と skew のシャフト（S2-03）は 4 か所の離散なので、円弧のハンドルを出さない
     const parent = layout.gears[p.parentGearId];
+    const parentGear = scene.gears[p.parentGearId];
     const child = scene.gears[p.childGearId];
     const childLayout = layout.gears[p.childGearId];
-    if (parent !== undefined && child !== undefined && childLayout !== undefined) {
-      const distance = parent.pitchRadius + childLayout.pitchRadius;
+    if (
+      parent !== undefined &&
+      parentGear !== undefined &&
+      child !== undefined &&
+      childLayout !== undefined
+    ) {
+      // 中心距離は組の種類で決まる（内歯車と外歯車は R − r。S3-02）
+      const distance = centerDistance(parentGear, child);
       handles.push(
         framed('arc', shaftId, {
           center: parent.center,
@@ -303,11 +310,14 @@ const arcDrag: HandleDragFactory = (scene, layout, handle, startRay, startInput)
   if (p?.kind !== 'mesh') return null;
   const parent = layout.gears[p.parentGearId];
   const child = layout.gears[p.childGearId];
+  const parentGear = scene.gears[p.parentGearId];
+  const childGear = scene.gears[p.childGearId];
   if (parent === undefined || child === undefined) return null;
+  if (parentGear === undefined || childGear === undefined) return null;
   const snaps = meshSnapAngles(
     parent.center,
     parent.axis,
-    parent.pitchRadius + child.pitchRadius,
+    centerDistance(parentGear, childGear),
     child.pitchRadius,
     meshSnapTargets(scene, layout, shaftId),
   );

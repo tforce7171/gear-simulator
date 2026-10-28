@@ -56,7 +56,9 @@ describe('meshSnapTargets', () => {
   it('arc-loop 相当: B のシャフト → T だけ（親 A は除く）。中心とピッチ円半径も返す', () => {
     const scene = arcLoop();
     const targets = meshSnapTargets(scene, resolveLayout(scene), 'shaft_b');
-    expect(targets).toEqual([{ gearId: 'gear_t', center: [40, 39, 0], pitchRadius: 20 }]);
+    expect(targets).toEqual([
+      { gearId: 'gear_t', center: [40, 39, 0], pitchRadius: 20, meshDistance: 40 },
+    ]);
   });
 
   it('T を小の歯車にしたシーン → []', () => {

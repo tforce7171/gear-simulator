@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { GEAR_SIZES } from '../constants';
 import { spurOutline, type Vec2 } from './involute';
 import {
-  centerDistance,
   meshPhase,
   outsideRadius,
   pitchRadius,
   samePhase,
+  spurCenterDistance,
   toothPitchAngle,
 } from './mesh';
 
@@ -24,10 +24,10 @@ describe('半径と中心距離', () => {
     expect(outsideRadius('L', 16)).toBe(27);
   });
 
-  it('centerDistance', () => {
-    expect(centerDistance('S', 12, 24)).toBe(18);
-    expect(centerDistance('M', 12, 12)).toBe(24);
-    expect(centerDistance('L', 40, 12)).toBe(78);
+  it('spurCenterDistance', () => {
+    expect(spurCenterDistance('S', 12, 24)).toBe(18);
+    expect(spurCenterDistance('M', 12, 12)).toBe(24);
+    expect(spurCenterDistance('L', 40, 12)).toBe(78);
   });
 
   it('toothPitchAngle', () => {
@@ -158,7 +158,7 @@ describe('位相を合わせた 2 枚の歯形が重ならない', () => {
   const zB = 30;
   const outlineA = spurOutline(m, zA);
   const outlineB = spurOutline(m, zB);
-  const distance = centerDistance('S', zA, zB);
+  const distance = spurCenterDistance('S', zA, zB);
 
   function placed(alpha: number, thetaA: number, phaseShiftB = 0): [Vec2[], Vec2[]] {
     const phiB = meshPhase(0, zA, zB, alpha) + phaseShiftB;

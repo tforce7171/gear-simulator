@@ -62,7 +62,14 @@ describe('meshTimbre', () => {
 
   it('すべての MeshKind に係数がある', () => {
     const kinds: readonly MeshKind[] = MESH_KINDS;
-    expect([...kinds].sort()).toEqual(['bevel', 'crossedHelical', 'helical', 'spur', 'worm']);
+    expect([...kinds].sort()).toEqual([
+      'bevel',
+      'crossedHelical',
+      'helical',
+      'internal',
+      'spur',
+      'worm',
+    ]);
     for (const kind of kinds) {
       const t = meshTimbre(kind);
       expect(t.click).toBeGreaterThan(0);
