@@ -7,7 +7,8 @@ import type { Scene } from '../scene/types';
 // 形式の確認 → migrate で最新版まで変換 → core/scene の parseScene（形と意味の検証）の順に通す。
 // 検証の規則は core/scene に置き、ここには重ねて書かない
 
-export const CURRENT_SAVE_VERSION = 1;
+// 2: 段階 2 の歯車（ハスバ・かさ・ウォーム・ホイール・ねじ歯車）と bevel・skew の配置（S2-05）
+export const CURRENT_SAVE_VERSION = 2;
 
 export interface SaveFile {
   readonly format: 'gear-simulator';
@@ -35,8 +36,11 @@ export type ParseResult =
 // バージョン n の生データ → n+1 の生データ
 export type Migration = (raw: Record<string, unknown>) => Record<string, unknown>;
 
-// いまは登録なし。段階 3 で anchors を足すとき（design.md §4）に 1 → 2 を書く
-export const MIGRATIONS: Readonly<Record<number, Migration>> = {};
+// 1 → 2（S2-05）: version 1 のシーンは平歯車と root・mesh・detached だけで、version 2 の形にそのまま含まれるので
+// 中身は変えない（version は migrate が書き換える）。段階 2 の部品は version 2 の parseScene・validateScene が検証する
+const v1ToV2: Migration = (raw) => raw;
+
+export const MIGRATIONS: Readonly<Record<number, Migration>> = { 1: v1ToV2 };
 
 export function toSaveFile(scene: Scene): SaveFile {
   return { format: 'gear-simulator', version: CURRENT_SAVE_VERSION, scene };
