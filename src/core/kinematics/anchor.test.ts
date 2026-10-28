@@ -282,14 +282,14 @@ describe('編集', () => {
   });
 });
 
-describe('読み込み（暫定）と検証', () => {
-  it('anchors のないシーン → anchors: {} を補って読める', () => {
+describe('読み込みと検証', () => {
+  // S3-05: 暫定の補いを取り除いた。anchors の無い古いファイルは version 2 → 3 の移行が {} を足す
+  it('anchors のないシーン → invalidShape（anchors）', () => {
     const { anchors: _anchors, ...raw } = pair;
     const result = parseScene(raw);
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.scene.anchors).toEqual({});
-    expect(result.scene.shafts).toEqual(pair.shafts);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors[0]).toMatchObject({ code: 'invalidShape', path: 'anchors' });
   });
 
   it('anchors のあるシーンは固定具を拾う（型にないフィールドは捨てる）', () => {

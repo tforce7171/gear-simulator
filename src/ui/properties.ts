@@ -6,8 +6,8 @@
 // 1 回の確定を 1 回のコマンド（Undo 1 回）にする。値が変わらない確定ではコマンドを出さない
 import { onLanguageChange, t } from '../app/i18n';
 import type { AppAction, AppState } from '../app/store';
-import { MOTOR_RPM_RANGE } from '../core/constants';
-import type { Command } from '../core/edit/commands';
+import { MOTOR_RPM_RANGE, PLANET_COUNT_RANGE, RACK_TEETH } from '../core/constants';
+import { allowedPlanetCounts, type Command, planetaryTeethChoices } from '../core/edit/commands';
 import { teethRange } from '../core/geometry/dimensions';
 import type { MessageKey, MessageParams } from '../core/i18n';
 import type { Layout } from '../core/layout/types';
@@ -153,10 +153,67 @@ export function createProperties(deps: PropertiesDeps): Properties {
       );
       return section;
     }
-    // 歯数の範囲は種類で決まる（内歯車は INTERNAL_MIN_TEETH から。S3-02）
-    const { min, max } = teethRange(gear.kind, gear.size);
     const setTeeth = (teeth: number): void =>
       command({ type: 'setGearTeeth', gearId: gear.id, teeth });
+    // 遊星歯車機構の中の歯車（S3-05）: 太陽・遊星は条件を満たす歯数だけ選べる。リングは表示だけ
+    const planetary = planetaryTeethChoices(scene, gear.id);
+    if (planetary !== null) {
+      section.append(
+        row(
+          'properties.planetary.role',
+          text(
+            'span',
+            'gs-prop__value',
+            `properties.planetary.role.${planetary.role}`,
+            undefined,
+            'prop-planetary-role',
+          ),
+        ),
+      );
+      if (planetary.role === 'ring') {
+        section.append(
+          row(
+            'properties.teeth',
+            text(
+              'span',
+              'gs-prop__value',
+              'properties.teeth.count',
+              { count: gear.teeth },
+              'prop-ring-teeth',
+            ),
+          ),
+          text('p', 'gs-prop__hint', 'properties.planetary.ringNote', undefined, 'prop-ring-note'),
+        );
+      } else {
+        const select = h('select', 'gs-prop__select', 'prop-teeth-select');
+        select.setAttribute('aria-label', t('properties.teeth'));
+        for (const z of planetary.teeth) {
+          const option = h('option');
+          option.value = String(z);
+          option.textContent = t('properties.teeth.count', { count: z });
+          option.selected = z === gear.teeth;
+          select.append(option);
+        }
+        select.addEventListener('change', () => {
+          const next = Number(select.value);
+          if (Number.isInteger(next) && next !== gear.teeth) setTeeth(next);
+        });
+        section.append(
+          row('properties.teeth', select),
+          text(
+            'p',
+            'gs-prop__hint',
+            'properties.planetary.teethNote',
+            undefined,
+            'prop-planetary-note',
+          ),
+        );
+      }
+      if (gear.kind === 'internal') section.append(...webSideRows(gear));
+      return section;
+    }
+    // 歯数の範囲は種類で決まる（内歯車は INTERNAL_MIN_TEETH から。S3-02）
+    const { min, max } = teethRange(gear.kind, gear.size);
     const dec = button('gs-prop__step', 'prop-teeth-dec', '−', t('properties.teeth.dec'));
     dec.disabled = gear.teeth <= min;
     dec.addEventListener('click', () => setTeeth(Math.max(min, gear.teeth - 1)));
@@ -168,6 +225,7 @@ export function createProperties(deps: PropertiesDeps): Properties {
     stepper.append(dec, input, inc);
     const range = text('span', 'gs-prop__hint', 'properties.teeth.range', { min, max });
     section.append(row('properties.teeth', stepper), range);
+    if (gear.kind === 'internal') section.append(...webSideRows(gear));
     if (gear.kind === 'bevel') {
       // 歯数は木の親子のかさ歯車がまとめて変わる（setGearTeeth。S2-02）。向きの反転は flipBevelApex で、
       // bevel のシャフトの子（apex は −side で決まる）は notAllowed なのでボタンを無効にする
@@ -188,6 +246,49 @@ export function createProperties(deps: PropertiesDeps): Properties {
       section.append(flip);
     }
     return section;
+  }
+
+  // 内歯車のウェブの向き（S3-05）: 今の向きの表示と反転ボタン（setWebSide を −webSide で呼ぶ）
+  function webSideRows(gear: Extract<Gear, { kind: 'internal' }>): HTMLElement[] {
+    const side = text(
+      'span',
+      'gs-prop__value',
+      gear.webSide === 1 ? 'properties.internal.web.positive' : 'properties.internal.web.negative',
+      undefined,
+      'prop-web-side',
+    );
+    side.dataset.webSide = String(gear.webSide);
+    const flip = button(
+      'gs-prop__toggle',
+      'prop-web-flip',
+      t('properties.internal.web.flip'),
+      t('properties.internal.web.flip.tooltip'),
+    );
+    flip.addEventListener('click', () =>
+      command({ type: 'setWebSide', gearId: gear.id, webSide: gear.webSide === 1 ? -1 : 1 }),
+    );
+    return [row('properties.internal.web', side), flip];
+  }
+
+  // 数の段（− 入力 +）。範囲の端ではボタンを無効にする
+  function stepperOf(
+    prefix: string,
+    value: number,
+    min: number,
+    max: number,
+    labels: { readonly field: MessageKey; readonly dec: MessageKey; readonly inc: MessageKey },
+    commit: (next: number) => void,
+  ): HTMLElement {
+    const dec = button('gs-prop__step', `${prefix}-dec`, '−', t(labels.dec));
+    dec.disabled = value <= min;
+    dec.addEventListener('click', () => commit(Math.max(min, value - 1)));
+    const inc = button('gs-prop__step', `${prefix}-inc`, '+', t(labels.inc));
+    inc.disabled = value >= max;
+    inc.addEventListener('click', () => commit(Math.min(max, value + 1)));
+    const input = numberField(prefix, value, min, max, labels.field, commit);
+    const stepper = h('div', 'gs-prop__stepper');
+    stepper.append(dec, input, inc);
+    return stepper;
   }
 
   function shaftSection(scene: Scene, shaftId: ShaftId): HTMLElement {
@@ -371,7 +472,8 @@ export function createProperties(deps: PropertiesDeps): Properties {
     return section;
   }
 
-  // キャリア（S3-03）: 遊星の数の表示と、固定（キャリアのシャフトを固定する）
+  // キャリア（S3-03）: 遊星の数（S3-05 で選べるようにした。条件を満たさない数のボタンは無効）と、
+  // 固定（キャリアのシャフトを固定する。anchorSection）
   function carrierSection(scene: Scene, carrierId: string): HTMLElement {
     const section = h('section', 'gs-prop__section');
     section.append(text('h3', 'gs-prop__heading', 'properties.carrier', undefined, 'prop-heading'));
@@ -382,28 +484,58 @@ export function createProperties(deps: PropertiesDeps): Properties {
         text('span', 'gs-prop__value', 'properties.carrier.planetCount', { count }, 'prop-planets'),
       ),
     );
+    const allowed = new Set(allowedPlanetCounts(scene, carrierId));
+    const group = h('div', 'gs-prop__sizes', 'prop-planet-count');
+    group.setAttribute('role', 'radiogroup');
+    group.setAttribute('aria-label', t('properties.carrier.planets'));
+    for (let n = PLANET_COUNT_RANGE.min; n <= PLANET_COUNT_RANGE.max; n++) {
+      const ok = allowed.has(n);
+      const b = button(
+        'gs-prop__size',
+        `prop-planet-count-${n}`,
+        String(n),
+        t(
+          ok ? 'properties.carrier.planetCount.choose' : 'properties.carrier.planetCount.disabled',
+          { count: n },
+        ),
+      );
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-checked', String(n === count));
+      b.classList.toggle('is-selected', n === count);
+      b.disabled = !ok;
+      b.addEventListener('click', () => {
+        if (n !== count) command({ type: 'setPlanetCount', carrierId, count: n });
+      });
+      group.append(b);
+    }
+    section.append(group, text('p', 'gs-prop__hint', 'properties.carrier.note'));
     return section;
   }
 
-  // ラック（S3-04）: 大きさと歯数の表示（歯数の編集 UI は S3-05）
+  // ラック（S3-04）: 大きさと歯数（S3-05 で編集できるようにした。RACK_TEETH の範囲。setRackTeeth）
   function rackSection(rack: Rack): HTMLElement {
     const section = h('section', 'gs-prop__section');
     section.append(text('h3', 'gs-prop__heading', 'properties.rack', undefined, 'prop-heading'));
+    const { min, max } = RACK_TEETH;
+    const stepper = stepperOf(
+      'prop-rack-teeth',
+      rack.teeth,
+      min,
+      max,
+      {
+        field: 'properties.teeth',
+        dec: 'properties.rack.teeth.dec',
+        inc: 'properties.rack.teeth.inc',
+      },
+      (teeth) => command({ type: 'setRackTeeth', rackId: rack.id, teeth }),
+    );
     section.append(
       row(
         'properties.size',
         text('span', 'gs-prop__value', `properties.size.${rack.size}`, undefined, 'prop-size'),
       ),
-      row(
-        'properties.teeth',
-        text(
-          'span',
-          'gs-prop__value',
-          'properties.rack.teethCount',
-          { count: rack.teeth },
-          'prop-rack-teeth',
-        ),
-      ),
+      row('properties.teeth', stepper),
+      text('span', 'gs-prop__hint', 'properties.teeth.range', { min, max }),
     );
     return section;
   }

@@ -110,6 +110,7 @@ test('互いに逆に回そうとする 2 つのモーターでロックする�
   expect((await getAudio(page)).lockSounds).toEqual({
     impacts: 1,
     rattling: ['stalemate:shaft_1,shaft_2'],
+    rackHits: 0,
   });
 
   await page.evaluate(() =>

@@ -1,10 +1,11 @@
 import { AXIAL_SNAP, GEAR_SIZES, MOTOR_RPM_RANGE, RACK_TEETH, WORM_THREADS } from '../constants';
 import { canMesh, meshGeometryOf, placementKindOf } from '../geometry/can-mesh';
 import { teethRange } from '../geometry/dimensions';
+import { planetaryConditions } from '../geometry/planetary';
 import { rackTeethInRange } from '../geometry/rack';
 import { isApex, isGearKind, isHand, isWebSide } from './gear-shape';
 import { lineRootOf, placementParentShafts } from './scene';
-import type { Scene, ShaftId } from './types';
+import type { Scene, Shaft, ShaftId } from './types';
 
 // シーンの検証（design.md §4・§9）。不正なら理由の一覧を返す（例外にしない）。
 // 保存形式の読み込み（S1-28）もここを通すので、型の上ではありえない値（文字列の軸など）も調べる。
@@ -48,7 +49,9 @@ export type SceneErrorCode =
   | 'rackAxesNotDistinct' // 浮いたラックの direction と normal が同じ軸（S3-04）
   | 'multipleAnchors' // 1 つの対象に固定具が 2 つ以上（S3-01）
   | 'planetLineMismatch' // 遊星の親の歯車のシャフトが、キャリアのシャフトと同じ線上にない（S3-03）
-  | 'nestedOrbit'; // キャリア・同じ線上のシャフトの親が遊星のシャフト（2 段以上の遊星は範囲外。S3-03）
+  | 'nestedOrbit' // キャリア・同じ線上のシャフトの親が遊星のシャフト（2 段以上の遊星は範囲外。S3-03）
+  | 'planetShaftAttachment' // 遊星のシャフトにモーター・固定具がある（S3-05）
+  | 'planetaryMismatch'; // 遊星歯車機構の歯数が配置の条件（同心・等配・隣の遊星）を満たさない（S3-05）
 
 const AXES: readonly unknown[] = ['x', 'y', 'z'];
 
@@ -264,6 +267,8 @@ export function validateScene(scene: Scene): { ok: true } | { ok: false; errors:
         } else if (
           parent !== undefined &&
           scene.shafts[carrier.shaftId] !== undefined &&
+          // 線が循環しているとき（線の根が null）は meshCycle で報告する
+          lineRootOf(scene, carrier.shaftId) !== null &&
           lineRootOf(scene, parent.shaftId) !== lineRootOf(scene, carrier.shaftId)
         ) {
           push(
@@ -480,6 +485,15 @@ export function validateScene(scene: Scene): { ok: true } | { ok: false; errors:
     if (typeof motor.on !== 'boolean') {
       push('invalidMotorOn', key, `${base}.on`, 'on must be a boolean');
     }
+    if (scene.shafts[motor.shaftId]?.placement.kind === 'planet') {
+      // 遊星のシャフトは公転するので、モーターを付けない（S3-03 のコマンドが拒否する。読み込みは S3-05 から弾く）
+      push(
+        'planetShaftAttachment',
+        key,
+        `${base}.shaftId`,
+        `motor "${key}" is on planet shaft "${motor.shaftId}"`,
+      );
+    }
     const list = motorsPerShaft.get(motor.shaftId) ?? [];
     list.push(key);
     motorsPerShaft.set(motor.shaftId, list);
@@ -516,6 +530,15 @@ export function validateScene(scene: Scene): { ok: true } | { ok: false; errors:
     if (!exists) {
       push('missingRef', key, `${base}.id`, `${target.kind} "${target.id}" not found`);
       continue;
+    }
+    if (target.kind === 'shaft' && scene.shafts[target.id]?.placement.kind === 'planet') {
+      // 遊星のシャフトは固定しない（S3-05。モーターと同じ）
+      push(
+        'planetShaftAttachment',
+        key,
+        `${base}.id`,
+        `anchor "${key}" targets planet shaft "${target.id}"`,
+      );
     }
     const path = `${target.kind === 'shaft' ? 'shafts' : 'racks'}.${target.id}`;
     const entry = anchorsPerTarget.get(path) ?? { path, ids: [] };
@@ -564,5 +587,64 @@ export function validateScene(scene: Scene): { ok: true } | { ok: false; errors:
     );
   }
 
+  // 遊星歯車機構の条件（S3-05）。ほかの誤りがあると部品をたどれないことがあるので、ここまでが通ったときだけ見る
+  if (errors.length === 0) {
+    for (const [key, carrier] of Object.entries(scene.carriers)) {
+      const problem = planetaryProblem(scene, carrier.id, carrier.shaftId);
+      if (problem !== null) push('planetaryMismatch', key, `carriers.${key}`, problem);
+    }
+  }
+
   return errors.length === 0 ? { ok: true } : { ok: false, errors };
+}
+
+// キャリアの遊星歯車機構が配置の条件を満たさなければ、その理由（満たせば null）。
+// 遊星はすべて同じ親（太陽かリング）・同じ歯数。太陽 z_s・リング z_r は、キャリアと同じ線上の、遊星と同じ大きさで
+// 遊星と同じ面（親の歯車の offset から歯幅未満）にある外歯車・内歯車（遊星の親が内歯車なら、それがリング）。
+// 太陽が無ければ z_s = z_r − 2·z_p とみなし、リングが無ければ同心・等配は問わない（planetaryConditions）
+function planetaryProblem(scene: Scene, carrierId: string, carrierShaftId: ShaftId): string | null {
+  const planets: Shaft[] = Object.values(scene.shafts).filter(
+    (s) => s.placement.kind === 'planet' && s.placement.carrierId === carrierId,
+  );
+  const first = planets[0]?.placement;
+  if (first?.kind !== 'planet') return null;
+  const parent = scene.gears[first.parentGearId];
+  const child = scene.gears[first.childGearId];
+  if (parent === undefined || child === undefined) return null;
+  for (const shaft of planets) {
+    const p = shaft.placement;
+    if (p.kind !== 'planet') continue;
+    if (p.parentGearId !== parent.id) return `planets of "${carrierId}" have different parents`;
+    if (scene.gears[p.childGearId]?.teeth !== child.teeth) {
+      return `planets of "${carrierId}" have different teeth`;
+    }
+  }
+  const line = lineRootOf(scene, carrierShaftId);
+  const faceWidth = GEAR_SIZES[child.size].faceWidth;
+  const onPlane = Object.values(scene.gears).filter(
+    (g) =>
+      g.id !== parent.id &&
+      g.size === child.size &&
+      lineRootOf(scene, g.shaftId) === line &&
+      Math.abs(g.offset - parent.offset) < faceWidth,
+  );
+  const zp = child.teeth;
+  let zs: number;
+  let zr: number | null;
+  if (parent.kind === 'internal') {
+    zr = parent.teeth;
+    zs = onPlane.find((g) => g.kind !== 'internal')?.teeth ?? zr - 2 * zp;
+  } else {
+    zs = parent.teeth;
+    zr = onPlane.find((g) => g.kind === 'internal')?.teeth ?? null;
+  }
+  const n = planets.length;
+  const c = planetaryConditions(zs, zp, zr, n);
+  if (c.concentric && c.equalSpacing && c.clearance) return null;
+  const failed = [
+    c.concentric ? null : 'concentric',
+    c.equalSpacing ? null : 'equal spacing',
+    c.clearance ? null : 'clearance',
+  ].filter((x) => x !== null);
+  return `planetary of "${carrierId}" (sun ${zs}, planet ${zp}, ring ${String(zr)}, ${n} planets) fails ${failed.join(', ')}`;
 }

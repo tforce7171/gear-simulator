@@ -302,7 +302,9 @@ describe('レイアウト（基準配置と公転）', () => {
     gears.gear_s = { ...(gears.gear_s as Gear), teeth: 20 };
     gears.gear_r = { ...(gears.gear_r as Gear), teeth: 44 };
     const scene: Scene = { ...withoutAnchors(ringFixed), gears };
-    expect(validateScene(scene)).toEqual({ ok: true });
+    // version 3 の検証（S3-05）は等配の条件を満たさない機構を弾く（レイアウトは検証を通さなくても求められる）
+    const validated = validateScene(scene);
+    expect(validated.ok ? [] : validated.errors.map((e) => e.code)).toEqual(['planetaryMismatch']);
     const layout = resolveLayout(scene);
     const ringMeshes = layout.meshes.filter((m) => m.a === 'gear_r' || m.b === 'gear_r');
     expect(ringMeshes).toHaveLength(3);

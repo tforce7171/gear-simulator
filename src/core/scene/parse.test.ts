@@ -55,15 +55,29 @@ describe('parseScene', () => {
     expect(firstPath(null)).toBe('');
   });
 
+  // S3-05: version 3 では anchors・carriers・racks も必須（古い版は migrate が {} を足す。暫定の補いは取り除いた）
+  it('anchors・carriers・racks が無い・通常のオブジェクトでない → invalidShape', () => {
+    const base = { shafts: {}, gears: {}, motors: {}, anchors: {}, carriers: {}, racks: {} };
+    for (const collection of ['anchors', 'carriers', 'racks'] as const) {
+      const { [collection]: _omit, ...missing } = base;
+      expect(firstPath(missing)).toBe(collection);
+      expect(firstPath({ ...base, [collection]: [] })).toBe(collection);
+    }
+    expect(parseScene(base).ok).toBe(true);
+  });
+
   it('ID の接頭辞が種類に合わない', () => {
-    const raw = { shafts: { gear_1: { id: 'gear_1' } }, gears: {}, motors: {} };
+    const rest = { anchors: {}, carriers: {}, racks: {} };
+    const raw = { shafts: { gear_1: { id: 'gear_1' } }, gears: {}, motors: {}, ...rest };
     expect(firstPath(raw)).toBe('shafts.gear_1');
-    const raw2 = { shafts: {}, gears: {}, motors: { motor_1: { id: 'gear_1' } } };
+    const raw2 = { shafts: {}, gears: {}, motors: { motor_1: { id: 'gear_1' } }, ...rest };
     expect(firstPath(raw2)).toBe('motors.motor_1.id');
   });
 
   it('__proto__ のキーは接頭辞の確認で弾く', () => {
-    const raw = JSON.parse('{"shafts":{"__proto__":{"id":"shaft_1"}},"gears":{},"motors":{}}');
+    const raw = JSON.parse(
+      '{"shafts":{"__proto__":{"id":"shaft_1"}},"gears":{},"motors":{},"anchors":{},"carriers":{},"racks":{}}',
+    );
     expect(firstPath(raw)).toBe('shafts.__proto__');
   });
 

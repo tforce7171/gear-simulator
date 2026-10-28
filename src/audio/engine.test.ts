@@ -84,7 +84,7 @@ describe('createAudioEngine（開始前）', () => {
       ],
       background: null,
       motors: [],
-      lockSounds: { impacts: 0, rattling: [] },
+      lockSounds: { impacts: 0, rattling: [], rackHits: 0 },
     });
   });
 
@@ -121,9 +121,10 @@ describe('createAudioEngine（開始前）', () => {
     expect(engine.state().lockSounds).toEqual({
       impacts: 1,
       rattling: ['stalemate:s1,s2'],
+      rackHits: 0,
     });
     engine.update(frame([]));
-    expect(engine.state().lockSounds).toEqual({ impacts: 1, rattling: [] });
+    expect(engine.state().lockSounds).toEqual({ impacts: 1, rattling: [], rackHits: 0 });
   });
 
   it('衝撃音は 1 秒に 4 回まで', () => {
@@ -168,5 +169,30 @@ describe('state の voices の種類（S2-05）', () => {
       ['w', 'worm', 0.3],
       ['h', 'helical', 0],
     ]);
+  });
+});
+
+describe('ラックが端に当たった音（S3-05）', () => {
+  const RACK_END: LockInfo = {
+    reason: 'rackEnd',
+    shaftIds: ['shaft_p'],
+    gearIds: ['gear_p'],
+    rackIds: ['rack_r'],
+  };
+
+  it('端のロックに入った瞬間に当たる音を 1 回数え（ロックの衝撃音には数えない）、続く間はガタガタ', () => {
+    const engine = createAudioEngine();
+    const locks = [{ info: RACK_END, position: [0, 40, 4] as Vec3 }];
+    engine.update(frame([], { locks }));
+    engine.update(frame([], { locks: [{ info: { ...RACK_END }, position: [0, 40, 4] }] }));
+    expect(engine.state().lockSounds).toEqual({
+      impacts: 0,
+      rattling: ['rackEnd:shaft_p'],
+      rackHits: 1,
+    });
+    // 解けてもう一度当たると、もう 1 回
+    engine.update(frame([]));
+    engine.update(frame([], { locks }));
+    expect(engine.state().lockSounds.rackHits).toBe(2);
   });
 });

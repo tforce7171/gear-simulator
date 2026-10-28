@@ -7,6 +7,11 @@ import {
   GEAR_MATERIAL_LOOKS,
   type GearMaterialId,
   gearLook,
+  type MaterialId,
+  PART_KIND_MATERIALS,
+  PART_KINDS,
+  type PartKind,
+  partLook,
   usesWoodGrain,
 } from './themes';
 
@@ -60,5 +65,42 @@ describe('歯車の種類ごとの材質の表', () => {
     }
     expect(usesWoodGrain('wood')).toBe(true);
     expect(usesWoodGrain('brass')).toBe(false);
+  });
+});
+
+// S3-05: 歯車以外の部品（キャリア・ラック・固定具）の材質の表
+describe('部品の種類ごとの材質の表（S3-05）', () => {
+  it('型: すべての部品の種類に、両テーマの材質がある（Record<PartKind, Record<ThemeId, …>>）', () => {
+    const table: Readonly<Record<PartKind, Readonly<Record<ThemeId, MaterialId>>>> =
+      PART_KIND_MATERIALS;
+    expect(table).toBe(PART_KIND_MATERIALS);
+  });
+
+  it('実行時: すべての部品の種類（歯車と、歯車以外）に、両テーマの材質と見た目がある', () => {
+    expect(Object.keys(PART_KIND_MATERIALS).sort()).toEqual([...PART_KINDS].sort());
+    for (const kind of PART_KINDS) {
+      for (const theme of THEME_IDS) {
+        const id = PART_KIND_MATERIALS[kind][theme];
+        expect(GEAR_MATERIAL_LOOKS[id], `${kind}/${theme}`).toBeDefined();
+        expect(partLook(theme, kind)).toBe(GEAR_MATERIAL_LOOKS[id]);
+      }
+    }
+    for (const kind of GEAR_KIND_LIST) {
+      for (const theme of THEME_IDS) expect(gearLook(theme, kind)).toBeDefined();
+    }
+  });
+
+  it('資料の表: 内歯車・ラックは真鍮／明るい木、キャリアは鋼／濃い木、固定具は黒い鉄／濃い木', () => {
+    expect(GEAR_KIND_MATERIALS.internal).toEqual({ brass: 'brass', wood: 'lightWood' });
+    expect(PART_KIND_MATERIALS.rack).toEqual({ brass: 'brass', wood: 'lightWood' });
+    expect(PART_KIND_MATERIALS.carrier).toEqual({ brass: 'steel', wood: 'darkWood' });
+    expect(PART_KIND_MATERIALS.anchor).toEqual({ brass: 'blackIron', wood: 'darkWood' });
+  });
+
+  it('黒い鉄は暗い金属', () => {
+    const iron = GEAR_MATERIAL_LOOKS.blackIron;
+    expect(iron.color).toBeLessThan(0x404040);
+    expect(iron.metalness).toBeGreaterThan(0.5);
+    expect(iron.woodGrain).toBeUndefined();
   });
 });

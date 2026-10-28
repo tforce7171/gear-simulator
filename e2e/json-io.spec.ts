@@ -50,7 +50,7 @@ test('エクスポートしたファイルをインポートすると同じシ�
   expect(text.endsWith('\n')).toBe(true);
   const file = JSON.parse(text);
   expect(file.format).toBe('gear-simulator');
-  expect(file.version).toBe(2); // S2-05 から最新は 2
+  expect(file.version).toBe(3); // S3-05 から最新は 3
   expect(file.scene).toEqual(sceneA);
 
   await loadScene(page, EMPTY);

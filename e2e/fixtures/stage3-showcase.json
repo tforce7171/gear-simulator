@@ -1,0 +1,189 @@
+{
+  "shafts": {
+    "shaft_s": {
+      "id": "shaft_s",
+      "placement": {
+        "kind": "root",
+        "origin": [0, 60, 0],
+        "axis": "y"
+      }
+    },
+    "shaft_k": {
+      "id": "shaft_k",
+      "placement": {
+        "kind": "concentric",
+        "parentShaftId": "shaft_s"
+      }
+    },
+    "shaft_p0": {
+      "id": "shaft_p0",
+      "placement": {
+        "kind": "planet",
+        "carrierId": "carrier_k",
+        "parentGearId": "gear_s",
+        "childGearId": "gear_p0",
+        "angle": 0
+      }
+    },
+    "shaft_p1": {
+      "id": "shaft_p1",
+      "placement": {
+        "kind": "planet",
+        "carrierId": "carrier_k",
+        "parentGearId": "gear_s",
+        "childGearId": "gear_p1",
+        "angle": 2.0943951023931953
+      }
+    },
+    "shaft_p2": {
+      "id": "shaft_p2",
+      "placement": {
+        "kind": "planet",
+        "carrierId": "carrier_k",
+        "parentGearId": "gear_s",
+        "childGearId": "gear_p2",
+        "angle": 4.1887902047863905
+      }
+    },
+    "shaft_r": {
+      "id": "shaft_r",
+      "placement": {
+        "kind": "concentric",
+        "parentShaftId": "shaft_s"
+      }
+    },
+    "shaft_d": {
+      "id": "shaft_d",
+      "placement": {
+        "kind": "root",
+        "origin": [300, 60, 0],
+        "axis": "z"
+      }
+    },
+    "shaft_i": {
+      "id": "shaft_i",
+      "placement": {
+        "kind": "mesh",
+        "parentGearId": "gear_d",
+        "childGearId": "gear_i",
+        "angle": 1.5707963267948966
+      }
+    }
+  },
+  "gears": {
+    "gear_s": {
+      "id": "gear_s",
+      "kind": "spur",
+      "shaftId": "shaft_s",
+      "size": "M",
+      "teeth": 24,
+      "offset": 0
+    },
+    "gear_p0": {
+      "id": "gear_p0",
+      "kind": "spur",
+      "shaftId": "shaft_p0",
+      "size": "M",
+      "teeth": 12,
+      "offset": 0
+    },
+    "gear_p1": {
+      "id": "gear_p1",
+      "kind": "spur",
+      "shaftId": "shaft_p1",
+      "size": "M",
+      "teeth": 12,
+      "offset": 0
+    },
+    "gear_p2": {
+      "id": "gear_p2",
+      "kind": "spur",
+      "shaftId": "shaft_p2",
+      "size": "M",
+      "teeth": 12,
+      "offset": 0
+    },
+    "gear_r": {
+      "id": "gear_r",
+      "kind": "internal",
+      "shaftId": "shaft_r",
+      "size": "M",
+      "teeth": 48,
+      "offset": 0,
+      "webSide": -1
+    },
+    "gear_d": {
+      "id": "gear_d",
+      "kind": "spur",
+      "shaftId": "shaft_d",
+      "size": "M",
+      "teeth": 20,
+      "offset": 0
+    },
+    "gear_q": {
+      "id": "gear_q",
+      "kind": "spur",
+      "shaftId": "shaft_d",
+      "size": "M",
+      "teeth": 20,
+      "offset": 16
+    },
+    "gear_i": {
+      "id": "gear_i",
+      "kind": "internal",
+      "webSide": -1,
+      "shaftId": "shaft_i",
+      "size": "M",
+      "teeth": 40,
+      "offset": 0
+    }
+  },
+  "motors": {
+    "motor_s": {
+      "id": "motor_s",
+      "shaftId": "shaft_s",
+      "size": "M",
+      "rpm": 60,
+      "direction": 1,
+      "on": true
+    },
+    "motor_d": {
+      "id": "motor_d",
+      "shaftId": "shaft_d",
+      "size": "M",
+      "rpm": 3,
+      "direction": 1,
+      "on": true
+    }
+  },
+  "anchors": {
+    "anchor_r": {
+      "id": "anchor_r",
+      "target": {
+        "kind": "shaft",
+        "id": "shaft_r"
+      }
+    }
+  },
+  "carriers": {
+    "carrier_k": {
+      "id": "carrier_k",
+      "shaftId": "shaft_k",
+      "offset": 12,
+      "size": "M"
+    }
+  },
+  "racks": {
+    "rack_r": {
+      "id": "rack_r",
+      "size": "M",
+      "teeth": 40,
+      "placement": {
+        "kind": "pinion",
+        "gearId": "gear_q",
+        "axisStep": 1,
+        "normalSign": 1
+      }
+    }
+  }
+}

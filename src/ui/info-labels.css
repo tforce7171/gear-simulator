@@ -46,3 +46,23 @@
 .gs-info-label__worm[hidden] {
   display: none;
 }
+
+/* 2 行目（ギア比、ラックは向きの見出しと矢印。S3-05） */
+.gs-info-label__sub {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+/* ラックの動く向きの矢印（S3-05）。画面に投影した向きに回す */
+.gs-info-label__arrow {
+  display: inline-block;
+  color: #ffd27a;
+  font-weight: 700;
+  transform-origin: 50% 50%;
+}
+
+.gs-info-label__arrow[hidden] {
+  display: none;
+}

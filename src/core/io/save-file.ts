@@ -8,7 +8,9 @@ import type { Scene } from '../scene/types';
 // 検証の規則は core/scene に置き、ここには重ねて書かない
 
 // 2: 段階 2 の歯車（ハスバ・かさ・ウォーム・ホイール・ねじ歯車）と bevel・skew の配置（S2-05）
-export const CURRENT_SAVE_VERSION = 2;
+// 3: 段階 3 の部品（固定具 anchors・キャリア carriers・ラック racks のコレクションと、内歯車・concentric・planet・rack の
+//    配置）。3 つのコレクションは必須（S3-05）
+export const CURRENT_SAVE_VERSION = 3;
 
 export interface SaveFile {
   readonly format: 'gear-simulator';
@@ -40,7 +42,24 @@ export type Migration = (raw: Record<string, unknown>) => Record<string, unknown
 // 中身は変えない（version は migrate が書き換える）。段階 2 の部品は version 2 の parseScene・validateScene が検証する
 const v1ToV2: Migration = (raw) => raw;
 
-export const MIGRATIONS: Readonly<Record<number, Migration>> = { 1: v1ToV2 };
+// 2 → 3（S3-05）: anchors・carriers・racks のコレクションを {} で足す。S3-01〜S3-04 の間に version 2 のまま保存された
+// ファイルは、すでに持っていればそのまま残す（そのときの parseScene は無いものを {} で補って読んでいた）。
+// 中身の検証は version 3 の parseScene・validateScene が行う。scene がオブジェクトでなければそのまま渡して、そこで弾く
+const v2ToV3: Migration = (raw) => {
+  const scene = raw.scene;
+  if (!isPlainObject(scene)) return raw;
+  return {
+    ...raw,
+    scene: {
+      ...scene,
+      anchors: scene.anchors ?? {},
+      carriers: scene.carriers ?? {},
+      racks: scene.racks ?? {},
+    },
+  };
+};
+
+export const MIGRATIONS: Readonly<Record<number, Migration>> = { 1: v1ToV2, 2: v2ToV3 };
 
 export function toSaveFile(scene: Scene): SaveFile {
   return { format: 'gear-simulator', version: CURRENT_SAVE_VERSION, scene };
