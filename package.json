@@ -17,7 +17,8 @@
     "test": "vitest run",
     "e2e": "playwright test",
     "verify": "biome check . && tsc --noEmit && vitest run && playwright test",
-    "e2e:install": "playwright install chromium"
+    "e2e:install": "playwright install chromium",
+    "perf": "tsx scripts/perf.ts"
   },
   "dependencies": {
     "camera-controls": "^3.1.2",
@@ -30,6 +31,7 @@
     "@types/pngjs": "^6.0.5",
     "@types/three": "^0.186.0",
     "pngjs": "^7.0.0",
+    "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
     "vitest": "^5.0.5"
