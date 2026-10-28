@@ -1,9 +1,9 @@
 import type { Layout } from '../core/layout/types';
 import { axisVector } from '../core/math/axis';
 import { add, dot, scale, sub, type Vec3 } from '../core/math/vec3';
-import type { Axis, Scene, ShaftId } from '../core/scene/types';
+import type { Axis, RackId, Scene, ShaftId } from '../core/scene/types';
 import { type DragInput, pointerAngleAroundAxis, type Ray } from './handle-drag';
-import { unwrapDelta } from './handle-math';
+import { closestParamOnLine, unwrapDelta } from './handle-math';
 import type { PickKind } from './pick-priority';
 
 // 手で回す（S1-21）: ポインターから、つかんだシャフトの目標の角度を求める。純粋関数のみで、three と DOM に
@@ -11,11 +11,13 @@ import type { PickKind } from './pick-priority';
 // 手の角度は、レイと「つかんだ所の中心を通り、軸に垂直な面」との交点の軸まわりの角度（真横から見ているときは
 // 画面上の角度で代用。円弧のハンドルと同じ pointerAngleAroundAxis）
 
-// つかんだシャフトと、手の角度を測る中心・軸
+// つかんだシャフトと、手の角度を測る中心・軸。ラック（S3-04）をつかんだときは shaftId にラックの ID、axis に動く向きを入れ、
+// linear を真にする（目標は角度でなく変位 s。手の位置を、つかんだ点を通る動く向きの直線に下ろした量だけ動かす）
 export interface GrabTarget {
-  readonly shaftId: ShaftId;
+  readonly shaftId: ShaftId | RackId;
   readonly center: Vec3;
   readonly axis: Axis;
+  readonly linear?: boolean;
 }
 
 // ポインターの下の部品の本体（ピッキングの結果）から、つかむシャフトと中心を求める。
@@ -27,6 +29,12 @@ export function grabTarget(
   layout: Layout,
   body: { readonly kind: PickKind; readonly id: string; readonly point: Vec3 },
 ): GrabTarget | null {
+  if (body.kind === 'rack') {
+    // ラック（S3-04）: 動く向きに沿ってドラッグする
+    const placed = layout.racks[body.id];
+    if (scene.racks[body.id] === undefined || placed === undefined) return null;
+    return { shaftId: body.id, center: body.point, axis: placed.direction, linear: true };
+  }
   if (body.kind === 'gear') {
     const gear = scene.gears[body.id];
     const placed = layout.gears[body.id];
@@ -67,7 +75,7 @@ export interface HandRotateStart extends GrabTarget {
 }
 
 export interface HandRotateSession {
-  readonly shaftId: ShaftId;
+  readonly shaftId: ShaftId | RackId;
   // ポインターが動いた: 目標の角度を求め直して返す
   update(ray: Ray, input: DragInput): number;
   // 今の目標の角度
@@ -76,6 +84,7 @@ export interface HandRotateSession {
 
 export function startHandRotate(start: HandRotateStart): HandRotateSession {
   const { shaftId, center, axis, startAngle } = start;
+  if (start.linear === true) return startHandSlide(start);
   let prev = pointerAngleAroundAxis(start.startRay, start.startInput, center, axis);
   let total = 0;
   return {
@@ -90,5 +99,27 @@ export function startHandRotate(start: HandRotateStart): HandRotateSession {
       return startAngle + total;
     },
     target: () => startAngle + total,
+  };
+}
+
+// ラックを手で動かす（S3-04）: 目標の変位 = 押したときの変位 + 手の位置の、動く向きの直線に沿った移動量
+// （レイと直線の最も近い点。直線とレイが平行に近く求められなければ、前の値のまま）
+function startHandSlide(start: HandRotateStart): HandRotateSession {
+  const { shaftId, center, axis, startAngle } = start;
+  const dir = axisVector(axis);
+  const paramOf = (ray: Ray): number | null =>
+    closestParamOnLine(ray.origin, ray.direction, center, dir);
+  let base = paramOf(start.startRay);
+  let value = startAngle;
+  return {
+    shaftId,
+    update(ray) {
+      const now = paramOf(ray);
+      if (now === null) return value;
+      if (base === null) base = now - (value - startAngle);
+      value = startAngle + (now - base);
+      return value;
+    },
+    target: () => value,
   };
 }

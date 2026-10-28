@@ -87,11 +87,12 @@ test('太陽だけのシーンで太陽を選び、遊星歯車機構の候補�
 });
 
 // 遊星歯車機構の候補の上で、pick がその候補を返す点を探してクリックする。リング（中・48 歯）の輪は外周の候補と同じ面に
-// あって重なるので、輪の下（ウェブの側）へ伸びる筒の外側の壁（半径 54.5、輪の面の 4〜12 mm 下）を 16 方向に試す
+// あって重なるので、輪の下（ウェブの側）へ伸びる筒の外側の壁（半径 54.5、輪の面の 4〜12 mm 下）を 16 方向に試す。
+// S3-04 から太陽の接線の向きにラックの候補（4 本）も出て壁の一部を隠すので、方向を 32 に細かくする
 async function clickPlanetaryCandidate(page: Page, candidate: Candidate): Promise<void> {
   const [cx, cy, cz] = candidate.center;
-  for (let k = 0; k < 16; k++) {
-    const a = (k * Math.PI) / 8;
+  for (let k = 0; k < 32; k++) {
+    const a = (k * Math.PI) / 16;
     const p = await project(page, [cx + 54.4 * Math.sin(a), cy - 9, cz + 54.4 * Math.cos(a)]);
     const hit = await page.evaluate(({ x, y }) => window.__gearSim?.pick(x, y), p);
     if (hit?.kind !== 'candidate' || hit.id !== String(candidate.index)) continue;

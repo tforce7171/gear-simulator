@@ -94,6 +94,8 @@ export const en = {
   'properties.carrier': 'Carrier',
   'properties.carrier.planets': 'Planets',
   'properties.carrier.planetCount': '{count}',
+  'properties.rack': 'Rack',
+  'properties.rack.teethCount': '{count}',
   'properties.anchor': 'Anchor',
   'properties.anchor.check': 'Anchor',
   'properties.anchor.gearNote': "Anchors this gear's shaft (parts on the same shaft stop too)",

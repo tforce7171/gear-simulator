@@ -1,7 +1,8 @@
 // ピッキングの優先順位（S1-16）。純粋関数のみで、three・DOM に触れない
 
-// handle: S1-17・S1-19 のハンドル、candidate: S1-18 の生やす候補、carrier: S3-03 の遊星歯車のキャリア
-export type PickKind = 'handle' | 'candidate' | 'gear' | 'carrier' | 'motor' | 'shaft';
+// handle: S1-17・S1-19 のハンドル、candidate: S1-18 の生やす候補、carrier: S3-03 の遊星歯車のキャリア、
+// rack: S3-04 のラック（歯車とキャリアの次、モーターの前）
+export type PickKind = 'handle' | 'candidate' | 'gear' | 'carrier' | 'rack' | 'motor' | 'shaft';
 
 // 優先順位の高い順。レイの当たりが複数あれば、手前かどうかより種類を優先する
 export const PICK_PRIORITY: readonly PickKind[] = [
@@ -9,6 +10,7 @@ export const PICK_PRIORITY: readonly PickKind[] = [
   'candidate',
   'gear',
   'carrier',
+  'rack',
   'motor',
   'shaft',
 ];
@@ -18,8 +20,9 @@ const RANK: Readonly<Record<PickKind, number>> = {
   candidate: 1,
   gear: 2,
   carrier: 3,
-  motor: 4,
-  shaft: 5,
+  rack: 4,
+  motor: 5,
+  shaft: 6,
 };
 
 // レイの当たり（距離順とは限らない）から、優先順位に従って 1 つ選ぶ。

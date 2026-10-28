@@ -11,8 +11,8 @@ import type { Command } from '../core/edit/commands';
 import { teethRange } from '../core/geometry/dimensions';
 import type { MessageKey, MessageParams } from '../core/i18n';
 import type { Layout } from '../core/layout/types';
-import { anchorOfShaft, planetShaftsOf } from '../core/scene/scene';
-import type { Axis, Gear, Motor, Scene, ShaftId, SizeKey } from '../core/scene/types';
+import { anchorOfRack, anchorOfShaft, planetShaftsOf } from '../core/scene/scene';
+import type { Axis, Gear, Motor, Rack, Scene, ShaftId, SizeKey } from '../core/scene/types';
 import { h } from './dom';
 import { parseClampedInt } from './number-input';
 import './properties.css';
@@ -335,18 +335,31 @@ export function createProperties(deps: PropertiesDeps): Properties {
     return section;
   }
 
-  // 固定具（S3-01）: 「固定する」のチェック。歯車を選んでいるときは、そのシャフトを固定する旨を出す
-  function anchorSection(scene: Scene, shaftId: ShaftId, forGear: boolean): HTMLElement {
+  // 固定具（S3-01）: 「固定する」のチェック。歯車を選んでいるときは、そのシャフトを固定する旨を出す。
+  // ラック（S3-04）は target を { rackId } にする
+  function anchorSection(
+    scene: Scene,
+    target: ShaftId | { readonly rackId: string },
+    forGear: boolean,
+  ): HTMLElement {
     const section = h('section', 'gs-prop__section', 'prop-anchor');
     section.append(text('h3', 'gs-prop__heading', 'properties.anchor'));
-    const anchor = anchorOfShaft(scene, shaftId);
+    const anchor =
+      typeof target === 'string'
+        ? anchorOfShaft(scene, target)
+        : anchorOfRack(scene, target.rackId);
     const label = h('label', 'gs-prop__check');
     const check = h('input', 'gs-prop__checkbox', 'prop-anchor-check');
     check.type = 'checkbox';
     check.checked = anchor !== null;
     check.addEventListener('change', () => {
-      if (check.checked) command({ type: 'addAnchor', shaftId });
-      else if (anchor !== null) command({ type: 'removeAnchor', anchorId: anchor.id });
+      if (check.checked) {
+        command(
+          typeof target === 'string'
+            ? { type: 'addAnchor', shaftId: target }
+            : { type: 'addAnchor', rackId: target.rackId },
+        );
+      } else if (anchor !== null) command({ type: 'removeAnchor', anchorId: anchor.id });
     });
     label.append(check, text('span', 'gs-prop__check-label', 'properties.anchor.check'));
     section.append(label);
@@ -367,6 +380,29 @@ export function createProperties(deps: PropertiesDeps): Properties {
       row(
         'properties.carrier.planets',
         text('span', 'gs-prop__value', 'properties.carrier.planetCount', { count }, 'prop-planets'),
+      ),
+    );
+    return section;
+  }
+
+  // ラック（S3-04）: 大きさと歯数の表示（歯数の編集 UI は S3-05）
+  function rackSection(rack: Rack): HTMLElement {
+    const section = h('section', 'gs-prop__section');
+    section.append(text('h3', 'gs-prop__heading', 'properties.rack', undefined, 'prop-heading'));
+    section.append(
+      row(
+        'properties.size',
+        text('span', 'gs-prop__value', `properties.size.${rack.size}`, undefined, 'prop-size'),
+      ),
+      row(
+        'properties.teeth',
+        text(
+          'span',
+          'gs-prop__value',
+          'properties.rack.teethCount',
+          { count: rack.teeth },
+          'prop-rack-teeth',
+        ),
       ),
     );
     return section;
@@ -401,6 +437,12 @@ export function createProperties(deps: PropertiesDeps): Properties {
         motorSection(scene, carrier.shaftId),
         anchorSection(scene, carrier.shaftId, false),
       );
+      return content;
+    }
+    const rack = scene.racks[selection];
+    if (rack !== undefined) {
+      // ラック（S3-04）にはモーターを付けない
+      content.append(rackSection(rack), anchorSection(scene, { rackId: rack.id }, false));
       return content;
     }
     return null;

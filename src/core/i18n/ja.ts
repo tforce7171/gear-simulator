@@ -93,6 +93,8 @@ export const ja = {
   'properties.carrier': 'キャリア',
   'properties.carrier.planets': '遊星の数',
   'properties.carrier.planetCount': '{count} 個',
+  'properties.rack': 'ラック',
+  'properties.rack.teethCount': '{count} 歯',
   'properties.anchor': '固定具',
   'properties.anchor.check': '固定する',
   'properties.anchor.gearNote': 'この歯車のシャフトを固定します（同じシャフトの部品も止まります）',
