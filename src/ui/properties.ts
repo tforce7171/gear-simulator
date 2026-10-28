@@ -6,8 +6,9 @@
 // 1 回の確定を 1 回のコマンド（Undo 1 回）にする。値が変わらない確定ではコマンドを出さない
 import { onLanguageChange, t } from '../app/i18n';
 import type { AppAction, AppState } from '../app/store';
-import { GEAR_SIZES, MOTOR_RPM_RANGE } from '../core/constants';
+import { MOTOR_RPM_RANGE } from '../core/constants';
 import type { Command } from '../core/edit/commands';
+import { teethRange } from '../core/geometry/dimensions';
 import type { MessageKey, MessageParams } from '../core/i18n';
 import type { Layout } from '../core/layout/types';
 import { anchorOfShaft } from '../core/scene/scene';
@@ -152,7 +153,8 @@ export function createProperties(deps: PropertiesDeps): Properties {
       );
       return section;
     }
-    const { minTeeth: min, maxTeeth: max } = GEAR_SIZES[gear.size];
+    // 歯数の範囲は種類で決まる（内歯車は INTERNAL_MIN_TEETH から。S3-02）
+    const { min, max } = teethRange(gear.kind, gear.size);
     const setTeeth = (teeth: number): void =>
       command({ type: 'setGearTeeth', gearId: gear.id, teeth });
     const dec = button('gs-prop__step', 'prop-teeth-dec', '−', t('properties.teeth.dec'));
