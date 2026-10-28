@@ -32,14 +32,35 @@ export type ShaftPlacement =
   // 親が削除されてその場に残ったシャフト。削除時点のワールド座標と向きを持つ
   | { readonly kind: 'detached'; readonly origin: Vec3; readonly axis: Axis };
 
-export interface Gear {
+export type Hand = 'left' | 'right'; // ハスバ歯車のねじれの向き（S2-01）
+
+// 歯車の種類によらないフィールド
+export interface GearBase {
   readonly id: GearId;
-  readonly kind: 'spur'; // 段階 2・3 で 'helical' | 'bevel' | ... を足し、kind で分ける判別共用体にする
   readonly shaftId: ShaftId;
   readonly size: SizeKey;
   readonly teeth: number;
   readonly offset: number; // シャフトの原点から、歯幅の負側の面までの軸方向の位置（mm）。AXIAL_SNAP の倍数
 }
+
+export interface SpurGear extends GearBase {
+  readonly kind: 'spur';
+}
+
+// ハスバ歯車（S2-01）。ねじれ角は HELIX_ANGLE で固定。'right' は軸の正の向きに進むほど歯が正の向きに回る
+export interface HelicalGear extends GearBase {
+  readonly kind: 'helical';
+  readonly hand: Hand;
+}
+
+// 種類ごとの判別共用体。種類ごとに分ける箇所は switch (gear.kind) で網羅性を型で確かめる（assertNever）
+export type Gear = SpurGear | HelicalGear; // S2-02 以降で種類を足す
+export type GearKind = Gear['kind'];
+
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+
+// 歯車の種類と、形を変える属性（Gear から GearBase のフィールドを除いたもの。ハスバ歯車では hand）
+export type GearShape = DistributiveOmit<Gear, keyof GearBase>;
 
 export interface Motor {
   readonly id: MotorId;

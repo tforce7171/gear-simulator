@@ -1,17 +1,30 @@
 import { GEAR_SIZES, PERIMETER_CANDIDATE_COUNT } from '../constants';
 import type { Vec3 } from '../math/vec3';
-import type { Axis, Gear, GearId, Scene, Shaft, ShaftId, SizeKey } from '../scene/types';
+import { gearShape, makeGear, meshPartnerShape, newGearShape } from '../scene/gear-shape';
+import type {
+  Axis,
+  Gear,
+  GearId,
+  GearKind,
+  GearShape,
+  Scene,
+  Shaft,
+  ShaftId,
+  SizeKey,
+} from '../scene/types';
 import { resolveLayout } from './resolve';
 
 // 生やす候補の列挙（要件 §6、design.md §5）。選んだ歯車について、
 // 外周の候補（新しい mesh のシャフトを作る。親の軸まわりの 8 方向）と、
 // 同じ軸の候補（選んだ歯車のシャフトに通す。歯車の並びの両端の外側）を返す。
+// 外周の子は親とかみ合う形（ハスバ歯車なら逆の hand）、同じ軸は spec.coaxialKind の歯車（S2-01）。
 // 候補を足した仮のシーンを resolveLayout し、新しく増えた干渉の組があるものは除く
 
 export interface GrowSpec {
   perimeterTeeth: number; // 外周の新しい歯車の歯数（大きさは親と同じ）
   coaxialSize: SizeKey; // 同じ軸の新しい歯車の大きさ
   coaxialTeeth: number; // 同じ軸の新しい歯車の歯数
+  coaxialKind: GearKind; // 同じ軸の新しい歯車の種類（S2-01。ハスバ歯車は hand 'right'）
 }
 
 export type GrowCandidate =
@@ -21,6 +34,7 @@ export type GrowCandidate =
       angle: number; // 親の軸まわり（rad）。k·π/4
       size: SizeKey; // 親と同じ
       teeth: number;
+      shape: GearShape; // 親とかみ合う形（平歯車は平歯車、ハスバ歯車は逆の hand。S2-01）
       center: Vec3; // 新しい歯車の中心（仮の表示用）
       axis: Axis;
       basePhase: number; // 新しい歯車の位相（仮の表示を正しくかみ合わせて見せる用）
@@ -31,6 +45,7 @@ export type GrowCandidate =
       offset: number; // 歯幅の負側の面の位置。AXIAL_SNAP の倍数
       size: SizeKey;
       teeth: number;
+      shape: GearShape; // newGearShape(spec.coaxialKind)
       center: Vec3;
       axis: Axis;
     };
@@ -59,6 +74,8 @@ export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec)
   };
 
   const candidates: GrowCandidate[] = [];
+  const perimeterShape = meshPartnerShape(gearShape(parent));
+  const coaxialShape = newGearShape(spec.coaxialKind);
 
   for (let k = 0; k < PERIMETER_CANDIDATE_COUNT; k++) {
     const angle = (k * 2 * Math.PI) / PERIMETER_CANDIDATE_COUNT;
@@ -66,14 +83,16 @@ export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec)
       id: tempShaftId,
       placement: { kind: 'mesh', parentGearId: gearId, childGearId: tempGearId, angle },
     };
-    const child: Gear = {
-      id: tempGearId,
-      kind: 'spur',
-      shaftId: tempShaftId,
-      size: parent.size,
-      teeth: spec.perimeterTeeth,
-      offset: 0,
-    };
+    const child = makeGear(
+      {
+        id: tempGearId,
+        shaftId: tempShaftId,
+        size: parent.size,
+        teeth: spec.perimeterTeeth,
+        offset: 0,
+      },
+      perimeterShape,
+    );
     const placed = tryPlace(withParts(scene, shaft, child));
     if (placed === null) continue;
     candidates.push({
@@ -82,6 +101,7 @@ export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec)
       angle,
       size: parent.size,
       teeth: spec.perimeterTeeth,
+      shape: perimeterShape,
       center: placed.center,
       axis: placed.axis,
       basePhase: placed.basePhase,
@@ -98,14 +118,16 @@ export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec)
   }
   const width = GEAR_SIZES[spec.coaxialSize].faceWidth;
   for (const offset of [minFace - width, maxFace]) {
-    const child: Gear = {
-      id: tempGearId,
-      kind: 'spur',
-      shaftId: parent.shaftId,
-      size: spec.coaxialSize,
-      teeth: spec.coaxialTeeth,
-      offset,
-    };
+    const child = makeGear(
+      {
+        id: tempGearId,
+        shaftId: parent.shaftId,
+        size: spec.coaxialSize,
+        teeth: spec.coaxialTeeth,
+        offset,
+      },
+      coaxialShape,
+    );
     const placed = tryPlace(withParts(scene, null, child));
     if (placed === null) continue;
     candidates.push({
@@ -114,6 +136,7 @@ export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec)
       offset,
       size: spec.coaxialSize,
       teeth: spec.coaxialTeeth,
+      shape: coaxialShape,
       center: placed.center,
       axis: placed.axis,
     });

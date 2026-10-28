@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import type { Gear, Scene, Shaft } from '../scene/types';
+import type { Gear, Scene, Shaft, SpurGear } from '../scene/types';
 import { meshSnapTargets } from './mesh-snap';
 import { resolveLayout } from './resolve';
 
 // arc-loop.json 相当: 縦軸の起点 A（原点 [0, 35, 0]、中・20 歯）と T（原点 [40, 35, 0]、中・20 歯。
 // A と contact でかみ合う）。A の外周に子 B（中・20 歯、angle 0）
-function arcLoop(patch: { t?: Partial<Gear>; tAxis?: 'x' | 'y' | 'z'; withB2?: boolean } = {}) {
+function arcLoop(patch: { t?: Partial<SpurGear>; tAxis?: 'x' | 'y' | 'z'; withB2?: boolean } = {}) {
   const shafts: Record<string, Shaft> = {
     shaft_a: { id: 'shaft_a', placement: { kind: 'root', origin: [0, 35, 0], axis: 'y' } },
     shaft_t: {

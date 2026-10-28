@@ -77,7 +77,7 @@ describe('resolveLayout: 位置・位相・span', () => {
     expectVec(l.gears.g_B?.center, [18, 22, 0]);
     expect(l.gears.g_B?.pitchRadius).toBe(12);
     expect(samePhase(l.gears.g_B?.basePhase ?? Number.NaN, Math.PI / 24, 24)).toBe(true);
-    expect(l.meshes).toEqual([{ a: 'g_A', b: 'g_B', source: 'tree' }]);
+    expect(l.meshes).toEqual([{ a: 'g_A', b: 'g_B', source: 'tree', kind: 'spur' }]);
     expect(l.interferences).toEqual([]);
   });
 
@@ -231,7 +231,7 @@ describe('resolveLayout: contact と干渉', () => {
     expectVec(l.gears.g_B?.center, [12, 2, 0]);
     expectVec(l.gears.g_C?.center, [12, 2, 12]);
     expectVec(l.gears.g_D?.center, [0, 2, 12]);
-    expect(l.meshes).toContainEqual({ a: 'g_A', b: 'g_D', source: 'contact' });
+    expect(l.meshes).toContainEqual({ a: 'g_A', b: 'g_D', source: 'contact', kind: 'spur' });
     expect(l.meshes).toHaveLength(4);
     expect(l.interferences).toEqual([]);
   });
@@ -249,9 +249,9 @@ describe('resolveLayout: contact と干渉', () => {
     );
     expectVec(l.gears.g_C?.center, [6, 2, 6 * S3]);
     expect(l.meshes).toEqual([
-      { a: 'g_A', b: 'g_B', source: 'tree' },
-      { a: 'g_A', b: 'g_C', source: 'contact' },
-      { a: 'g_B', b: 'g_C', source: 'tree' },
+      { a: 'g_A', b: 'g_B', source: 'tree', kind: 'spur' },
+      { a: 'g_A', b: 'g_C', source: 'contact', kind: 'spur' },
+      { a: 'g_B', b: 'g_C', source: 'tree', kind: 'spur' },
     ]);
     expect(l.interferences).toEqual([]);
   });
@@ -305,7 +305,7 @@ describe('resolveLayout: contact と干渉', () => {
         [gear('g_A', 's_A', 12), gear('g_B', 's_B', 12)],
       ),
     );
-    expect(l.meshes).toEqual([{ a: 'g_A', b: 'g_B', source: 'contact' }]);
+    expect(l.meshes).toEqual([{ a: 'g_A', b: 'g_B', source: 'contact', kind: 'spur' }]);
     expect(l.interferences).toEqual([]);
   });
 
@@ -378,8 +378,8 @@ describe('resolveLayout: contact と干渉', () => {
         ],
       ),
     );
-    expect(l.meshes).toContainEqual({ a: 'g_m', b: 'g_z', source: 'tree' });
-    expect(l.meshes).toContainEqual({ a: 'g_a', b: 'g_z', source: 'contact' });
+    expect(l.meshes).toContainEqual({ a: 'g_m', b: 'g_z', source: 'tree', kind: 'spur' });
+    expect(l.meshes).toContainEqual({ a: 'g_a', b: 'g_z', source: 'contact', kind: 'spur' });
     expect(l.interferences.length).toBeGreaterThan(1);
     for (const m of l.meshes) expect(m.a < m.b).toBe(true);
     for (const [a, b] of l.interferences) expect(a < b).toBe(true);

@@ -1,5 +1,8 @@
+import type { MeshKind } from '../geometry/can-mesh';
 import type { Vec3 } from '../math/vec3';
 import type { Axis, GearId, ShaftId } from '../scene/types';
+
+export type { MeshKind } from '../geometry/can-mesh';
 
 // 導出データ（design.md §5）。シーンから resolveLayout で毎回求める
 
@@ -21,6 +24,7 @@ export interface Mesh {
   readonly a: GearId;
   readonly b: GearId;
   readonly source: 'tree' | 'contact'; // 木の親子による / 偶然ちょうどの距離にある
+  readonly kind: MeshKind; // かみ合いの種類（S2-01）
 }
 
 export interface Layout {

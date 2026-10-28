@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { applyCommand } from '../core/edit/commands';
 import { createSequentialIdGenerator } from '../core/scene/ids';
-import type { Gear, Scene } from '../core/scene/types';
+import type { Scene, SpurGear } from '../core/scene/types';
 import { candidateSpec, candidatesFor, growCommand, growSpec } from './grow';
 
-function gear(patch: Partial<Gear>): Gear {
+function gear(patch: Partial<SpurGear>): SpurGear {
   return {
     id: 'gear_a',
     kind: 'spur',
@@ -48,12 +48,12 @@ describe('growSpec', () => {
 
 describe('candidatesFor', () => {
   it('選択が無い・シャフトを選んでいる・シーンに無い ID → []', () => {
-    expect(candidatesFor(oneRoot, null, 'M')).toEqual([]);
-    expect(candidatesFor(oneRoot, 'shaft_a', 'M')).toEqual([]);
-    expect(candidatesFor(oneRoot, 'gear_x', 'M')).toEqual([]);
+    expect(candidatesFor(oneRoot, null, 'M', 'spur')).toEqual([]);
+    expect(candidatesFor(oneRoot, 'shaft_a', 'M', 'spur')).toEqual([]);
+    expect(candidatesFor(oneRoot, 'gear_x', 'M', 'spur')).toEqual([]);
   });
   it('歯車を選ぶと、外周は親と同じ大きさ・同じ軸はパレットの大きさの候補', () => {
-    const list = candidatesFor(oneRoot, 'gear_a', 'L');
+    const list = candidatesFor(oneRoot, 'gear_a', 'L', 'spur');
     const perimeter = list.filter((c) => c.kind === 'perimeter');
     const coaxial = list.filter((c) => c.kind === 'coaxial');
     expect(perimeter).toHaveLength(8);
@@ -67,7 +67,7 @@ describe('candidatesFor', () => {
 
 describe('growCommand', () => {
   it('外周の候補 → mesh のシャフトと歯車を作る growGear', () => {
-    const [first] = candidatesFor(oneRoot, 'gear_a', 'M');
+    const [first] = candidatesFor(oneRoot, 'gear_a', 'M', 'spur');
     if (first?.kind !== 'perimeter') throw new Error('外周の候補が無い');
     const command = growCommand(first);
     expect(command).toEqual({
@@ -82,7 +82,7 @@ describe('growCommand', () => {
     expect(result.created).toHaveLength(2);
   });
   it('同じ軸の候補 → 親のシャフトに通す growGear', () => {
-    const coaxial = candidatesFor(oneRoot, 'gear_a', 'S').find((c) => c.kind === 'coaxial');
+    const coaxial = candidatesFor(oneRoot, 'gear_a', 'S', 'spur').find((c) => c.kind === 'coaxial');
     if (coaxial?.kind !== 'coaxial') throw new Error('同じ軸の候補が無い');
     expect(growCommand(coaxial)).toEqual({
       type: 'growGear',
@@ -91,6 +91,7 @@ describe('growCommand', () => {
       offset: -4,
       size: 'S',
       teeth: 30,
+      kind: 'spur',
     });
   });
 });
@@ -98,9 +99,10 @@ describe('growCommand', () => {
 describe('candidateSpec', () => {
   it('外周: 仮のシャフト付きで、親のシャフトに −(親の歯数 / 子の歯数) で回る', () => {
     const scene: Scene = { ...oneRoot, gears: { gear_a: gear({ teeth: 30 }) } };
-    const first = candidatesFor(scene, 'gear_a', 'M')[0];
+    const first = candidatesFor(scene, 'gear_a', 'M', 'spur')[0];
     if (first?.kind !== 'perimeter') throw new Error('外周の候補が無い');
     expect(candidateSpec(scene, first)).toEqual({
+      shape: { kind: 'spur' },
       size: 'M',
       teeth: 20,
       center: first.center,
@@ -112,7 +114,7 @@ describe('candidateSpec', () => {
     });
   });
   it('同じ軸: シャフトは描かず、親のシャフトと一緒に回る', () => {
-    const coaxial = candidatesFor(oneRoot, 'gear_a', 'M').find((c) => c.kind === 'coaxial');
+    const coaxial = candidatesFor(oneRoot, 'gear_a', 'M', 'spur').find((c) => c.kind === 'coaxial');
     if (coaxial === undefined) throw new Error('同じ軸の候補が無い');
     expect(candidateSpec(oneRoot, coaxial)).toMatchObject({
       phase: 0,

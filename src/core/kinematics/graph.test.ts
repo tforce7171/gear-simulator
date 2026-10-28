@@ -32,7 +32,7 @@ function makeScene(
 }
 
 function tree(a: string, b: string): Mesh {
-  return { a, b, source: 'tree' };
+  return { a, b, source: 'tree', kind: 'spur' };
 }
 
 function only(graph: MeshGraph): KinematicComponent {
@@ -136,7 +136,7 @@ describe('buildMeshGraph', () => {
     const graph = buildMeshGraph(triangleScene, [
       tree('gear_a', 'gear_b'),
       tree('gear_b', 'gear_c'),
-      { a: 'gear_a', b: 'gear_c', source: 'contact' },
+      { a: 'gear_a', b: 'gear_c', source: 'contact', kind: 'spur' },
     ]);
     const c = only(graph);
     expect(c.dof).toBe(0);
@@ -168,7 +168,7 @@ describe('buildMeshGraph', () => {
       tree('gear_a', 'gear_b'),
       tree('gear_b', 'gear_c'),
       tree('gear_c', 'gear_d'),
-      { a: 'gear_d', b: 'gear_a', source: 'contact' },
+      { a: 'gear_d', b: 'gear_a', source: 'contact', kind: 'spur' },
     ]);
     const c = only(graph);
     expect(c.dof).toBe(1);
@@ -190,7 +190,7 @@ describe('buildMeshGraph', () => {
     );
     const graph = buildMeshGraph(scene, [
       tree('gear_a12', 'gear_b24'),
-      { a: 'gear_a24', b: 'gear_b12', source: 'contact' },
+      { a: 'gear_a24', b: 'gear_b12', source: 'contact', kind: 'spur' },
     ]);
     expect(only(graph).dof).toBe(0);
   });
@@ -207,7 +207,7 @@ describe('buildMeshGraph', () => {
     );
     const graph = buildMeshGraph(scene, [
       tree('gear_a1', 'gear_b1'),
-      { a: 'gear_a2', b: 'gear_b2', source: 'contact' },
+      { a: 'gear_a2', b: 'gear_b2', source: 'contact', kind: 'spur' },
     ]);
     expect(only(graph).dof).toBe(1);
     expect(speedRatio(graph, A, B)).toBeCloseTo(-0.5, 12);

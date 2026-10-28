@@ -5,6 +5,7 @@ import { type CandidateSpec, createCandidateView } from './candidates';
 import { createGeometryCache } from './gear-geometry';
 
 const perimeter: CandidateSpec = {
+  shape: { kind: 'spur' },
   size: 'M',
   teeth: 20,
   center: [0, 39, 40],

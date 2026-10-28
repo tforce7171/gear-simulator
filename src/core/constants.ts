@@ -1,4 +1,5 @@
 export const PRESSURE_ANGLE = (20 * Math.PI) / 180;
+export const HELIX_ANGLE = (20 * Math.PI) / 180; // ハスバ歯車のねじれ角（固定。S2-01）
 
 export const GEAR_SIZES = {
   S: { module: 1, faceWidth: 4, minTeeth: 12, maxTeeth: 80 },

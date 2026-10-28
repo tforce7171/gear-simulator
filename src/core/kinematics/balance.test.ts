@@ -48,7 +48,7 @@ function makeScene(
 }
 
 function tree(a: string, b: string): Mesh {
-  return { a, b, source: 'tree' };
+  return { a, b, source: 'tree', kind: 'spur' };
 }
 
 function solve(scene: Scene, meshes: readonly Mesh[], paused?: boolean) {
@@ -269,7 +269,7 @@ describe('solveVelocities', () => {
     const r = solve(scene, [
       tree('gear_a', 'gear_b'),
       tree('gear_b', 'gear_c'),
-      { a: 'gear_a', b: 'gear_c', source: 'contact' },
+      { a: 'gear_a', b: 'gear_c', source: 'contact', kind: 'spur' },
     ]);
     expect(r.omegas).toEqual({ [A]: 0, [B]: 0, [C]: 0 });
     expect(r.componentQ).toEqual([[]]);

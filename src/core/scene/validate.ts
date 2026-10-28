@@ -1,4 +1,6 @@
 import { AXIAL_SNAP, GEAR_SIZES, MOTOR_RPM_RANGE } from '../constants';
+import { canMesh } from '../geometry/can-mesh';
+import { isGearKind, isHand } from './gear-shape';
 import type { Scene, ShaftId, ShaftPlacement } from './types';
 
 // シーンの検証（design.md §4・§9）。不正なら理由の一覧を返す（例外にしない）。
@@ -30,6 +32,8 @@ export type SceneErrorCode =
   | 'meshChildOffset'
   | 'meshParentOnSameShaft'
   | 'meshSizeMismatch'
+  | 'meshKindMismatch' // 親と子の種類・形がかみ合わない（S2-01）
+  | 'invalidHand' // ハスバ歯車の hand が 'left' でも 'right' でもない（S2-01）
   | 'meshCycle';
 
 const AXES: readonly unknown[] = ['x', 'y', 'z'];
@@ -119,6 +123,19 @@ export function validateScene(scene: Scene): { ok: true } | { ok: false; errors:
           `gears.${p.childGearId}.size`,
           `child size "${child.size}" differs from parent size "${parent.size}"`,
         );
+      } else if (
+        child !== undefined &&
+        parent !== undefined &&
+        isGearKind(child.kind) &&
+        isGearKind(parent.kind) &&
+        !canMesh(child, parent)
+      ) {
+        push(
+          'meshKindMismatch',
+          p.childGearId,
+          `gears.${p.childGearId}.kind`,
+          `child gear "${p.childGearId}" cannot mesh with parent "${p.parentGearId}"`,
+        );
       }
     } else {
       push(
@@ -133,8 +150,10 @@ export function validateScene(scene: Scene): { ok: true } | { ok: false; errors:
   // 歯車
   for (const [key, gear] of Object.entries(scene.gears)) {
     const base = `gears.${key}`;
-    if (gear.kind !== 'spur') {
+    if (!isGearKind(gear.kind)) {
       push('invalidKind', key, `${base}.kind`, `invalid gear kind "${String(gear.kind)}"`);
+    } else if (gear.kind === 'helical' && !isHand(gear.hand)) {
+      push('invalidHand', key, `${base}.hand`, `invalid hand "${String(gear.hand)}"`);
     }
     if (scene.shafts[gear.shaftId] === undefined) {
       push('missingRef', key, `${base}.shaftId`, `shaft "${gear.shaftId}" not found`);

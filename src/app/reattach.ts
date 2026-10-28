@@ -1,5 +1,6 @@
 import { PERIMETER_CANDIDATE_COUNT } from '../core/constants';
 import { applyCommand, type Command } from '../core/edit/commands';
+import { canMesh } from '../core/geometry/can-mesh';
 import { newInterferences } from '../core/layout/interference-diff';
 import { descendantShafts, resolveLayout } from '../core/layout/resolve';
 import type { Layout } from '../core/layout/types';
@@ -8,7 +9,7 @@ import { createSequentialIdGenerator } from '../core/scene/ids';
 import type { GearId, Scene, ShaftId } from '../core/scene/types';
 
 // 浮いた（detached）シャフトの付け直し（S1-19）。純粋関数のみ。
-// 動かすシャフトとその先に含まれない歯車 G について、動かすシャフトに G と同じ大きさの歯車 c があれば、
+// 動かすシャフトとその先に含まれない歯車 G について、動かすシャフトに G とかみ合える歯車 c（canMesh。同じ大きさで種類と形が合う。S2-01）があれば、
 // G の外周の 8 方向（S1-10 の外周の候補の角度）に c を付けた位置を候補にする。
 // 付け直したシーンで新たな干渉ができるものと、循環になるもの（G が動かすシャフトかその先にある）は除く
 
@@ -64,7 +65,7 @@ export function reattachCandidates(
   const candidates: ReattachCandidate[] = [];
   for (const parent of parents) {
     for (const child of children) {
-      if (child.size !== parent.size) continue;
+      if (!canMesh(child, parent)) continue;
       for (let k = 0; k < PERIMETER_CANDIDATE_COUNT; k++) {
         const angle = (k * 2 * Math.PI) / PERIMETER_CANDIDATE_COUNT;
         const base = { parentGearId: parent.id, childGearId: child.id, angle };

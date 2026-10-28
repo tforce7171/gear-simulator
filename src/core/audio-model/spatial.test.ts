@@ -67,7 +67,7 @@ describe('meshContactPoint', () => {
       a: { center: [0, 0, 0], pitchRadius: 12 },
       b: { center: [36, 0, 0], pitchRadius: 24 },
     });
-    const p = meshContactPoint(layout, { a: 'a', b: 'b', source: 'tree' });
+    const p = meshContactPoint(layout, { a: 'a', b: 'b', source: 'tree', kind: 'spur' });
     expect(p[0]).toBeCloseTo(12, 12);
     expect(p[1]).toBeCloseTo(0, 12);
     expect(p[2]).toBeCloseTo(0, 12);
@@ -78,7 +78,7 @@ describe('meshContactPoint', () => {
       a: { center: [1, 2, 3], pitchRadius: 5 },
       b: { center: [1, 2 + 6, 3 + 8], pitchRadius: 5 },
     });
-    const p = meshContactPoint(layout, { a: 'a', b: 'b', source: 'contact' });
+    const p = meshContactPoint(layout, { a: 'a', b: 'b', source: 'contact', kind: 'spur' });
     expect(p[0]).toBeCloseTo(1, 12);
     expect(p[1]).toBeCloseTo(5, 12);
     expect(p[2]).toBeCloseTo(7, 12);

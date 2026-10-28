@@ -136,7 +136,10 @@ describe('computeGearInfo', () => {
       ['gear_a', 'shaft_a'],
       ['gear_b', 'shaft_b'],
     ]);
-    const info = infoOf(scene, layoutOf([{ a: 'gear_a', b: 'gear_b', source: 'tree' }]));
+    const info = infoOf(
+      scene,
+      layoutOf([{ a: 'gear_a', b: 'gear_b', source: 'tree', kind: 'spur' }]),
+    );
     for (const id of ['gear_a', 'gear_b']) {
       expect(info[id]?.ratio).toBeNull();
       expect(info[id]?.referenceMotorId).toBeNull();
@@ -171,9 +174,9 @@ describe('computeGearInfo', () => {
     const info = infoOf(
       scene,
       layoutOf([
-        { a: 'gear_a', b: 'gear_b', source: 'tree' },
-        { a: 'gear_b', b: 'gear_c', source: 'tree' },
-        { a: 'gear_a', b: 'gear_c', source: 'contact' },
+        { a: 'gear_a', b: 'gear_b', source: 'tree', kind: 'spur' },
+        { a: 'gear_b', b: 'gear_c', source: 'tree', kind: 'spur' },
+        { a: 'gear_a', b: 'gear_c', source: 'contact', kind: 'spur' },
       ]),
     );
     for (const id of ['gear_a', 'gear_b', 'gear_c']) {
@@ -192,7 +195,10 @@ describe('computeGearInfo', () => {
       ],
       [motor('motor_b', 'shaft_a'), motor('motor_a', 'shaft_b', -1)],
     );
-    const info = infoOf(scene, layoutOf([{ a: 'gear_a', b: 'gear_b', source: 'tree' }]));
+    const info = infoOf(
+      scene,
+      layoutOf([{ a: 'gear_a', b: 'gear_b', source: 'tree', kind: 'spur' }]),
+    );
     expect(info.gear_a?.referenceMotorId).toBe('motor_a');
     expect(info.gear_b?.referenceMotorId).toBe('motor_a');
     // 基準は B のシャフト。B が 1 回転すると A は 2 回転する

@@ -5,6 +5,7 @@ import {
   MESH_DISTANCE_EPS,
   SHAFT_END_MARGIN,
 } from '../constants';
+import { canMesh, meshKindOf } from '../geometry/can-mesh';
 import { centerDistance, meshPhase, pitchRadius } from '../geometry/mesh';
 import { axisVector, radialDirection } from '../math/axis';
 import { add, dot, scale, sub, type Vec3 } from '../math/vec3';
@@ -155,7 +156,12 @@ function meshesOf(
   gears: Readonly<Record<GearId, GearLayout>>,
   treePairs: ReadonlyArray<readonly [GearId, GearId]>,
 ): Mesh[] {
-  const meshes: Mesh[] = treePairs.map(([a, b]) => ({ a, b, source: 'tree' }));
+  const meshes: Mesh[] = treePairs.map(([a, b]) => ({
+    a,
+    b,
+    source: 'tree',
+    kind: meshKindOf(scene.gears[a] as Gear),
+  }));
   const tree = new Set(treePairs.map(([a, b]) => pairKey(a, b)));
   const placed = Object.entries(gears).flatMap(([id, layout]) => {
     const gear = scene.gears[id];
@@ -169,16 +175,17 @@ function meshesOf(
       if (!inContact(p.gear, p.layout, q.gear, q.layout)) continue;
       if (tree.has(pairKey(p.gear.id, q.gear.id))) continue;
       const [a, b] = ordered(p.gear.id, q.gear.id);
-      meshes.push({ a, b, source: 'contact' });
+      meshes.push({ a, b, source: 'contact', kind: meshKindOf(p.gear) });
     }
   }
   return meshes.sort((m, n) => compare(m.a, n.a) || compare(m.b, n.b));
 }
 
-// 同じ大きさ、軸が同じ、別のシャフト、軸方向の区間の重なりが COLLISION_EPS より大きく、
-// 軸に垂直な方向の中心間の距離がピッチ円半径の和と MESH_DISTANCE_EPS 以内で一致する
+// かみ合える組（canMesh。同じ大きさで、平歯車同士かねじれの向きが逆のハスバ歯車同士）、軸が同じ、別のシャフト、
+// 軸方向の区間の重なりが COLLISION_EPS より大きく、軸に垂直な方向の中心間の距離がピッチ円半径の和と
+// MESH_DISTANCE_EPS 以内で一致する
 function inContact(a: Gear, la: GearLayout, b: Gear, lb: GearLayout): boolean {
-  if (a.size !== b.size || la.axis !== lb.axis || a.shaftId === b.shaftId) return false;
+  if (!canMesh(a, b) || la.axis !== lb.axis || a.shaftId === b.shaftId) return false;
   const w = axisVector(la.axis);
   const d = sub(lb.center, la.center);
   const axial = dot(d, w);

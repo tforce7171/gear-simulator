@@ -660,3 +660,140 @@ describe('起点のシャフトの向きと原点（S1-17）', () => {
     }
   });
 });
+
+describe('ハスバ歯車（S2-01）', () => {
+  const ROOT_HELICAL: Command = {
+    type: 'addRootShaft',
+    axis: 'y',
+    origin: [0, 35, 0],
+    gear: { size: 'M', teeth: 20, kind: 'helical' },
+  };
+
+  it("addRootShaft で kind 'helical' → hand 'right'。省くと平歯車", () => {
+    const ctx: CommandContext = { ids: createSequentialIdGenerator() };
+    const helical = ok(applyCommand(emptyScene(), ROOT_HELICAL, ctx));
+    expect(helical.scene.gears.gear_1).toMatchObject({ kind: 'helical', hand: 'right' });
+    const spur = ok(
+      apply(emptyScene(), {
+        type: 'addRootShaft',
+        axis: 'y',
+        origin: [0, 35, 0],
+        gear: { size: 'M', teeth: 20 },
+      }),
+    );
+    expect(spur.scene.gears.gear_1).toEqual({
+      id: 'gear_1',
+      kind: 'spur',
+      shaftId: 'shaft_1',
+      size: 'M',
+      teeth: 20,
+      offset: 0,
+    });
+  });
+
+  it("growGear perimeter: ハスバ歯車の外周の子は逆の hand（'right' → 'left' → 'right'）", () => {
+    const ctx: CommandContext = { ids: createSequentialIdGenerator() };
+    let scene = ok(applyCommand(emptyScene(), ROOT_HELICAL, ctx)).scene;
+    scene = ok(
+      applyCommand(
+        scene,
+        { type: 'growGear', mode: 'perimeter', parentGearId: 'gear_1', angle: 0, teeth: 40 },
+        ctx,
+      ),
+    ).scene;
+    expect(scene.gears.gear_2).toMatchObject({ kind: 'helical', hand: 'left', size: 'M' });
+    scene = ok(
+      applyCommand(
+        scene,
+        { type: 'growGear', mode: 'perimeter', parentGearId: 'gear_2', angle: 0, teeth: 20 },
+        ctx,
+      ),
+    ).scene;
+    expect(scene.gears.gear_3).toMatchObject({ kind: 'helical', hand: 'right' });
+    expect(validateScene(scene)).toEqual({ ok: true });
+  });
+
+  it("growGear coaxial: kind 'helical' → hand 'right'、省くと平歯車、知らない種類は invalidValue", () => {
+    const ctx: CommandContext = { ids: createSequentialIdGenerator() };
+    const scene = ok(applyCommand(emptyScene(), ROOT_HELICAL, ctx)).scene;
+    const coaxial = (kind?: unknown): Command =>
+      ({
+        type: 'growGear',
+        mode: 'coaxial',
+        shaftId: 'shaft_1',
+        offset: 8,
+        size: 'S',
+        teeth: 12,
+        ...(kind === undefined ? {} : { kind }),
+      }) as Command;
+    const helical = ok(apply(scene, coaxial('helical')));
+    expect(helical.scene.gears[helical.created[0] as string]).toMatchObject({
+      kind: 'helical',
+      hand: 'right',
+      size: 'S',
+    });
+    const spur = ok(apply(scene, coaxial()));
+    expect(spur.scene.gears[spur.created[0] as string]?.kind).toBe('spur');
+    expect(errorCode(apply(scene, coaxial('worm')))).toBe('invalidValue');
+  });
+
+  it('reattachShaft: かみ合えない組（平歯車とハスバ歯車、同じ hand）は notAllowed', () => {
+    const ctx: CommandContext = { ids: createSequentialIdGenerator() };
+    let scene = ok(applyCommand(emptyScene(), ROOT_HELICAL, ctx)).scene; // gear_1 right
+    scene = ok(
+      applyCommand(
+        scene,
+        { type: 'growGear', mode: 'perimeter', parentGearId: 'gear_1', angle: 0, teeth: 20 },
+        ctx,
+      ),
+    ).scene; // shaft_2 / gear_2 left
+    scene = ok(
+      applyCommand(
+        scene,
+        {
+          type: 'addRootShaft',
+          axis: 'y',
+          origin: [200, 35, 0],
+          gear: { size: 'M', teeth: 20, kind: 'helical' },
+        },
+        ctx,
+      ),
+    ).scene; // shaft_3 / gear_3 right
+    scene = ok(
+      applyCommand(
+        scene,
+        {
+          type: 'addRootShaft',
+          axis: 'y',
+          origin: [-200, 35, 0],
+          gear: { size: 'M', teeth: 20 },
+        },
+        ctx,
+      ),
+    ).scene; // shaft_4 / gear_4 spur
+    scene = ok(applyCommand(scene, { type: 'deleteParts', ids: ['gear_1'] }, ctx)).scene;
+    expect(scene.shafts.shaft_2?.placement.kind).toBe('detached');
+    const reattach = (parentGearId: string): Command => ({
+      type: 'reattachShaft',
+      shaftId: 'shaft_2',
+      childGearId: 'gear_2',
+      parentGearId,
+      angle: 0,
+    });
+    // gear_2（left）は gear_3（right）には付け直せる
+    expect(ok(apply(scene, reattach('gear_3'))).scene.shafts.shaft_2?.placement.kind).toBe('mesh');
+    // 平歯車には付け直せない
+    expect(errorCode(apply(scene, reattach('gear_4')))).toBe('notAllowed');
+    // 同じ hand（left）には付け直せない
+    const sameHand = ok(
+      applyCommand(
+        scene,
+        { type: 'growGear', mode: 'perimeter', parentGearId: 'gear_3', angle: Math.PI, teeth: 20 },
+        ctx,
+      ),
+    );
+    const leftGear = sameHand.created[1] as string;
+    expect(sameHand.scene.gears[leftGear]).toMatchObject({ hand: 'left' });
+    expect(errorCode(apply(sameHand.scene, reattach(leftGear)))).toBe('notAllowed');
+  });
+});

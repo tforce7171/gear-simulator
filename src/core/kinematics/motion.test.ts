@@ -60,7 +60,7 @@ function layoutOf(meshes: readonly Mesh[]): Layout {
 }
 
 function tree(a: string, b: string): Mesh {
-  return { a, b, source: 'tree' };
+  return { a, b, source: 'tree', kind: 'spur' };
 }
 
 interface Setup {
@@ -103,7 +103,7 @@ function triangle(motors: readonly MotorSpec[]): Setup {
     layout: layoutOf([
       tree('gear_a', 'gear_b'),
       tree('gear_b', 'gear_c'),
-      { a: 'gear_a', b: 'gear_c', source: 'contact' },
+      { a: 'gear_a', b: 'gear_c', source: 'contact', kind: 'spur' },
     ]),
   };
 }
