@@ -3,6 +3,7 @@
 import type { Lang } from '../core/i18n';
 import { computeGearInfo, type GearInfo, visibleInfoGearIds } from '../core/kinematics/info';
 import type { Layout } from '../core/layout/types';
+import { gearWorldCenter } from '../core/layout/world';
 import type { Vec3 } from '../core/math/vec3';
 import type { GearId, Scene } from '../core/scene/types';
 import type { InfoArrowSpec } from '../render/info-arrows';
@@ -89,7 +90,9 @@ export function createInfoOverlay(deps: InfoOverlayDeps): InfoOverlay {
       if (item === undefined || gear === undefined || gearLayout === undefined) continue;
       values.set(id, { rpm: item.rpm, ratio: item.ratio, wormRatio: item.wormRatio });
       if (item.direction === 0) continue;
-      specs.push(deps.arrowSpec(gear, gearLayout, item.direction));
+      // 遊星の歯車（S3-03）は今の公転の位置に置く（10 Hz で置き直す）
+      const placed = { ...gearLayout, center: gearWorldCenter(layout, state.motion, id) };
+      specs.push(deps.arrowSpec(gear, placed, item.direction));
       nextArrows.push({ gearId: id, direction: item.direction });
     }
     shown = [...values.keys()];
@@ -115,9 +118,9 @@ export function createInfoOverlay(deps: InfoOverlayDeps): InfoOverlay {
         lastMs = nowMs;
       }
       for (const id of shown) {
-        const center = layout.gears[id]?.center;
-        if (center === undefined) continue;
-        const p = deps.project(center);
+        if (layout.gears[id] === undefined) continue;
+        // 遊星の歯車（S3-03）は公転した今の位置
+        const p = deps.project(gearWorldCenter(layout, state.motion, id));
         deps.labels.setPosition(id, p.x, p.y, p.visible);
       }
     },

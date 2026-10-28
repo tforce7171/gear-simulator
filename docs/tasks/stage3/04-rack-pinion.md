@@ -49,6 +49,15 @@ depends: [S2-05]
   - ピニオン（`pinion` の相手）を消すと、ラックは基準位置で `detached` になる。ラックを消すと、`'rack'` のピニオンのシャフトは `detached` になる
 - **形状と表示**: 直線歯のラック（歯形は台形）。毎フレーム `基準位置 + s·d` に描く。形状データのキーは `(種類, 大きさ, 歯数)`
 - **保存（暫定）**: 読み込みで `racks` がないシーンは `{}` を補う（version 3 への移行は S3-05）。s は運動の状態なので保存しない（読み込むと s = 0）
+- **S3-03 の時点**（design.md §4・§5・§6・§7）
+  - `ShaftPlacement` に `concentric`（親のシャフトと同じ線上）と `planet`（キャリアに載った遊星。`parentGearId`・`childGearId` を持つので `ChildPlacement` に入り、`isChildPlacement` が真）を足した。`FreePlacement` は `Extract<ShaftPlacement, { origin: Vec3 }>`（`root`・`detached`）で、判定は `isFreePlacement`。`'rack'` を足すときは、`placementParentShafts`（`src/core/scene/scene.ts`。循環の判定 `meshCycle` に使う。`planet` は親の歯車のシャフトとキャリアのシャフトの 2 つ）と `shaftAxis` に場合を足す
+  - かみ合いの拘束の行は `meshTerms(mesh, scene)`（`src/core/kinematics/mesh-coefficients.ts`）が `{ shaftId, coef }` の項の並びで返し、`buildMeshGraph` と `worm-solve.ts` の `Constraint.terms` が同じシャフトの項を足し合わせて行にする（遊星のかみ合いはキャリアのシャフトの項 `−(c_a + c_b)` を足す）。ラックの v を未知数に足すときも、この項の並びに足せばよい
+  - 自由度 2 以上の成分を手でつかむと、つかんだシャフトの ω を規定値として残りをつり合いで解く（`worm-solve.ts` の `solveFixed` を `motion.ts` が使う）。ラックをつかむとき（s に規定値）も同じ形で解ける
+  - 実際の位置: 遊星のシャフト・歯車は `resolveLayout` では基準配置で、`orbit` を添え、`src/core/layout/world.ts` の `shaftWorldOrigin`・`gearWorldCenter` で運動の状態から回す。`rackWorldOrigin` も同じファイルに置くとよい。描画は `render/sync.ts` の `update` で毎フレーム置き直している
+  - `Layout` に `carriers` を足した（`Layout` の型のリテラルを作るテストは `carriers: {}` が要る）。キャリアのあるシーンでは `resolveAddition` が全体を解き直す（公転・機構の扱いのため）
+  - ピッキングの種類（`PickKind`）に `'carrier'` を足した（歯車の次、モーターの前）。ラックの種類を足すときは `PICK_PRIORITY`・`RANK`・`selectionForPick`・`pruneSelection`・`main.ts` の `BODY_KINDS`・`grabTarget` に足す
+  - 候補の並びは 外周 → 囲む → 遊星歯車機構（`kind: 'planetary'`）→ かさ歯車 → ねじれた位置 → 同じ軸。平歯車の親の候補は 8 + 1（遊星歯車機構）+ 同じ軸 になった。遊星のシャフトの歯車には同じ軸の候補だけを出す（ラックの候補も出さない）
+  - `e2e/fixtures/*.json` の `Scene` の形のものは、すべて `"carriers": {}` を持つ（`racks` も同じように足す）
 
 ## 範囲外
 - ラックの音（歯の通過音）、端に当たった音、材質、プロパティでの歯数の編集 UI（S3-05）

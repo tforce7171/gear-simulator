@@ -8,7 +8,7 @@ import type { Lang } from '../core/i18n';
 import type { HandConstraint, MotionState } from '../core/kinematics/types';
 import type { Layout } from '../core/layout/types';
 import type { Vec3 } from '../core/math/vec3';
-import type { GearId, Scene } from '../core/scene/types';
+import type { GearId, Scene, ShaftId } from '../core/scene/types';
 import type { Quality, ThemeId } from '../core/theme';
 import type { CameraPose } from '../input/camera';
 import type { HandleKind } from '../input/handle-drag';
@@ -23,6 +23,11 @@ export interface GearSimDebug {
   getScene(): Scene;
   getLayout(): Layout;
   getMotion(): MotionState;
+  /**
+   * シャフトの原点の実際の位置（S3-03）。遊星のシャフトは、基準配置（getLayout）からキャリアのシャフトの回転角だけ
+   * キャリアの軸まわりに回した位置（core/layout/world.ts の shaftWorldOrigin）。それ以外は getLayout と同じ
+   */
+  getShaftWorldOrigin(shaftId: ShaftId): Vec3;
   /** 履歴を空にしてシーンを置き換え、運動の状態を初期化する（Undo の対象にしない） */
   loadScene(scene: Scene): void;
   /** 編集コマンドを実行する（Undo の履歴に積まれる。失敗したら何も変えない） */

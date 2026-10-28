@@ -1,5 +1,6 @@
-import type { LockInfo } from '../kinematics/types';
+import type { LockInfo, MotionState } from '../kinematics/types';
 import type { Layout, Mesh } from '../layout/types';
+import { gearWorldCenter } from '../layout/world';
 import { add, length, scale, sub, type Vec3 } from '../math/vec3';
 import type { SizeKey } from '../scene/types';
 import type { AudioMaterialId } from '../theme';
@@ -64,16 +65,20 @@ function distance(a: Vec3, b: Vec3): number {
   return length(sub(a, b));
 }
 
-// かみ合いの接点: a の中心から b の中心へ向かう線分上で、a の中心からピッチ円半径 r_a の点
-export function meshContactPoint(layout: Layout, mesh: Mesh): Vec3 {
+// かみ合いの接点: a の中心から b の中心へ向かう線分上で、a の中心からピッチ円半径 r_a の点。
+// motion を渡すと、遊星の歯車（S3-03）は公転した今の位置で求める
+export function meshContactPoint(layout: Layout, mesh: Mesh, motion?: MotionState): Vec3 {
   const a = layout.gears[mesh.a];
   const b = layout.gears[mesh.b];
-  if (a === undefined) return b?.center ?? [0, 0, 0];
-  if (b === undefined) return a.center;
-  const d = sub(b.center, a.center);
+  const centerOf = (id: string, fallback: Vec3): Vec3 =>
+    motion === undefined ? fallback : gearWorldCenter(layout, motion, id);
+  if (a === undefined) return b === undefined ? [0, 0, 0] : centerOf(mesh.b, b.center);
+  const ca = centerOf(mesh.a, a.center);
+  if (b === undefined) return ca;
+  const d = sub(centerOf(mesh.b, b.center), ca);
   const len = length(d);
-  if (len === 0) return a.center;
-  return add(a.center, scale(d, a.pitchRadius / len));
+  if (len === 0) return ca;
+  return add(ca, scale(d, a.pitchRadius / len));
 }
 
 // PannerNode の inverse の距離の減衰（refDistance 未満は refDistance、maxDistance 超は maxDistance として扱う）

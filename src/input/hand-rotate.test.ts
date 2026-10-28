@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { resolveLayout } from '../core/layout/resolve';
 import type { Vec3 } from '../core/math/vec3';
@@ -145,5 +146,36 @@ describe('grabTarget', () => {
     ).toBe(null);
     expect(grabTarget(scene, layout, { kind: 'candidate', id: '0', point: [0, 0, 0] })).toBe(null);
     expect(grabTarget(scene, layout, { kind: 'gear', id: 'gear_x', point: [0, 0, 0] })).toBe(null);
+  });
+});
+
+describe('grabTarget（遊星歯車。S3-03）', () => {
+  // planetary-ring-fixed: 太陽 gear_s（shaft_s、起点 [0, 60, 0]）、キャリア carrier_k（shaft_k）、遊星 gear_p0〜p2
+  const url = new URL('../../e2e/fixtures/planetary-ring-fixed.json', import.meta.url);
+  const scene = JSON.parse(readFileSync(url, 'utf8')) as Scene;
+  const layout = resolveLayout(scene);
+
+  it('遊星の歯車をつかむ → キャリアのシャフトが規定値（中心は歯車の中心をキャリアの軸に下ろした点）', () => {
+    const t = grabTarget(scene, layout, { kind: 'gear', id: 'gear_p1', point: [0, 68, 0] });
+    expect(t?.shaftId).toBe('shaft_k');
+    expect(t?.axis).toBe('y');
+    expect(t?.center[0]).toBeCloseTo(0, 12);
+    expect(t?.center[1]).toBeCloseTo(64, 12);
+    expect(t?.center[2]).toBeCloseTo(0, 12);
+  });
+
+  it('遊星のシャフト・キャリアをつかむ → キャリアのシャフト', () => {
+    expect(
+      grabTarget(scene, layout, { kind: 'shaft', id: 'shaft_p0', point: [36, 62, 0] })?.shaftId,
+    ).toBe('shaft_k');
+    expect(
+      grabTarget(scene, layout, { kind: 'carrier', id: 'carrier_k', point: [10, 74, 0] })?.shaftId,
+    ).toBe('shaft_k');
+  });
+
+  it('太陽の歯車は自分のシャフト', () => {
+    expect(
+      grabTarget(scene, layout, { kind: 'gear', id: 'gear_s', point: [0, 64, 0] })?.shaftId,
+    ).toBe('shaft_s');
   });
 });

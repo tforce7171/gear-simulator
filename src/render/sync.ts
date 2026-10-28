@@ -9,14 +9,19 @@ import {
   Quaternion,
   Vector3,
 } from 'three';
+import { CARRIER_THICKNESS } from '../core/constants';
 import type { MotionState } from '../core/kinematics/types';
 import type { Layout, ShaftLayout } from '../core/layout/types';
+import { gearWorldCenter, shaftWorldOrigin } from '../core/layout/world';
 import { axisVector } from '../core/math/axis';
 import { add, scale, type Vec3 } from '../core/math/vec3';
 import { GEAR_KIND_LIST } from '../core/scene/gear-shape';
+import { lineRootOf } from '../core/scene/scene';
 import type {
   Anchor,
   AnchorId,
+  Carrier,
+  CarrierId,
   Gear,
   GearId,
   GearKind,
@@ -35,6 +40,7 @@ import {
   ANCHOR_PILLAR_RADIUS,
   anchorFrame,
 } from './anchor';
+import { buildCarrierGeometries, carrierShapeKey } from './carrier';
 import { placeOnAxis } from './frame';
 import { createGeometryCache, type GeometryCache, gearBodyScaleZ } from './gear-geometry';
 import { setPickTarget } from './picking';
@@ -48,6 +54,31 @@ import {
 
 // シャフトの見た目の寸法（mm）。質感はテーマ（S1-24。render/themes.ts）が setBaseMaterials で渡す
 const SHAFT_RADIUS = 1.5;
+// 同じ線上のシャフト（S3-03）は入れ子の中空軸に見せる。後から作ったほうを、この分だけ太い筒にする
+export const SHAFT_NEST_STEP = 1;
+
+// 同じ線上のシャフト（concentric でつながる組。S3-03）の中での順位。シーンの shafts の並び（作った順）で 0, 1, 2, …。
+// 1 本だけの線のシャフトは 0
+export function shaftNestRanks(scene: Scene): Map<ShaftId, number> {
+  const lines = new Map<ShaftId, ShaftId[]>();
+  for (const id of Object.keys(scene.shafts)) {
+    const root = lineRootOf(scene, id) ?? id;
+    const list = lines.get(root);
+    if (list === undefined) lines.set(root, [id]);
+    else list.push(id);
+  }
+  const ranks = new Map<ShaftId, number>();
+  for (const ids of lines.values()) {
+    ids.forEach((id, i) => {
+      ranks.set(id, i);
+    });
+  }
+  return ranks;
+}
+
+export function shaftRadiusOf(rank: number): number {
+  return SHAFT_RADIUS + rank * SHAFT_NEST_STEP;
+}
 // モーターの箱の一辺（大きさごと。S1-20）
 export const MOTOR_BOX: Readonly<Record<SizeKey, number>> = { S: 6, M: 8, L: 11 };
 const MOTOR_GAP = 1; // シャフトの端とモーターの箱のすき間
@@ -216,6 +247,7 @@ interface GearEntry {
 interface ShaftEntry {
   shaft: Shaft;
   span: readonly [number, number];
+  radius: number; // 見た目の半径（入れ子の中空軸。S3-03）
   object: Mesh;
   proxy: Mesh; // 見えない太めの当たり判定（object の子）
   base: Quaternion; // 置いたときの向き（ロックの震えはこれに足す）
@@ -225,6 +257,15 @@ interface MotorEntry {
   motor: Motor;
   object: Mesh;
   base: Quaternion;
+}
+
+// キャリア（S3-03）。腕のある板。spin をキャリアのシャフトの回転角だけ回す。選べる（'carrier'）
+interface CarrierEntry {
+  carrier: Carrier;
+  key: string;
+  group: Group; // 板の中心に置き、u・v・w に合わせる
+  spin: Group; // group のローカルの z まわりに回す
+  parts: Mesh[];
 }
 
 // 固定具（S3-01）。台座・支柱・床の足。地面に固定されているので震えない。選べない（当たり判定なし）
@@ -252,6 +293,7 @@ export interface SceneSync {
   version(): number;
   gearCount(): number;
   anchorCount(): number; // 描いている固定具の数（S3-01）
+  carrierCount(): number; // 描いているキャリアの数（S3-03）
 }
 
 // シーンとレイアウトから Three.js のオブジェクトを同期する。
@@ -287,6 +329,7 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
   const shafts = new Map<ShaftId, ShaftEntry>();
   const motors = new Map<MotorId, MotorEntry>();
   const anchors = new Map<AnchorId, AnchorEntry>();
+  const carriers = new Map<CarrierId, CarrierEntry>();
   // 固定具の形（大きさは固定なので共有する。支柱は高さ 1 を scale.y で伸ばす）
   const anchorBaseGeometry = new BoxGeometry(
     ANCHOR_BASE_SIZE,
@@ -319,6 +362,47 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
     entry.object.geometry.dispose();
     entry.proxy.geometry.dispose();
     shafts.delete(id);
+  }
+
+  function removeCarrier(id: CarrierId, entry: CarrierEntry): void {
+    root.remove(entry.group);
+    for (const part of entry.parts) part.geometry.dispose();
+    carriers.delete(id);
+  }
+
+  function syncCarriers(scene: Scene, layout: Layout): void {
+    const keyOf = (carrier: Carrier): string | null => {
+      const placed = layout.carriers[carrier.id];
+      if (placed === undefined) return null;
+      return carrierShapeKey(carrierShapeOf(scene, layout, carrier));
+    };
+    for (const [id, entry] of carriers) {
+      const carrier = scene.carriers[id];
+      if (carrier !== entry.carrier || keyOf(entry.carrier) !== entry.key) removeCarrier(id, entry);
+    }
+    for (const carrier of Object.values(scene.carriers)) {
+      const placed = layout.carriers[carrier.id];
+      if (placed === undefined) continue;
+      let entry = carriers.get(carrier.id);
+      if (entry === undefined) {
+        const shape = carrierShapeOf(scene, layout, carrier);
+        const group = new Group();
+        const spin = new Group();
+        const parts = buildCarrierGeometries(shape).map((geometry) => {
+          const mesh = new Mesh(geometry, shaftMaterials.none);
+          mesh.castShadow = true;
+          mesh.receiveShadow = true;
+          spin.add(mesh);
+          return mesh;
+        });
+        group.add(spin);
+        setPickTarget(group, 'carrier', carrier.id);
+        root.add(group);
+        entry = { carrier, key: carrierShapeKey(shape), group, spin, parts };
+        carriers.set(carrier.id, entry);
+      }
+      placeOnAxis(entry.group, placed.center, placed.axis);
+    }
   }
 
   function removeMotor(id: MotorId, entry: MotorEntry): void {
@@ -356,13 +440,16 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
   }
 
   function syncShafts(scene: Scene, layout: Layout): void {
+    const ranks = shaftNestRanks(scene);
+    const radiusOf = (id: ShaftId) => shaftRadiusOf(ranks.get(id) ?? 0);
     for (const [id, entry] of shafts) {
       const placed = layout.shafts[id];
       if (
         scene.shafts[id] !== entry.shaft ||
         placed === undefined ||
         placed.span[0] !== entry.span[0] ||
-        placed.span[1] !== entry.span[1]
+        placed.span[1] !== entry.span[1] ||
+        radiusOf(id) !== entry.radius
       ) {
         removeShaft(id, entry);
       }
@@ -373,17 +460,19 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
       let entry = shafts.get(shaft.id);
       if (entry === undefined) {
         const length = Math.max(placed.span[1] - placed.span[0], 1e-3);
-        const geometry = new CylinderGeometry(SHAFT_RADIUS, SHAFT_RADIUS, length, 16);
+        const radius = radiusOf(shaft.id);
+        const geometry = new CylinderGeometry(radius, radius, length, 16);
         geometry.rotateX(Math.PI / 2); // 円柱の向きをローカルの z（= 軸 w）にする
         const object = new Mesh(geometry, shaftMaterials.none);
         object.castShadow = true;
-        const proxyGeometry = new CylinderGeometry(SHAFT_PICK_RADIUS, SHAFT_PICK_RADIUS, length, 8);
+        const pickRadius = Math.max(SHAFT_PICK_RADIUS, radius + 1);
+        const proxyGeometry = new CylinderGeometry(pickRadius, pickRadius, length, 8);
         proxyGeometry.rotateX(Math.PI / 2);
         const proxy = new Mesh(proxyGeometry, pickProxyMaterial);
         object.add(proxy);
         setPickTarget(object, 'shaft', shaft.id);
         root.add(object);
-        entry = { shaft, span: placed.span, object, proxy, base: new Quaternion() };
+        entry = { shaft, span: placed.span, radius, object, proxy, base: new Quaternion() };
         shafts.set(shaft.id, entry);
       }
       const mid = (placed.span[0] + placed.span[1]) / 2;
@@ -487,6 +576,11 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
     for (const entry of motors.values()) {
       entry.object.material = motorMaterials[levelOf(entry.motor.id, entry.motor.shaftId)];
     }
+    // キャリアは自分とそのシャフトの状態で光らせる（S3-03）
+    for (const [id, entry] of carriers) {
+      const material = shaftMaterials[levelOf(id, entry.carrier.shaftId)];
+      for (const part of entry.parts) part.material = material;
+    }
     // 固定具は固定したシャフトと同じに光らせる（ロックの赤・選択の水色。S3-01）
     for (const entry of anchors.values()) {
       const material = shaftMaterials[levelOf(entry.anchor.target.id)];
@@ -516,6 +610,7 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
       syncShafts(scene, layout);
       syncMotors(scene, layout);
       syncAnchors(scene, layout);
+      syncCarriers(scene, layout);
       lastScene = scene;
       lastLayout = layout;
       applyHighlight();
@@ -544,12 +639,33 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
       for (const [id, entry] of gears) {
         const placed = layout.gears[id];
         if (placed === undefined) continue;
+        // 遊星の歯車（S3-03）は公転した今の位置に置き直す
+        if (placed.orbit !== undefined) {
+          const c = gearWorldCenter(layout, motion, id);
+          if (!sameXyz(entry.pivot.position, c)) version++;
+          entry.pivot.position.set(c[0], c[1], c[2]);
+        }
         const angle =
           placed.basePhase + (motion.angles[entry.gear.shaftId] ?? 0) + shakeOf(id, timeSec);
         if (entry.body.rotation.z !== angle) version++;
         entry.body.rotation.z = angle;
       }
-      for (const [id, entry] of shafts) shake(entry.object, entry.base, shakeOf(id, timeSec));
+      for (const [id, entry] of shafts) {
+        const placed = layout.shafts[id];
+        if (placed?.orbit !== undefined) {
+          const mid = (placed.span[0] + placed.span[1]) / 2;
+          const c = add(shaftWorldOrigin(layout, motion, id), scale(axisVector(placed.axis), mid));
+          if (!sameXyz(entry.object.position, c)) version++;
+          entry.object.position.set(c[0], c[1], c[2]);
+        }
+        shake(entry.object, entry.base, shakeOf(id, timeSec));
+      }
+      for (const entry of carriers.values()) {
+        const angle =
+          (motion.angles[entry.carrier.shaftId] ?? 0) + shakeOf(entry.carrier.shaftId, timeSec);
+        if (entry.spin.rotation.z !== angle) version++;
+        entry.spin.rotation.z = angle;
+      }
       for (const [id, entry] of motors) shake(entry.object, entry.base, shakeOf(id, timeSec));
       if (warnings.locked.size > 0) {
         version++; // 震えている
@@ -569,5 +685,37 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
     version: () => version,
     gearCount: () => gears.size,
     anchorCount: () => anchors.size,
+    carrierCount: () => carriers.size,
   };
+}
+
+function sameXyz(p: { x: number; y: number; z: number }, q: Vec3): boolean {
+  return p.x === q[0] && p.y === q[1] && p.z === q[2];
+}
+
+// キャリアの形（S3-03）: 板の厚み、腕の長さ（公転半径）、腕の向き（遊星のシャフトの angle）
+function carrierShapeOf(
+  scene: Scene,
+  layout: Layout,
+  carrier: Carrier,
+): { thickness: number; reach: number; angles: number[] } {
+  const placed = layout.carriers[carrier.id];
+  const shaft = layout.shafts[carrier.shaftId];
+  const angles: number[] = [];
+  let reach = 0;
+  for (const id of placed?.planetShaftIds ?? []) {
+    const p = scene.shafts[id]?.placement;
+    const at = layout.shafts[id];
+    if (p?.kind !== 'planet' || at === undefined || shaft === undefined) continue;
+    angles.push(p.angle);
+    const d = [
+      at.origin[0] - shaft.origin[0],
+      at.origin[1] - shaft.origin[1],
+      at.origin[2] - shaft.origin[2],
+    ] as const;
+    const w = axisVector(shaft.axis);
+    const along = d[0] * w[0] + d[1] * w[1] + d[2] * w[2];
+    reach = Math.max(reach, Math.sqrt(Math.max(0, d[0] ** 2 + d[1] ** 2 + d[2] ** 2 - along ** 2)));
+  }
+  return { thickness: CARRIER_THICKNESS[carrier.size], reach, angles };
 }

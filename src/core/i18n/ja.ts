@@ -90,6 +90,9 @@ export const ja = {
   'properties.motor.off': 'OFF',
   'properties.motor.remove': '外す',
   // 固定具（S3-01）
+  'properties.carrier': 'キャリア',
+  'properties.carrier.planets': '遊星の数',
+  'properties.carrier.planetCount': '{count} 個',
   'properties.anchor': '固定具',
   'properties.anchor.check': '固定する',
   'properties.anchor.gearNote': 'この歯車のシャフトを固定します（同じシャフトの部品も止まります）',

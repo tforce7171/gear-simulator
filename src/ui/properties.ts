@@ -11,7 +11,7 @@ import type { Command } from '../core/edit/commands';
 import { teethRange } from '../core/geometry/dimensions';
 import type { MessageKey, MessageParams } from '../core/i18n';
 import type { Layout } from '../core/layout/types';
-import { anchorOfShaft } from '../core/scene/scene';
+import { anchorOfShaft, planetShaftsOf } from '../core/scene/scene';
 import type { Axis, Gear, Motor, Scene, ShaftId, SizeKey } from '../core/scene/types';
 import { h } from './dom';
 import { parseClampedInt } from './number-input';
@@ -358,23 +358,48 @@ export function createProperties(deps: PropertiesDeps): Properties {
     return section;
   }
 
+  // キャリア（S3-03）: 遊星の数の表示と、固定（キャリアのシャフトを固定する）
+  function carrierSection(scene: Scene, carrierId: string): HTMLElement {
+    const section = h('section', 'gs-prop__section');
+    section.append(text('h3', 'gs-prop__heading', 'properties.carrier', undefined, 'prop-heading'));
+    const count = planetShaftsOf(scene, carrierId).length;
+    section.append(
+      row(
+        'properties.carrier.planets',
+        text('span', 'gs-prop__value', 'properties.carrier.planetCount', { count }, 'prop-planets'),
+      ),
+    );
+    return section;
+  }
+
+  // 遊星のシャフト（S3-03）は公転するので、モーターと固定具の欄を出さない
+  const isPlanetShaft = (scene: Scene, shaftId: string): boolean =>
+    scene.shafts[shaftId]?.placement.kind === 'planet';
+
   function build(scene: Scene, selection: string | null): HTMLElement | null {
     if (selection === null) return null;
     const content = h('div', 'gs-prop', 'prop-content');
     const gear = scene.gears[selection];
     if (gear !== undefined) {
-      content.append(
-        gearSection(scene, gear),
-        motorSection(scene, gear.shaftId),
-        anchorSection(scene, gear.shaftId, true),
-      );
+      content.append(gearSection(scene, gear));
+      if (!isPlanetShaft(scene, gear.shaftId)) {
+        content.append(motorSection(scene, gear.shaftId), anchorSection(scene, gear.shaftId, true));
+      }
       return content;
     }
     if (scene.shafts[selection] !== undefined) {
+      content.append(shaftSection(scene, selection));
+      if (!isPlanetShaft(scene, selection)) {
+        content.append(motorSection(scene, selection), anchorSection(scene, selection, false));
+      }
+      return content;
+    }
+    const carrier = scene.carriers[selection];
+    if (carrier !== undefined) {
       content.append(
-        shaftSection(scene, selection),
-        motorSection(scene, selection),
-        anchorSection(scene, selection, false),
+        carrierSection(scene, carrier.id),
+        motorSection(scene, carrier.shaftId),
+        anchorSection(scene, carrier.shaftId, false),
       );
       return content;
     }

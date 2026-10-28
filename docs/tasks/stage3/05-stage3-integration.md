@@ -43,6 +43,14 @@ S3-01〜S3-04 で入れた固定具・内歯車・遊星歯車機構・ラック
 - **情報表示**（S1-23 の拡張）: キャリアの rpm、ラックの速度（mm/s）と向きの矢印を表示する。遊星は自転の rpm を表示する
 - **コンテキストメニュー**: キャリア・ラックの上で「固定する／固定を外す」「ここに寄る」「削除」
 - **国際化**: 新しい部品名、プロパティの項目、注記、メニューのキー（日・英）
+- **S3-03 の時点**（design.md §4・§5・§7）
+  - 音: `computeMeshVoices` は遊星のかみ合い（`Mesh.carrierShaftId` がある組）も返し、位置は `meshContactPoint(layout, mesh, motion)` で公転した実際の位置になっている。歯の通過頻度は、まだシャフトの ω そのもの（キャリアに対する相対にするのはこのタスク）
+  - 描画: キャリアは `render/sync.ts` の `CarrierEntry`（`render/carrier.ts` の腕のある板）で、材質はシャフトと同じ組（`shaftMaterials`）。キャリアの材質の表はこのタスクで足す
+  - プロパティパネル: キャリアを選ぶと、遊星の数の表示（`prop-planets`）と、キャリアのシャフトのモーター・固定具の欄が出る。遊星のシャフトとその歯車では、モーター・固定具の欄を出さない（済）。遊星の数を変えるコマンドは `setPlanetCount { carrierId, count }`（条件を満たさない数は `notAllowed`）、機構の中の歯数は `setGearTeeth` がリング・ほかの遊星をそろえる（リングの直接の変更・条件を満たさない変更は `notAllowed`）。選択肢の出し分けは `planetaryConditions`（`src/core/geometry/planetary.ts`）で求められる
+  - コンテキストメニュー: キャリアの上では「削除」「モーターを付ける」「固定する」「ここに寄る」が出る（`targetShaftId` はキャリアのシャフト）。遊星のシャフト・歯車では「モーター」「固定する」を出さない（済）
+  - 情報表示: ラベルと矢印は公転した位置に置く（済）。値は各シャフトの ω（遊星は自転の rpm）。キャリアは歯車でないのでラベルは出ていない
+  - 検証: 遊星のシャフトにモーター・固定具があることは、コマンドが拒否するだけで、`validateScene` では弾いていない（version 3 の検証で足す）。`concentric` の循環は `meshCycle`、`planet` の親がキャリアと同じ線上かは `planetLineMismatch`、2 段以上の遊星は `nestedOrbit`
+  - 保存（暫定）: `parseScene` は `carriers` の無いシーンに `{}` を補う。`e2e/fixtures/*.json` の `Scene` の形のものは、すべて `"carriers": {}` を持つ
 - **通しテストと見た目確認の場面を追加**（S1-31・S2-05 の拡張）
   - S1-31 の時点: 通しテストは `e2e/flows/*.spec.ts`（操作は画面から、状態は `__gearSim`）。共通の操作（`openApp`・`fixtureScene`・`clickGear`・`gearPoint`・`clickPerimeterCandidate`・`deselect`・`setPaused`・`settleCamera`・`waitAutosaved` など）は `e2e/fixtures/sim.ts` にある。見た目の確認は `test.use({ viewport: VISUAL_VIEWPORT })`（1280×800）にし、撮る前に `prepareCapture(page)`（Space で一時停止してカメラの停止を待つ。ロックや回転の矢印を写す場面は `{ pause: false }`）を呼んでから `captureScene` する（`e2e/fixtures/visual.ts`）。性能は `pnpm perf`（`scripts/perf.ts`、`src/debug/perf-scene.ts` の `generatePerfScene`）で測る。
 
