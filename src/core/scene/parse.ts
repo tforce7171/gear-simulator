@@ -1,5 +1,6 @@
 import type { Vec3 } from '../math/vec3';
-import type { Axis, Gear, Motor, Scene, Shaft, ShaftPlacement, SizeKey } from './types';
+import { assertNever, isGearKind } from './gear-shape';
+import type { Axis, Gear, Hand, Motor, Scene, Shaft, ShaftPlacement, SizeKey } from './types';
 import { type SceneError, validateScene } from './validate';
 
 // 生の値（JSON から読んだ unknown）の形を確かめて Scene を作り、続けて validateScene で意味を確かめる
@@ -123,20 +124,29 @@ export function parseScene(raw: unknown): SceneParseResult {
   const gears: Array<[string, Gear]> = [];
   for (const [key, item, id] of items('gears')) {
     const base = `gears.${key}`;
-    if (item.kind !== 'spur') {
-      shape(`${base}.kind`, `invalid gear kind "${String(item.kind)}"`, key);
+    const common = {
+      id,
+      shaftId: str(item, 'shaftId', base, key),
+      size: size(item, base, key),
+      teeth: num(item, 'teeth', base, key),
+      offset: num(item, 'offset', base, key),
+    };
+    // 種類ごとのフィールド（S2-01）。値が許された範囲か（hand が left・right か）は validateScene が確かめる
+    const kind: unknown = item.kind;
+    if (!isGearKind(kind)) {
+      shape(`${base}.kind`, `invalid gear kind "${String(kind)}"`, key);
+      continue;
     }
-    gears.push([
-      key,
-      {
-        id,
-        kind: 'spur',
-        shaftId: str(item, 'shaftId', base, key),
-        size: size(item, base, key),
-        teeth: num(item, 'teeth', base, key),
-        offset: num(item, 'offset', base, key),
-      },
-    ]);
+    switch (kind) {
+      case 'spur':
+        gears.push([key, { ...common, kind }]);
+        break;
+      case 'helical':
+        gears.push([key, { ...common, kind, hand: str(item, 'hand', base, key) as Hand }]);
+        break;
+      default:
+        assertNever(kind);
+    }
   }
 
   const motors: Array<[string, Motor]> = [];

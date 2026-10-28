@@ -43,6 +43,8 @@ depends: [S2-05]
 - **歯数の範囲を種類で決める**: 歯数の範囲を返す関数を作り、プロパティパネルの歯数の入力（S1-20）もそれを使う。編集で木の親子の歯数差が 12 未満になる変更は、コマンドが拒否する（シーンは変わらない）
 - **表示**: 段階 1 と同じ材質（材質の違いは S3-05）
 - **保存**: シーンの検証で `'internal'` と `webSide` を受け付ける（`version` は 2 のまま。上げるのは S3-05）
+- **S2-01 の時点**: 歯車の種類を足すと、`switch (gear.kind)` の `assertNever` でコンパイルエラーになる所（`src/core/scene/gear-shape.ts` の `gearShape`・`newGearShape`・`meshPartnerShape`・`GEAR_KINDS`、`geometry/can-mesh.ts` の `canMesh`・`meshKindOf`、`geometry/shape-key.ts` の `gearShapeKey`、`scene/parse.ts`、`render/gear-geometry.ts` の `buildGeometry`）を直す（design.md §4）。`MeshKind` は `geometry/can-mesh.ts` にある。候補（`GrowCandidate`）は作る歯車の形 `shape: GearShape` を持ち、同じ軸の種類は `GrowSpec.coaxialKind`（app は今 `'spur'` を渡す。`src/app/interactions.ts`）、編集コマンドの種類は `addRootShaft` の `gear.kind?`・`growGear`（coaxial）の `kind?` で渡す。外周に生やす子の形は `meshPartnerShape` で決まる
+- **S2-01 の canMesh**: `canMesh(a: Gear, b: Gear)` は種類・大きさ・形を変える属性だけで判定している。歯数の差の条件はここに足す
 
 ## 範囲外
 - 遊星歯車機構・キャリア、同じ線上の別のシャフト（S3-03）

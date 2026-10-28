@@ -55,6 +55,7 @@ depends: [S1-31]
 - **形状**: 大端の断面は歯数 z の平歯車のインボリュート歯形（簡略化。相当平歯車の歯数は使わない）。これを頂点に向かって相似に縮めながら、ピッチ円すいに沿って歯幅の分だけ押し出す。背面（大端側）は平らな円板で閉じる
 - **表示**: 段階 1 と同じ材質。形状データのキーは `(種類, 大きさ, 歯数)`（`apex` は向きの回転で表すので形状には含めない）
 - **保存**: シーンの検証で `'bevel'` の歯車・配置を受け付ける（子の `apex === -side`、子のシャフトの軸が親と違うことも検証する）。`version` は 1 のまま
+- **S2-01 の時点**: 歯車の種類を足すと、`switch (gear.kind)` の `assertNever` でコンパイルエラーになる所（`src/core/scene/gear-shape.ts` の `gearShape`・`newGearShape`・`meshPartnerShape`・`GEAR_KINDS`、`geometry/can-mesh.ts` の `canMesh`・`meshKindOf`、`geometry/shape-key.ts` の `gearShapeKey`、`scene/parse.ts`、`render/gear-geometry.ts` の `buildGeometry`）を直す（design.md §4）。`MeshKind` は `geometry/can-mesh.ts` にある。候補（`GrowCandidate`）は作る歯車の形 `shape: GearShape` を持ち、同じ軸の種類は `GrowSpec.coaxialKind`（app は今 `'spur'` を渡す。`src/app/interactions.ts`）、編集コマンドの種類は `addRootShaft` の `gear.kind?`・`growGear`（coaxial）の `kind?` で渡す。外周に生やす子の形は `meshPartnerShape` で決まる
 
 ## 範囲外
 - 1:1 以外の歯数比、90° 以外の角度（範囲外（拡張候補））

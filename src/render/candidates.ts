@@ -2,7 +2,7 @@ import { CylinderGeometry, Group, Mesh, MeshStandardMaterial } from 'three';
 import { GEAR_SIZES, SHAFT_END_MARGIN } from '../core/constants';
 import type { MotionState } from '../core/kinematics/types';
 import type { Vec3 } from '../core/math/vec3';
-import type { Axis, ShaftId, SizeKey } from '../core/scene/types';
+import type { Axis, GearShape, ShaftId, SizeKey } from '../core/scene/types';
 import { placeOnAxis } from './frame';
 import type { GeometryCache } from './gear-geometry';
 import { setPickTarget } from './picking';
@@ -21,6 +21,7 @@ const CANDIDATE_RENDER_ORDER = 5;
 
 // 1 つの候補の見た目
 export interface CandidateSpec {
+  readonly shape: GearShape; // 種類と形を変える属性（S2-01。形状データのキーに使う）
   readonly size: SizeKey;
   readonly teeth: number;
   readonly center: Vec3; // 仮の歯車の中心（ワールド座標）
@@ -75,7 +76,7 @@ export function createCandidateView(cache: GeometryCache): CandidateView {
   function clear(): void {
     for (const entry of entries) {
       root.remove(entry.group);
-      cache.release('spur', entry.spec.size, entry.spec.teeth);
+      cache.release(entry.spec.shape, entry.spec.size, entry.spec.teeth);
       entry.shaft?.geometry.dispose();
     }
     entries = [];
@@ -83,7 +84,7 @@ export function createCandidateView(cache: GeometryCache): CandidateView {
 
   function build(spec: CandidateSpec, index: number): Entry {
     const group = new Group();
-    const body = new Mesh(cache.acquire('spur', spec.size, spec.teeth), normal);
+    const body = new Mesh(cache.acquire(spec.shape, spec.size, spec.teeth), normal);
     body.renderOrder = CANDIDATE_RENDER_ORDER;
     body.rotation.z = spec.phase;
     group.add(body);

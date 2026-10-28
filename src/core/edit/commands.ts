@@ -1,13 +1,22 @@
 import { AXIAL_SNAP, GEAR_SIZES, MOTOR_RPM_RANGE, MOTOR_SIZES } from '../constants';
+import { canMesh } from '../geometry/can-mesh';
 import { descendantShafts, resolveLayout } from '../layout/resolve';
 import type { Layout } from '../layout/types';
 import type { Vec3 } from '../math/vec3';
+import {
+  gearShape,
+  isGearKind,
+  makeGear,
+  meshPartnerShape,
+  newGearShape,
+} from '../scene/gear-shape';
 import type { IdGenerator } from '../scene/ids';
 import { shaftAxis } from '../scene/shaft-axis';
 import type {
   Axis,
   Gear,
   GearId,
+  GearKind,
   Motor,
   MotorId,
   Scene,
@@ -24,8 +33,16 @@ import { validateScene } from '../scene/validate';
 // 干渉を理由には失敗しない（干渉は resolveLayout の interferences が赤い警告として出す）
 
 export type Command =
-  | { type: 'addRootShaft'; axis: Axis; origin: Vec3; gear: { size: SizeKey; teeth: number } }
+  // gear.kind は省くと 'spur'。ハスバ歯車は hand 'right'（S2-01）
+  | {
+      type: 'addRootShaft';
+      axis: Axis;
+      origin: Vec3;
+      gear: { size: SizeKey; teeth: number; kind?: GearKind };
+    }
+  // 子の種類は親から決まる（平歯車は平歯車、ハスバ歯車は逆の hand。S2-01）
   | { type: 'growGear'; mode: 'perimeter'; parentGearId: GearId; angle: number; teeth: number }
+  // kind は省くと 'spur'。ハスバ歯車は hand 'right'（S2-01）
   | {
       type: 'growGear';
       mode: 'coaxial';
@@ -33,6 +50,7 @@ export type Command =
       offset: number;
       size: SizeKey;
       teeth: number;
+      kind?: GearKind;
     }
   | { type: 'deleteParts'; ids: string[] }
   | { type: 'setGearTeeth'; gearId: GearId; teeth: number }
@@ -188,20 +206,18 @@ function addRootShaft(
   if (!isSizeKey(c.gear.size)) return fail('invalidValue', `invalid size ${String(c.gear.size)}`);
   const bad = teethError(c.gear.size, c.gear.teeth);
   if (bad) return bad;
+  const kind = c.gear.kind ?? 'spur';
+  if (!isGearKind(kind)) return fail('invalidValue', `invalid gear kind ${String(kind)}`);
   const shaftId = ctx.ids('shaft');
   const gearId = ctx.ids('gear');
   const shaft: Shaft = {
     id: shaftId,
     placement: { kind: 'root', origin: copyVec3(c.origin), axis: c.axis },
   };
-  const gear: Gear = {
-    id: gearId,
-    kind: 'spur',
-    shaftId,
-    size: c.gear.size,
-    teeth: c.gear.teeth,
-    offset: 0,
-  };
+  const gear = makeGear(
+    { id: gearId, shaftId, size: c.gear.size, teeth: c.gear.teeth, offset: 0 },
+    newGearShape(kind),
+  );
   return done(
     {
       shafts: withEntry(scene.shafts, shaftId, shaft),
@@ -234,14 +250,10 @@ function growPerimeter(
       angle: normalizeAngle(c.angle),
     },
   };
-  const gear: Gear = {
-    id: gearId,
-    kind: 'spur',
-    shaftId,
-    size: parent.size,
-    teeth: c.teeth,
-    offset: 0,
-  };
+  const gear = makeGear(
+    { id: gearId, shaftId, size: parent.size, teeth: c.teeth, offset: 0 },
+    meshPartnerShape(gearShape(parent)),
+  );
   return done(
     {
       shafts: withEntry(scene.shafts, shaftId, shaft),
@@ -264,15 +276,13 @@ function growCoaxial(
   const bad = teethError(c.size, c.teeth);
   if (bad) return bad;
   if (!isSnapped(c.offset)) return snapError(c.offset);
+  const kind = c.kind ?? 'spur';
+  if (!isGearKind(kind)) return fail('invalidValue', `invalid gear kind ${String(kind)}`);
   const gearId = ctx.ids('gear');
-  const gear: Gear = {
-    id: gearId,
-    kind: 'spur',
-    shaftId: c.shaftId,
-    size: c.size,
-    teeth: c.teeth,
-    offset: clean(c.offset),
-  };
+  const gear = makeGear(
+    { id: gearId, shaftId: c.shaftId, size: c.size, teeth: c.teeth, offset: clean(c.offset) },
+    newGearShape(kind),
+  );
   return done({ ...scene, gears: withEntry(scene.gears, gearId, gear) }, [gearId]);
 }
 
@@ -537,6 +547,9 @@ function reattachShaft(
   }
   if (child.size !== parent.size) {
     return fail('notAllowed', `sizes differ: ${child.size} and ${parent.size}`);
+  }
+  if (!canMesh(child, parent)) {
+    return fail('notAllowed', `gear ${child.id} cannot mesh with ${parent.id}`);
   }
   if (descendantShafts(scene, shaft.id).includes(parent.shaftId)) {
     return fail('notAllowed', `gear ${parent.id} is on shaft ${shaft.id} or beyond it (cycle)`);

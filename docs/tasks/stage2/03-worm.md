@@ -64,6 +64,7 @@ depends: [S1-31]
 - **干渉判定**: ウォームは半径 `5m + m`、長さ `5πm` の円柱、ホイールは歯先円の円柱で近似する。かみ合っている組は除く
 - **表示**: 段階 1 と同じ材質（材質の違いは S2-05）。ねじ山の進む向きとホイールの回る向きが見た目で一致すること
 - **保存**: シーンの検証で `'worm'`（`teeth === 1`）・`'wormWheel'`・`'skew'` を受け付ける。`version` は 1 のまま
+- **S2-01 の時点**: 歯車の種類を足すと、`switch (gear.kind)` の `assertNever` でコンパイルエラーになる所（`src/core/scene/gear-shape.ts` の `gearShape`・`newGearShape`・`meshPartnerShape`・`GEAR_KINDS`、`geometry/can-mesh.ts` の `canMesh`・`meshKindOf`、`geometry/shape-key.ts` の `gearShapeKey`、`scene/parse.ts`、`render/gear-geometry.ts` の `buildGeometry`）を直す（design.md §4）。`MeshKind` は `geometry/can-mesh.ts` にある。候補（`GrowCandidate`）は作る歯車の形 `shape: GearShape` を持ち、同じ軸の種類は `GrowSpec.coaxialKind`（app は今 `'spur'` を渡す。`src/app/interactions.ts`）、編集コマンドの種類は `addRootShaft` の `gear.kind?`・`growGear`（coaxial）の `kind?` で渡す。外周に生やす子の形は `meshPartnerShape` で決まる
 
 ## 範囲外
 - 2 条以上のウォーム、左ねじのウォーム（範囲外）

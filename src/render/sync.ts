@@ -244,7 +244,7 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
 
   function removeGear(id: GearId, entry: GearEntry): void {
     root.remove(entry.pivot);
-    cache.release(entry.gear.kind, entry.gear.size, entry.gear.teeth);
+    cache.release(entry.gear, entry.gear.size, entry.gear.teeth);
     gears.delete(id);
   }
 
@@ -270,7 +270,7 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
       if (placed === undefined) continue; // 木から外れた歯車は描かない
       let entry = gears.get(gear.id);
       if (entry === undefined) {
-        const body = new Mesh(cache.acquire(gear.kind, gear.size, gear.teeth), gearMaterials.none);
+        const body = new Mesh(cache.acquire(gear, gear.size, gear.teeth), gearMaterials.none);
         // 影（S1-24）: 歯車は影を落とし、受ける。品質が軽量なら renderer 側で影の計算ごと止める
         body.castShadow = true;
         body.receiveShadow = true;

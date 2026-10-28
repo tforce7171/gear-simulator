@@ -275,3 +275,43 @@ describe('validateScene: 不正なシーン', () => {
     expect(codes).toContain('idMismatch');
   });
 });
+
+describe('ハスバ歯車（S2-01）', () => {
+  const helicalRoot: Gear = { ...rootGear, kind: 'helical', hand: 'right' };
+  const helicalChild = (hand: 'left' | 'right'): Gear => ({ ...childGear, kind: 'helical', hand });
+
+  it("'helical' と hand を受け付ける", () => {
+    const scene: Scene = {
+      ...withChild,
+      gears: { gear_1: helicalRoot, gear_2: helicalChild('left') },
+    };
+    expect(validateScene(scene)).toEqual({ ok: true });
+  });
+
+  it("hand が 'left'・'right' でない → invalidHand", () => {
+    const bad = { ...helicalRoot, hand: 'up' } as unknown as Gear;
+    expect(errorsOf(withGear(base, bad)).map((e) => [e.code, e.path])).toEqual([
+      ['invalidHand', 'gears.gear_1.hand'],
+    ]);
+  });
+
+  it('mesh の親子がかみ合えない（同じ hand、平歯車とハスバ歯車）→ meshKindMismatch', () => {
+    const sameHand: Scene = {
+      ...withChild,
+      gears: { gear_1: helicalRoot, gear_2: helicalChild('right') },
+    };
+    expect(errorsOf(sameHand).map((e) => [e.code, e.path])).toEqual([
+      ['meshKindMismatch', 'gears.gear_2.kind'],
+    ]);
+    const mixed: Scene = {
+      ...withChild,
+      gears: { gear_1: rootGear, gear_2: helicalChild('left') },
+    };
+    expect(errorsOf(mixed).map((e) => e.code)).toEqual(['meshKindMismatch']);
+  });
+
+  it('知らない種類 → invalidKind', () => {
+    const bad = { ...rootGear, kind: 'worm' } as unknown as Gear;
+    expect(errorsOf(withGear(base, bad)).map((e) => e.code)).toEqual(['invalidKind']);
+  });
+});

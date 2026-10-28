@@ -4,6 +4,7 @@ import {
   DEFAULT_TEETH,
   GEAR_SIZES,
   GRID_SNAP,
+  HELIX_ANGLE,
   MOTOR_RPM_RANGE,
   MOTOR_SIZES,
   PERIMETER_CANDIDATE_COUNT,
@@ -51,5 +52,9 @@ describe('S1-17 の定数', () => {
       expect(DEFAULT_TEETH[size]).toBeGreaterThanOrEqual(GEAR_SIZES[size].minTeeth);
       expect(DEFAULT_TEETH[size]).toBeLessThanOrEqual(GEAR_SIZES[size].maxTeeth);
     }
+  });
+
+  it('HELIX_ANGLE は 20° をラジアンにしたもの（S2-01）', () => {
+    expect(HELIX_ANGLE).toBeCloseTo((20 * Math.PI) / 180, 15);
   });
 });

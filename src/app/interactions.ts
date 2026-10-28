@@ -191,7 +191,8 @@ export function createInteractions(deps: InteractionsDeps): Interactions {
     ) {
       return memo;
     }
-    const list = candidatesFor(scene, selection, palette.size);
+    // 同じ軸に作る歯車の種類。パレットで種類を選ぶ UI は S2-05 で足す（S2-01）
+    const list = candidatesFor(scene, selection, palette.size, 'spur');
     const specs = list.map((c) => candidateSpec(scene, c));
     candidateMemo = { scene, selection, size: palette.size, list, specs };
     return candidateMemo;

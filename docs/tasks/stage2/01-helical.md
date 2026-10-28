@@ -1,7 +1,7 @@
 ---
 id: S2-01
 title: ハスバ歯車
-status: todo
+status: done
 depends: [S1-31]
 ---
 
@@ -72,33 +72,33 @@ depends: [S1-31]
   - §3: `HELIX_ANGLE` を足す
 
 ## 受け入れ条件
-- [ ] ハスバ歯車を選ぶと外周の候補が出て、クリックすると逆向きのねじれの子がかみ合う位置に置かれる
-- [ ] ハスバ歯車同士が平歯車と同じ速度比・逆向きに回り、歯幅のどの断面でも歯がめり込んで見えない
-- [ ] 平歯車とハスバ歯車はかみ合わない（候補が出ない。ちょうどの距離に置かれたら干渉として赤く表示する）
-- [ ] 平歯車だけのシーンの振る舞いは段階 1 から変わらない
+- [x] ハスバ歯車を選ぶと外周の候補が出て、クリックすると逆向きのねじれの子がかみ合う位置に置かれる
+- [x] ハスバ歯車同士が平歯車と同じ速度比・逆向きに回り、歯幅のどの断面でも歯がめり込んで見えない
+- [x] 平歯車とハスバ歯車はかみ合わない（候補が出ない。ちょうどの距離に置かれたら干渉として赤く表示する）
+- [x] 平歯車だけのシーンの振る舞いは段階 1 から変わらない
 
 ## テストケース
 ### Vitest
-- [ ] `canMesh`: `'right'` と `'left'` のハスバ（同じ大きさ）→ 真。`'right'` 同士 → 偽。ハスバと平歯車 → 偽。大きさ違い → 偽
-- [ ] 形状: 中・20 歯 `'right'` の形状で、軸方向の −b/2 と +b/2 の断面の歯の角度の差が `8·tan20° / 20` ≈ 0.1456 rad（`'left'` では符号が逆）
-- [ ] 形状データの共有: 中・20 歯 `'right'` を 2 回求めると同じ参照。`'left'` とは別の参照
-- [ ] 外周の候補: 中・20 歯 `'right'` の A から外周の候補を列挙すると、すべて `kind: 'helical'`、`hand: 'left'`、大きさ M
-- [ ] 同じ軸の候補で種類 `'helical'` を渡すと `hand: 'right'` の歯車になる
-- [ ] `resolveLayout(helical-pair)`: B の中心が A の中心から 60（20 + 40）。`meshes` に `{ a: A, b: B, source: 'tree', kind: 'helical' }`。`interferences` が空
-- [ ] 運動: `helical-pair` で A が 60 rpm（2π rad/s）→ B は −π rad/s
-- [ ] contact: A と、A から距離 60 に `'left'` のハスバ（木の親子ではない）→ contact のかみ合い。同じ位置に `'right'` のハスバ → かみ合いでなく、`interferences` に入る。平歯車でも同じく干渉
-- [ ] 三角形: 中・20 歯のハスバ 3 枚を互いにちょうどの距離に置けるかを確かめ、置けないこと（ねじれの向きが 2 種類しかないので、3 枚が互いに逆向きにはなれない）を `canMesh` で確認する
+- [x] `canMesh`: `'right'` と `'left'` のハスバ（同じ大きさ）→ 真。`'right'` 同士 → 偽。ハスバと平歯車 → 偽。大きさ違い → 偽
+- [x] 形状: 中・20 歯 `'right'` の形状で、軸方向の −b/2 と +b/2 の断面の歯の角度の差が `8·tan20° / 20` ≈ 0.1456 rad（`'left'` では符号が逆）
+- [x] 形状データの共有: 中・20 歯 `'right'` を 2 回求めると同じ参照。`'left'` とは別の参照
+- [x] 外周の候補: 中・20 歯 `'right'` の A から外周の候補を列挙すると、すべて `kind: 'helical'`、`hand: 'left'`、大きさ M
+- [x] 同じ軸の候補で種類 `'helical'` を渡すと `hand: 'right'` の歯車になる
+- [x] `resolveLayout(helical-pair)`: B の中心が A の中心から 60（20 + 40）。`meshes` に `{ a: A, b: B, source: 'tree', kind: 'helical' }`。`interferences` が空
+- [x] 運動: `helical-pair` で A が 60 rpm（2π rad/s）→ B は −π rad/s
+- [x] contact: A と、A から距離 60 に `'left'` のハスバ（木の親子ではない）→ contact のかみ合い。同じ位置に `'right'` のハスバ → かみ合いでなく、`interferences` に入る。平歯車でも同じく干渉
+- [x] 三角形: 中・20 歯のハスバ 3 枚を互いにちょうどの距離に置けるかを確かめ、置けないこと（ねじれの向きが 2 種類しかないので、3 枚が互いに逆向きにはなれない）を `canMesh` で確認する
 ### Playwright
-- [ ] `helical-pair.json` を読む → `getLayout().meshes[0].kind === 'helical'`、B のシャフトの ω が `-Math.PI`（`toBeCloseTo`）
-- [ ] A を選び、外周の候補をクリック → 新しい歯車が `kind: 'helical'`、`hand: 'left'`。Ctrl+Z で消える
+- [x] `helical-pair.json` を読む → `getLayout().meshes[0].kind === 'helical'`、B のシャフトの ω が `-Math.PI`（`toBeCloseTo`）
+- [x] A を選び、外周の候補をクリック → 新しい歯車が `kind: 'helical'`、`hand: 'left'`。Ctrl+Z で消える
 ### Playwright（見た目）
-- [ ] `helical-pair.json` のかみ合い部分の拡大を `screenshots/helical-closeup.png` に保存する
+- [x] `helical-pair.json` のかみ合い部分の拡大を `screenshots/helical-closeup.png` に保存する
 
 ## 人が手で確かめる項目
 - 歯のねじれが自然に見え、かみ合った 2 枚のねじれが逆向き（互いに沿う向き）に見える
 - 回っているとき、歯幅の端から端まで歯がめり込んで見えない
 
 ## 完了の条件
-- [ ] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
-- [ ] design.md と後続のタスク資料に、必要な変更を反映した（§3、§4、§5、§7）
-- [ ] `status: done` にしてコミットした
+- [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
+- [x] design.md と後続のタスク資料に、必要な変更を反映した（§3、§4、§5、§7）
+- [x] `status: done` にしてコミットした

@@ -70,12 +70,58 @@ describe('parseScene', () => {
   });
 
   it('歯車の kind・size、モーターの on', () => {
-    expect(firstPath(sceneWith({ 'gears.gear_1.kind': 'helical' }))).toBe('gears.gear_1.kind');
+    expect(firstPath(sceneWith({ 'gears.gear_1.kind': 'bogus' }))).toBe('gears.gear_1.kind');
     expect(firstPath(sceneWith({ 'gears.gear_1.size': 'XL' }))).toBe('gears.gear_1.size');
     expect(firstPath(sceneWith({ 'motors.motor_1.on': 1 }))).toBe('motors.motor_1.on');
   });
 
   it('数の代わりに文字列', () => {
     expect(firstPath(sceneWith({ 'gears.gear_1.teeth': '12' }))).toBe('gears.gear_1.teeth');
+  });
+});
+
+describe('parseScene: ハスバ歯車（S2-01）', () => {
+  const helical = {
+    'gears.gear_1.kind': 'helical',
+    'gears.gear_1.hand': 'right',
+    'gears.gear_2.kind': 'helical',
+    'gears.gear_2.hand': 'left',
+  };
+
+  it("'helical' と hand を読み、hand を残す（知らないフィールドは捨てる）", () => {
+    const result = parseScene(sceneWith({ ...helical, 'gears.gear_1.extra': 1 }));
+    if (!result.ok) throw new Error(JSON.stringify(result.errors));
+    expect(result.scene.gears.gear_1).toEqual({
+      id: 'gear_1',
+      kind: 'helical',
+      hand: 'right',
+      shaftId: 'shaft_1',
+      size: 'M',
+      teeth: 20,
+      offset: 0,
+    });
+    expect(result.scene.gears.gear_2).toMatchObject({ kind: 'helical', hand: 'left' });
+  });
+
+  it('平歯車の hand は捨てる', () => {
+    const result = parseScene(sceneWith({ 'gears.gear_1.hand': 'right' }));
+    if (!result.ok) throw new Error(JSON.stringify(result.errors));
+    expect(result.scene.gears.gear_1).not.toHaveProperty('hand');
+  });
+
+  it('hand が無い・文字列でない → 形の誤り。値が違う → validateScene の invalidHand', () => {
+    expect(firstPath(sceneWith({ ...helical, 'gears.gear_1.hand': undefined }))).toBe(
+      'gears.gear_1.hand',
+    );
+    expect(firstPath(sceneWith({ ...helical, 'gears.gear_1.hand': 1 }))).toBe('gears.gear_1.hand');
+    const result = parseScene(sceneWith({ ...helical, 'gears.gear_1.hand': 'up' }));
+    expect(result.ok ? [] : result.errors.map((e) => [e.code, e.path])).toEqual([
+      ['invalidHand', 'gears.gear_1.hand'],
+    ]);
+  });
+
+  it('親子の hand が同じ → meshKindMismatch', () => {
+    const result = parseScene(sceneWith({ ...helical, 'gears.gear_2.hand': 'right' }));
+    expect(result.ok ? [] : result.errors.map((e) => e.code)).toEqual(['meshKindMismatch']);
   });
 });

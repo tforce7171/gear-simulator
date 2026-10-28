@@ -148,7 +148,7 @@ test.describe('one-root.json', () => {
 
     const layout = await getLayout(page);
     const [a, b] = A < newGearId ? [A, newGearId] : [newGearId, A];
-    expect(layout.meshes).toContainEqual({ a, b, source: 'tree' });
+    expect(layout.meshes).toContainEqual({ a, b, source: 'tree', kind: 'spur' });
     const ca = layout.gears[A]?.center;
     const cb = layout.gears[newGearId]?.center;
     if (ca === undefined || cb === undefined) throw new Error('レイアウトに無い');

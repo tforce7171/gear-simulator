@@ -332,6 +332,7 @@ describe('startHandleDrag: arc', () => {
       a: 'gear_2',
       b: 'gear_3',
       source: 'contact',
+      kind: 'spur',
     });
   });
 

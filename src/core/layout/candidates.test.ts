@@ -48,7 +48,12 @@ function distance(a: Vec3, b: Vec3): number {
   return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 }
 
-const SPEC: GrowSpec = { perimeterTeeth: 12, coaxialSize: 'S', coaxialTeeth: 12 };
+const SPEC: GrowSpec = {
+  perimeterTeeth: 12,
+  coaxialSize: 'S',
+  coaxialTeeth: 12,
+  coaxialKind: 'spur',
+};
 
 // 起点 A: axis 'y'、原点、12 歯 offset 0（中心 [0, 2, 0]）
 const shaftA = root('shaft_a', [0, 0, 0]);

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { buildSpurGeometry, createGeometryCache } from './gear-geometry';
+import { GEAR_SIZES, HELIX_ANGLE } from '../core/constants';
+import { spurOutline } from '../core/geometry/involute';
+import { buildHelicalGeometry, buildSpurGeometry, createGeometryCache } from './gear-geometry';
+
+const SPUR = { kind: 'spur' } as const;
 
 describe('buildSpurGeometry', () => {
   it("('M', 20): z は [-4, 4]、x・y は歯先円半径 22 以下で 22 に近い", () => {
@@ -38,12 +42,12 @@ describe('buildSpurGeometry', () => {
 describe('createGeometryCache', () => {
   it('同じキーは同じインスタンスを返し、すべて release すると dispose する', () => {
     const cache = createGeometryCache();
-    const a1 = cache.acquire('spur', 'S', 12);
-    const a2 = cache.acquire('spur', 'S', 12);
+    const a1 = cache.acquire(SPUR, 'S', 12);
+    const a2 = cache.acquire(SPUR, 'S', 12);
     expect(a2).toBe(a1);
     expect(cache.size()).toBe(1);
 
-    const b = cache.acquire('spur', 'S', 13);
+    const b = cache.acquire(SPUR, 'S', 13);
     expect(b).not.toBe(a1);
     expect(cache.size()).toBe(2);
 
@@ -56,11 +60,11 @@ describe('createGeometryCache', () => {
       disposedB++;
     });
 
-    cache.release('spur', 'S', 12);
+    cache.release(SPUR, 'S', 12);
     expect(disposedA).toBe(0);
     expect(cache.size()).toBe(2);
 
-    cache.release('spur', 'S', 12);
+    cache.release(SPUR, 'S', 12);
     expect(disposedA).toBe(1);
     expect(disposedB).toBe(0);
     expect(cache.size()).toBe(1);
@@ -68,16 +72,111 @@ describe('createGeometryCache', () => {
 
   it('dispose した後に同じキーで acquire すると新しいインスタンスを作る', () => {
     const cache = createGeometryCache();
-    const a = cache.acquire('spur', 'M', 20);
-    cache.release('spur', 'M', 20);
-    const b = cache.acquire('spur', 'M', 20);
+    const a = cache.acquire(SPUR, 'M', 20);
+    cache.release(SPUR, 'M', 20);
+    const b = cache.acquire(SPUR, 'M', 20);
     expect(b).not.toBe(a);
     expect(cache.size()).toBe(1);
   });
 
   it('持っていないキーの release は何もしない', () => {
     const cache = createGeometryCache();
-    expect(() => cache.release('spur', 'L', 16)).not.toThrow();
+    expect(() => cache.release(SPUR, 'L', 16)).not.toThrow();
     expect(cache.size()).toBe(0);
+  });
+});
+
+describe('buildHelicalGeometry（S2-01）', () => {
+  // 点 (x, y, z) に最も近い頂点までの距離
+  function nearest(
+    pos: {
+      count: number;
+      getX(i: number): number;
+      getY(i: number): number;
+      getZ(i: number): number;
+    },
+    [x, y, z]: readonly [number, number, number],
+  ): number {
+    let best = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < pos.count; i++) {
+      best = Math.min(best, Math.hypot(pos.getX(i) - x, pos.getY(i) - y, pos.getZ(i) - z));
+    }
+    return best;
+  }
+  function rotated([x, y]: readonly [number, number], a: number): [number, number] {
+    return [x * Math.cos(a) - y * Math.sin(a), x * Math.sin(a) + y * Math.cos(a)];
+  }
+
+  it("中・20 歯 'right': −b/2 と +b/2 の断面の歯の角度の差が 8·tan20°/20 ≈ 0.1456 rad（'left' は逆）", () => {
+    const b = GEAR_SIZES.M.faceWidth;
+    const delta = (b * Math.tan(HELIX_ANGLE)) / 20;
+    expect(delta).toBeCloseTo(0.1456, 4);
+    const tip = spurOutline(GEAR_SIZES.M.module, 20)[10] as [number, number];
+    for (const [hand, sign] of [
+      ['right', 1],
+      ['left', -1],
+    ] as const) {
+      const geometry = buildHelicalGeometry('M', 20, hand);
+      const pos = geometry.getAttribute('position');
+      // 中央の断面が平歯車と同じなので、両端は ∓Δφ/2 だけ回った位置に同じ点がある
+      const lower = rotated(tip, (-sign * delta) / 2);
+      const upper = rotated(tip, (sign * delta) / 2);
+      expect(nearest(pos, [lower[0], lower[1], -b / 2])).toBeLessThan(1e-5);
+      expect(nearest(pos, [upper[0], upper[1], b / 2])).toBeLessThan(1e-5);
+      // 逆向きに回した位置には無い
+      const wrong = rotated(tip, (-sign * delta) / 2);
+      expect(nearest(pos, [wrong[0], wrong[1], b / 2])).toBeGreaterThan(0.1);
+      geometry.dispose();
+    }
+  });
+
+  it('z は [−b/2, b/2]、頂点の半径は歯底円以上・歯先円以下、法線は単位ベクトル', () => {
+    const geometry = buildHelicalGeometry('S', 12, 'right');
+    const box = geometry.boundingBox;
+    if (box === null) throw new Error('boundingBox がない');
+    expect(box.min.z).toBeCloseTo(-2, 6);
+    expect(box.max.z).toBeCloseTo(2, 6);
+    const pos = geometry.getAttribute('position');
+    const normal = geometry.getAttribute('normal');
+    for (let i = 0; i < pos.count; i++) {
+      const r = Math.hypot(pos.getX(i), pos.getY(i));
+      expect(r).toBeGreaterThanOrEqual(4.75 - 1e-5);
+      expect(r).toBeLessThanOrEqual(7 + 1e-5);
+      expect(Math.hypot(normal.getX(i), normal.getY(i), normal.getZ(i))).toBeCloseTo(1, 5);
+    }
+    geometry.dispose();
+  });
+
+  it('面は外を向く: 両端の面の法線は ±z、側面の法線は中心から外向き', () => {
+    const geometry = buildHelicalGeometry('M', 20, 'left');
+    const pos = geometry.getAttribute('position');
+    const normal = geometry.getAttribute('normal');
+    for (let i = 0; i < pos.count; i++) {
+      const z = pos.getZ(i);
+      const nz = normal.getZ(i);
+      const r = Math.hypot(pos.getX(i), pos.getY(i));
+      const radial = (pos.getX(i) * normal.getX(i) + pos.getY(i) * normal.getY(i)) / r;
+      // 端の面の頂点（法線がほぼ z 向き）は、その面の外を向く
+      if (Math.abs(nz) > 0.99) expect(Math.sign(nz)).toBe(Math.sign(z));
+      // 側面の頂点は、半径の向きに対して内向きでない。歯底円から基礎円までの半径方向の直線の面は、法線がほぼ
+      // 周方向（ねじれで 1% ほど傾く）なので、少しの負を許す。裏返っていれば −1 に近くなる
+      else expect(radial).toBeGreaterThan(-0.02);
+    }
+    geometry.dispose();
+  });
+});
+
+describe('形状データの共有（S2-01）', () => {
+  it("中・20 歯 'right' を 2 回求めると同じ参照。'left' とは別の参照", () => {
+    const cache = createGeometryCache();
+    const right1 = cache.acquire({ kind: 'helical', hand: 'right' }, 'M', 20);
+    const right2 = cache.acquire({ kind: 'helical', hand: 'right' }, 'M', 20);
+    const left = cache.acquire({ kind: 'helical', hand: 'left' }, 'M', 20);
+    const spur = cache.acquire(SPUR, 'M', 20);
+    expect(right2).toBe(right1);
+    expect(left).not.toBe(right1);
+    expect(spur).not.toBe(right1);
+    expect(spur).not.toBe(left);
+    expect(cache.size()).toBe(3);
   });
 });

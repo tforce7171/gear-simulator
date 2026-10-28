@@ -1,17 +1,30 @@
 import { GEAR_SIZES, PERIMETER_CANDIDATE_COUNT } from '../constants';
 import type { Vec3 } from '../math/vec3';
-import type { Axis, Gear, GearId, Scene, Shaft, ShaftId, SizeKey } from '../scene/types';
-import { resolveLayout } from './resolve';
+import { gearShape, makeGear, meshPartnerShape, newGearShape } from '../scene/gear-shape';
+import type {
+  Axis,
+  Gear,
+  GearId,
+  GearKind,
+  GearShape,
+  Scene,
+  Shaft,
+  ShaftId,
+  SizeKey,
+} from '../scene/types';
+import { resolveAddition, resolveLayout } from './resolve';
 
 // 生やす候補の列挙（要件 §6、design.md §5）。選んだ歯車について、
 // 外周の候補（新しい mesh のシャフトを作る。親の軸まわりの 8 方向）と、
 // 同じ軸の候補（選んだ歯車のシャフトに通す。歯車の並びの両端の外側）を返す。
-// 候補を足した仮のシーンを resolveLayout し、新しく増えた干渉の組があるものは除く
+// 外周の子は親とかみ合う形（ハスバ歯車なら逆の hand）、同じ軸は spec.coaxialKind の歯車（S2-01）。
+// 候補を足した仮のシーン（resolveAddition で、全体を解き直さずに求める）で新しく増えた干渉の組があるものは除く
 
 export interface GrowSpec {
   perimeterTeeth: number; // 外周の新しい歯車の歯数（大きさは親と同じ）
   coaxialSize: SizeKey; // 同じ軸の新しい歯車の大きさ
   coaxialTeeth: number; // 同じ軸の新しい歯車の歯数
+  coaxialKind: GearKind; // 同じ軸の新しい歯車の種類（S2-01。ハスバ歯車は hand 'right'）
 }
 
 export type GrowCandidate =
@@ -21,6 +34,7 @@ export type GrowCandidate =
       angle: number; // 親の軸まわり（rad）。k·π/4
       size: SizeKey; // 親と同じ
       teeth: number;
+      shape: GearShape; // 親とかみ合う形（平歯車は平歯車、ハスバ歯車は逆の hand。S2-01）
       center: Vec3; // 新しい歯車の中心（仮の表示用）
       axis: Axis;
       basePhase: number; // 新しい歯車の位相（仮の表示を正しくかみ合わせて見せる用）
@@ -31,6 +45,7 @@ export type GrowCandidate =
       offset: number; // 歯幅の負側の面の位置。AXIAL_SNAP の倍数
       size: SizeKey;
       teeth: number;
+      shape: GearShape; // newGearShape(spec.coaxialKind)
       center: Vec3;
       axis: Axis;
     };
@@ -48,17 +63,21 @@ export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec)
   const tempGearId = unusedId(scene.gears, '__candidate_gear');
   const tempShaftId = unusedId(scene.shafts, '__candidate_shaft');
 
-  // 仮のシーンを resolveLayout し、新しく増えた干渉の組が無ければ新しい歯車のレイアウトを返す。
-  // 新しい組は必ず新しい部品か伸びたシャフトを含む（それ以外の部品の位置と形は変わらないため）
-  const tryPlace = (tentative: Scene) => {
-    const result = resolveLayout(tentative);
+  // 仮のシーン（選んだシーンに歯車と、外周ならシャフトを足したもの）で、新しく増えた干渉の組が無ければ
+  // 新しい歯車のレイアウトを返す。新しい組は必ず新しい部品か伸びたシャフトを含む（それ以外の部品の位置と形は変わらないため）
+  // ので、それらを含む組だけを resolveAddition で求める（全体を resolveLayout し直すと、候補ごとに全ての組を調べ直して遅い）
+  const tryPlace = (shaft: Shaft | null, gear: Gear) => {
+    const result = resolveAddition(scene, layout, shaft, gear);
+    if (result === null) return null;
     for (const [a, b] of result.interferences) {
       if (!baseInterferences.has(pairKey(a, b))) return null;
     }
-    return result.gears[tempGearId] ?? null;
+    return result.gear;
   };
 
   const candidates: GrowCandidate[] = [];
+  const perimeterShape = meshPartnerShape(gearShape(parent));
+  const coaxialShape = newGearShape(spec.coaxialKind);
 
   for (let k = 0; k < PERIMETER_CANDIDATE_COUNT; k++) {
     const angle = (k * 2 * Math.PI) / PERIMETER_CANDIDATE_COUNT;
@@ -66,15 +85,17 @@ export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec)
       id: tempShaftId,
       placement: { kind: 'mesh', parentGearId: gearId, childGearId: tempGearId, angle },
     };
-    const child: Gear = {
-      id: tempGearId,
-      kind: 'spur',
-      shaftId: tempShaftId,
-      size: parent.size,
-      teeth: spec.perimeterTeeth,
-      offset: 0,
-    };
-    const placed = tryPlace(withParts(scene, shaft, child));
+    const child = makeGear(
+      {
+        id: tempGearId,
+        shaftId: tempShaftId,
+        size: parent.size,
+        teeth: spec.perimeterTeeth,
+        offset: 0,
+      },
+      perimeterShape,
+    );
+    const placed = tryPlace(shaft, child);
     if (placed === null) continue;
     candidates.push({
       kind: 'perimeter',
@@ -82,6 +103,7 @@ export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec)
       angle,
       size: parent.size,
       teeth: spec.perimeterTeeth,
+      shape: perimeterShape,
       center: placed.center,
       axis: placed.axis,
       basePhase: placed.basePhase,
@@ -98,15 +120,17 @@ export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec)
   }
   const width = GEAR_SIZES[spec.coaxialSize].faceWidth;
   for (const offset of [minFace - width, maxFace]) {
-    const child: Gear = {
-      id: tempGearId,
-      kind: 'spur',
-      shaftId: parent.shaftId,
-      size: spec.coaxialSize,
-      teeth: spec.coaxialTeeth,
-      offset,
-    };
-    const placed = tryPlace(withParts(scene, null, child));
+    const child = makeGear(
+      {
+        id: tempGearId,
+        shaftId: parent.shaftId,
+        size: spec.coaxialSize,
+        teeth: spec.coaxialTeeth,
+        offset,
+      },
+      coaxialShape,
+    );
+    const placed = tryPlace(null, child);
     if (placed === null) continue;
     candidates.push({
       kind: 'coaxial',
@@ -114,6 +138,7 @@ export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec)
       offset,
       size: spec.coaxialSize,
       teeth: spec.coaxialTeeth,
+      shape: coaxialShape,
       center: placed.center,
       axis: placed.axis,
     });
@@ -134,15 +159,6 @@ function unusedId(existing: Readonly<Record<string, unknown>>, base: string): st
   let id = base;
   for (let i = 1; Object.hasOwn(existing, id); i++) id = `${base}_${i}`;
   return id;
-}
-
-// 入力のシーンは変えずに、部品を足した新しいシーンを作る
-function withParts(scene: Scene, shaft: Shaft | null, gear: Gear): Scene {
-  return {
-    shafts: shaft === null ? scene.shafts : { ...scene.shafts, [shaft.id]: shaft },
-    gears: { ...scene.gears, [gear.id]: gear },
-    motors: scene.motors,
-  };
 }
 
 function pairKey(a: string, b: string): string {
