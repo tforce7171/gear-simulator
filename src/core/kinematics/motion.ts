@@ -13,7 +13,7 @@ import {
   type LockReason,
   type MotionState,
 } from './types';
-import { solveWormSections, type WormSections, wormSections } from './worm-solve';
+import { solveFixed, solveWormSections, type WormSections, wormSections } from './worm-solve';
 
 // 運動の状態を 1 フレーム進める（design.md §6）。かみ合いのグラフ（S1-05）と力のつり合い（S1-06）から、
 // ロック・負けたモーター・角度（θ = N q）を求める
@@ -21,6 +21,8 @@ import { solveWormSections, type WormSections, wormSections } from './worm-solve
 // つかんだシャフトの零空間の行が、この値未満の成分だけなら動けない（固定具で止まっている。S3-01）。
 // 基底の成分は速度比（歯数の比）の大きさなので、丸めの誤差だけを 0 とみなす
 const PINNED_EPS = 1e-9;
+
+const NO_DRIVE: ShaftDrive = { damping: 0, bias: 0 };
 
 export interface MotionOptions {
   readonly paused?: boolean; // 全モーターを OFF とみなす（シーンは変えない）
@@ -219,13 +221,40 @@ export function stepMotion(
       locks.push(lockOf(grabbedLockReason(component), component));
       qDot = qPrev.map(() => 0);
       qNext = qPrev;
-    } else if (grabbed && hand !== undefined) {
-      if (dof !== 1) {
-        throw new Error(`自由度 ${dof} の成分を手で回すのは未対応（S3-03）: ${hand.shaftId}`);
-      }
+    } else if (grabbed && hand !== undefined && dof === 1) {
       const n = basis[shaftIds.indexOf(hand.shaftId)]?.[0] ?? 0;
       qNext = [hand.angle / n];
       qDot = qNext.map((v, k) => (dt > 0 ? (v - (qPrev[k] as number)) / dt : 0));
+    } else if (grabbed && hand !== undefined) {
+      // 自由度 2 以上（S3-03 の遊星歯車など）: つかんだシャフトの角度を手の角度にし、残りの自由度はつり合いで決める。
+      // つかんだシャフトの ω（= 角度の差 / dt）を規定値として、ウォームの規定値と同じ solveFixed で解く（モーターも効く）。
+      // dt = 0 では角度の差を一度に動かす（モーターは無いものとし、ω の二乗和が最小の動き）。ω は 0
+      const row = shaftIds.indexOf(hand.shaftId);
+      const current = multiplyVector([basis[row] as number[]], qPrev)[0] ?? 0;
+      const delta = hand.angle - current;
+      const refRows = component.referenceShaftIds.map((id) => shaftIds.indexOf(id));
+      const toQ = (omegasOfShafts: readonly number[]) => refRows.map((i) => omegasOfShafts[i] ?? 0);
+      if (dt > 0) {
+        const solved =
+          solveFixed(
+            basis,
+            dof,
+            [{ row, value: delta / dt }],
+            shaftIds.map((id) => drives.get(id) ?? NO_DRIVE),
+          ) ?? basis.map(() => 0);
+        qDot = toQ(solved);
+        qNext = qPrev.map((v, k) => v + (qDot[k] as number) * dt);
+      } else {
+        const moved =
+          solveFixed(
+            basis,
+            dof,
+            [{ row, value: delta }],
+            shaftIds.map(() => NO_DRIVE),
+          ) ?? basis.map(() => 0);
+        qNext = qPrev.map((v, k) => v + (toQ(moved)[k] as number));
+        qDot = qPrev.map(() => 0);
+      }
     } else if (worm !== null) {
       // ウォームを含む成分（S2-03）: 区画ごとにトポロジカル順に解き、ω から q（基準シャフトの ω）を求めて積分する
       const solution = solveWormSections(worm, drives);

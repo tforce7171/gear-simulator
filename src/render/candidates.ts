@@ -1,6 +1,15 @@
-import { CylinderGeometry, Group, Mesh, MeshStandardMaterial } from 'three';
-import { SHAFT_END_MARGIN } from '../core/constants';
+import {
+  CylinderGeometry,
+  Group,
+  LatheGeometry,
+  Mesh,
+  MeshBasicMaterial,
+  MeshStandardMaterial,
+  Vector2,
+} from 'three';
+import { GEAR_SIZES, INTERNAL_WEB_GAP, SHAFT_END_MARGIN } from '../core/constants';
 import { sectionWidth } from '../core/geometry/dimensions';
+import { internalRimRadius, internalTipRadius } from '../core/geometry/internal';
 import type { MotionState } from '../core/kinematics/types';
 import type { Vec3 } from '../core/math/vec3';
 import type { Axis, GearShape, ShaftId, SizeKey } from '../core/scene/types';
@@ -33,6 +42,12 @@ export interface CandidateSpec {
   readonly followShaftId: ShaftId;
   readonly followRatio: number;
   readonly withShaft: boolean; // 仮のシャフトも描く（外周の候補）
+  // 遊星歯車機構の候補（S3-03）。本体はリング（歯を省いた輪。ウェブは描かず、太陽の上のクリックを奪わない）で、
+  // 遊星を選べない仮の歯車として添える
+  readonly planets?: {
+    readonly teeth: number;
+    readonly items: ReadonlyArray<{ readonly center: Vec3; readonly phase: number }>;
+  };
 }
 
 // 候補のピッキングの ID（一覧の中の番号）
@@ -53,6 +68,8 @@ interface Entry {
   group: Group;
   body: Mesh;
   shaft: Mesh | null;
+  extras: Group | null; // 選べない添えもの（遊星歯車機構のリングの輪と遊星。S3-03）
+  proxy: Mesh | null; // 見えない当たり判定（遊星歯車機構。S3-03）
 }
 
 function material(opacity: number, emissive: number): MeshStandardMaterial {
@@ -71,25 +88,106 @@ export function createCandidateView(cache: GeometryCache): CandidateView {
   const root = new Group();
   const normal = material(CANDIDATE_OPACITY, 0x000000);
   const hover = material(CANDIDATE_HOVER_OPACITY, CANDIDATE_HOVER_EMISSIVE);
+  // 当たり判定だけの形（描かないがレイキャストには当たる。外向きの面だけ）
+  const pickProxyMaterial = new MeshBasicMaterial({ visible: false });
   let entries: Entry[] = [];
   let current: readonly CandidateSpec[] = [];
 
   function clear(): void {
     for (const entry of entries) {
       root.remove(entry.group);
-      cache.release(entry.spec.shape, entry.spec.size, entry.spec.teeth);
+      if (entry.spec.planets === undefined) {
+        cache.release(entry.spec.shape, entry.spec.size, entry.spec.teeth);
+      } else {
+        entry.body.geometry.dispose();
+      }
       entry.shaft?.geometry.dispose();
+      entry.proxy?.geometry.dispose();
+      if (entry.extras !== null) {
+        root.remove(entry.extras);
+        for (const _ of entry.spec.planets?.items ?? []) {
+          cache.release({ kind: 'spur' }, entry.spec.size, entry.spec.planets?.teeth ?? 0);
+        }
+      }
     }
     entries = [];
   }
 
+  // 遊星歯車機構の候補（S3-03）: リングを歯を省いた輪（内側 R − m、外側 R + 3.25m、歯幅）と、ウェブの側へ伸びる
+  // つなぎの筒（R + 2.25m 〜 R + 3.25m、INTERNAL_WEB_GAP）で描く。ウェブの円板は描かない（太陽の下に入って、
+  // 太陽のクリックを奪うため）。輪は外周の候補と同じ面で重なるので、描くだけで選べなくし、押す所は筒と輪の外側の壁
+  // （外向きの面だけの見えない円筒。pickProxyGeometry）にする
+  function ringGeometry(spec: CandidateSpec): LatheGeometry {
+    const inner = internalTipRadius(spec.size, spec.teeth);
+    const outer = internalRimRadius(spec.size, spec.teeth);
+    const tube = outer - GEAR_SIZES[spec.size].module;
+    const half = GEAR_SIZES[spec.size].faceWidth / 2;
+    const bottom = -half - INTERNAL_WEB_GAP;
+    const geometry = new LatheGeometry(
+      [
+        new Vector2(inner, -half),
+        new Vector2(tube, -half),
+        new Vector2(tube, bottom),
+        new Vector2(outer, bottom),
+        new Vector2(outer, half),
+        new Vector2(inner, half),
+        new Vector2(inner, -half),
+      ],
+      64,
+    );
+    // 回転の軸（ローカルの y）をローカルの z（= 軸 w）にする。webSide −1 なので筒は −z の側
+    geometry.rotateX(Math.PI / 2);
+    return geometry;
+  }
+
+  // 遊星歯車機構の候補の押す所: 輪と筒の外側の壁（外向きの面だけ。内側から当たらない）
+  function pickProxyGeometry(spec: CandidateSpec): CylinderGeometry {
+    const outer = internalRimRadius(spec.size, spec.teeth);
+    const half = GEAR_SIZES[spec.size].faceWidth / 2;
+    const length = 2 * half + INTERNAL_WEB_GAP;
+    const geometry = new CylinderGeometry(outer, outer, length, 48, 1, true);
+    geometry.rotateX(Math.PI / 2);
+    geometry.translate(0, 0, half - length / 2);
+    return geometry;
+  }
+
   function build(spec: CandidateSpec, index: number): Entry {
     const group = new Group();
-    const body = new Mesh(cache.acquire(spec.shape, spec.size, spec.teeth), normal);
+    const body = new Mesh(
+      spec.planets === undefined
+        ? cache.acquire(spec.shape, spec.size, spec.teeth)
+        : ringGeometry(spec),
+      normal,
+    );
     body.renderOrder = CANDIDATE_RENDER_ORDER;
-    body.scale.z = gearBodyScaleZ(spec.shape);
+    if (spec.planets === undefined) body.scale.z = gearBodyScaleZ(spec.shape);
     body.rotation.z = spec.phase;
-    group.add(body);
+    let extras: Group | null = null;
+    let proxy: Mesh | null = null;
+    if (spec.planets === undefined) {
+      group.add(body);
+    } else {
+      extras = new Group();
+      const ring = new Group();
+      ring.add(body);
+      placeOnAxis(ring, spec.center, spec.axis);
+      extras.add(ring);
+      proxy = new Mesh(pickProxyGeometry(spec), pickProxyMaterial);
+      group.add(proxy);
+      for (const item of spec.planets.items) {
+        const planet = new Mesh(
+          cache.acquire({ kind: 'spur' }, spec.size, spec.planets.teeth),
+          normal,
+        );
+        planet.renderOrder = CANDIDATE_RENDER_ORDER;
+        const pivot = new Group();
+        pivot.add(planet);
+        planet.rotation.z = item.phase;
+        placeOnAxis(pivot, item.center, spec.axis);
+        extras.add(pivot);
+      }
+      root.add(extras);
+    }
     let shaft: Mesh | null = null;
     if (spec.withShaft) {
       // mesh のシャフトの子は offset 0 なので、シャフトの区間は歯車の中心について対称
@@ -104,7 +202,7 @@ export function createCandidateView(cache: GeometryCache): CandidateView {
     placeOnAxis(group, spec.center, spec.axis);
     setPickTarget(group, 'candidate', candidatePickId(index));
     root.add(group);
-    return { spec, group, body, shaft };
+    return { spec, group, body, shaft, proxy, extras };
   }
 
   return {

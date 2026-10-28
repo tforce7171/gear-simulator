@@ -68,6 +68,7 @@ function sceneA(motorOn = true): Scene {
       },
     },
     anchors: {},
+    carriers: {},
   };
 }
 
@@ -89,11 +90,11 @@ function plainScene(
   }
   const motorMap: Record<string, Motor> = {};
   for (const m of motors) motorMap[m.id] = m;
-  return { shafts, gears: gearMap, motors: motorMap, anchors: {} };
+  return { shafts, gears: gearMap, motors: motorMap, anchors: {}, carriers: {} };
 }
 
 function layoutOf(meshes: readonly Mesh[]): Layout {
-  return { shafts: {}, gears: {}, meshes, interferences: [] };
+  return { shafts: {}, gears: {}, carriers: {}, meshes, interferences: [] };
 }
 
 function motor(id: string, shaftId: string, direction: 1 | -1 = 1): Motor {

@@ -3,6 +3,7 @@ import { assertNever, isGearKind } from './gear-shape';
 import type {
   Anchor,
   Axis,
+  Carrier,
   Gear,
   Hand,
   Motor,
@@ -30,7 +31,13 @@ function isPlainObject(x: unknown): x is Raw {
 const AXES: readonly unknown[] = ['x', 'y', 'z'];
 const SIZES: readonly unknown[] = ['S', 'M', 'L'];
 
-const PREFIX = { shafts: 'shaft_', gears: 'gear_', motors: 'motor_', anchors: 'anchor_' } as const;
+const PREFIX = {
+  shafts: 'shaft_',
+  gears: 'gear_',
+  motors: 'motor_',
+  anchors: 'anchor_',
+  carriers: 'carrier_',
+} as const;
 type Collection = keyof typeof PREFIX;
 
 export function parseScene(raw: unknown): SceneParseResult {
@@ -52,13 +59,23 @@ export function parseScene(raw: unknown): SceneParseResult {
   if (raw.anchors !== undefined && !isPlainObject(raw.anchors)) {
     shape('anchors', 'anchors must be an object');
   }
+  // キャリア（S3-03）。無いシーン（S3-03 より前に保存したもの）は空として読む（暫定。S3-05 で version 3 の移行に置き換える）
+  if (raw.carriers !== undefined && !isPlainObject(raw.carriers)) {
+    shape('carriers', 'carriers must be an object');
+  }
   if (errors.length > 0) return { ok: false, errors };
   const rawAnchors: Raw = isPlainObject(raw.anchors) ? raw.anchors : {};
+  const rawCarriers: Raw = isPlainObject(raw.carriers) ? raw.carriers : {};
 
   // 部品の共通の形: 通常のオブジェクトで、キーと id が種類の接頭辞を持つ文字列
   const items = (collection: Collection): Array<[string, Raw, string]> => {
     const out: Array<[string, Raw, string]> = [];
-    const source = collection === 'anchors' ? rawAnchors : (raw[collection] as Raw);
+    const source =
+      collection === 'anchors'
+        ? rawAnchors
+        : collection === 'carriers'
+          ? rawCarriers
+          : (raw[collection] as Raw);
     for (const [key, item] of Object.entries(source)) {
       const base = `${collection}.${key}`;
       if (!key.startsWith(PREFIX[collection])) {
@@ -139,6 +156,18 @@ export function parseScene(raw: unknown): SceneParseResult {
         childGearId: str(p, 'childGearId', base, key),
         axisStep: num(p, 'axisStep', base, key) as 1 | 2,
         side: num(p, 'side', base, key) as 1 | -1,
+      };
+    } else if (p.kind === 'concentric') {
+      // 同じ線上のシャフト（S3-03）。原点・軸は持たない（親のシャフトから導く）
+      placement = { kind: 'concentric', parentShaftId: str(p, 'parentShaftId', base, key) };
+    } else if (p.kind === 'planet') {
+      // 遊星のシャフト（S3-03）。軸は持たない（キャリアのシャフトから導く）
+      placement = {
+        kind: 'planet',
+        carrierId: str(p, 'carrierId', base, key),
+        parentGearId: str(p, 'parentGearId', base, key),
+        childGearId: str(p, 'childGearId', base, key),
+        angle: num(p, 'angle', base, key),
       };
     } else {
       shape(`${base}.kind`, `invalid placement kind "${String(p.kind)}"`, key);
@@ -224,6 +253,21 @@ export function parseScene(raw: unknown): SceneParseResult {
     ]);
   }
 
+  const carriers: Array<[string, Carrier]> = [];
+  for (const [key, item, id] of items('carriers')) {
+    const base = `carriers.${key}`;
+    // offset が AXIAL_SNAP の倍数か、シャフトがあるかは validateScene が確かめる
+    carriers.push([
+      key,
+      {
+        id,
+        shaftId: str(item, 'shaftId', base, key),
+        offset: num(item, 'offset', base, key),
+        size: size(item, base, key),
+      },
+    ]);
+  }
+
   if (errors.length > 0) return { ok: false, errors };
 
   // Object.fromEntries は自分のプロパティとして定義するので、"__proto__" のようなキーでも安全
@@ -232,6 +276,7 @@ export function parseScene(raw: unknown): SceneParseResult {
     gears: Object.fromEntries(gears),
     motors: Object.fromEntries(motors),
     anchors: Object.fromEntries(anchors),
+    carriers: Object.fromEntries(carriers),
   };
   const validated = validateScene(scene);
   return validated.ok ? { ok: true, scene } : { ok: false, errors: validated.errors };

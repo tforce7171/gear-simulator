@@ -14,6 +14,7 @@ import { AUTOSAVE_DEBOUNCE_MS, THUMBNAIL_SIZE } from './core/constants';
 import { toSaveFile } from './core/io/save-file';
 import { boundsOf } from './core/layout/bounds';
 import { resolveLayout } from './core/layout/resolve';
+import { shaftWorldOrigin } from './core/layout/world';
 import { defaultSettings } from './core/settings';
 import { nextTheme, THEME_AUDIO_MATERIAL } from './core/theme';
 import { installGearSim } from './debug/gear-sim';
@@ -152,7 +153,7 @@ const pickAt = (x: number, y: number) => {
   return renderer.pick(x, y);
 };
 // 部品の本体（候補・ハンドルを除く）。候補の陰にある本体を調べる（S1-19）
-const BODY_KINDS = ['gear', 'motor', 'shaft'] as const;
+const BODY_KINDS = ['gear', 'carrier', 'motor', 'shaft'] as const;
 const bodyAt = (x: number, y: number) => {
   syncDisplay();
   return renderer.pick(x, y, BODY_KINDS);
@@ -449,6 +450,10 @@ installGearSim({
   getScene: () => store.getState().scene,
   getLayout: () => layoutOf(store.getState().scene),
   getMotion: () => store.getState().motion,
+  getShaftWorldOrigin: (shaftId) => {
+    const { scene, motion } = store.getState();
+    return shaftWorldOrigin(layoutOf(scene), motion, shaftId);
+  },
   loadScene: (scene) => store.dispatch({ type: 'loadScene', scene }),
   dispatch: (command) => store.dispatch({ type: 'command', command }),
   undo: () => store.dispatch({ type: 'undo' }),

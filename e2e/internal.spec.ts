@@ -74,6 +74,7 @@ test('P のシャフトだけのシーンで P を選び、囲む内歯車の候
     gears: { gear_p: internalPair.gears.gear_p as Scene['gears'][string] },
     motors: {},
     anchors: {},
+    carriers: {},
   };
   await openApp(page, { scene: onlyP, camera: VIEW });
   // 囲む候補は、パレットで内歯車を選んでいるときに出る

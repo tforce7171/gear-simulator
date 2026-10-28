@@ -51,12 +51,12 @@ function makeScene(
   for (const [id, shaftId, size, rpm, direction, on = true] of motors) {
     motorMap[id] = { id, shaftId, size, rpm, direction, on };
   }
-  return { shafts, gears: gearMap, motors: motorMap, anchors: {} };
+  return { shafts, gears: gearMap, motors: motorMap, anchors: {}, carriers: {} };
 }
 
 // meshes だけを手で埋めた Layout（S1-09 に依存しない）
 function layoutOf(meshes: readonly Mesh[]): Layout {
-  return { shafts: {}, gears: {}, meshes, interferences: [] };
+  return { shafts: {}, gears: {}, carriers: {}, meshes, interferences: [] };
 }
 
 function tree(a: string, b: string): Mesh {

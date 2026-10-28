@@ -4,7 +4,7 @@ import type { Scene, ShaftId } from '../scene/types';
 import { type ShaftDrive, solveBalanceAffine } from './balance';
 import type { KinematicComponent } from './graph';
 import { type Matrix, multiply, multiplyVector, nullSpace, solveParticular } from './linalg';
-import { meshCoefficients } from './mesh-coefficients';
+import { meshCoefficients, meshTerms } from './mesh-coefficients';
 import type { LockReason } from './types';
 
 // ウォームのセルフロック（S2-03。design.md §6）。ウォームのかみ合いを一方通行の拘束として扱う:
@@ -23,6 +23,8 @@ interface Constraint {
   readonly coefA: number;
   readonly coefB: number;
   readonly worm: 'a' | 'b' | null; // ウォームのかみ合いなら、ウォームの側
+  // 拘束の行の項（遊星のかみ合いはキャリアのシャフトも。S3-03。ウォームのかみ合いは公転しない）
+  readonly terms: ReadonlyArray<{ readonly shaftId: ShaftId; readonly coef: number }>;
 }
 
 export interface WormSection {
@@ -50,7 +52,14 @@ function constraintOf(scene: Scene, mesh: Mesh): Constraint {
   }
   const { a: coefA, b: coefB } = meshCoefficients(mesh, scene);
   const worm = mesh.kind !== 'worm' ? null : a.kind === 'worm' ? 'a' : 'b';
-  return { shaftA: a.shaftId, shaftB: b.shaftId, coefA, coefB, worm };
+  return {
+    shaftA: a.shaftId,
+    shaftB: b.shaftId,
+    coefA,
+    coefB,
+    worm,
+    terms: meshTerms(mesh, scene),
+  };
 }
 
 // 成分の区画とトポロジカル順。ウォームのかみ合いが無ければ null（段階 1 と同じに解く）
@@ -71,7 +80,9 @@ export function wormSections(scene: Scene, component: KinematicComponent): WormS
     const ry = find(y);
     if (rx !== ry) parent.set(compareIds(rx, ry) < 0 ? ry : rx, compareIds(rx, ry) < 0 ? rx : ry);
   };
-  for (const c of constraints) if (c.worm === null) union(c.shaftA, c.shaftB);
+  for (const c of constraints) {
+    if (c.worm === null) for (const t of c.terms) union(c.shaftA, t.shaftId);
+  }
 
   // 2. 区画の有向グラフ（ウォームの区画 → ホイールの区画）と、強連結成分でまとめる（Tarjan）
   const nodes = [...new Set(component.shaftIds.map(find))].sort(compareIds);
@@ -196,14 +207,12 @@ export function solveWormSections(
     const rows: Matrix = [];
     const fixed: Array<{ row: number; value: number }> = [];
     for (const c of structure.constraints) {
-      const sa = structure.sectionOfShaft.get(c.shaftA);
-      const sb = structure.sectionOfShaft.get(c.shaftB);
-      if (sa === index && sb === index) {
+      if (c.terms.every((t) => structure.sectionOfShaft.get(t.shaftId) === index)) {
         const row = new Array<number>(ids.length).fill(0);
-        const ja = local.get(c.shaftA) as number;
-        const jb = local.get(c.shaftB) as number;
-        row[ja] = (row[ja] as number) + c.coefA;
-        row[jb] = (row[jb] as number) + c.coefB;
+        for (const t of c.terms) {
+          const j = local.get(t.shaftId) as number;
+          row[j] = (row[j] as number) + t.coef;
+        }
         rows.push(row);
       } else if (c.worm !== null) {
         // 上流のウォーム → この区画のホイール: c_w·ω_w + c_h·ω_h = 0 から ω_h を規定値にする
@@ -251,8 +260,9 @@ export function solveWormSections(
   return { ok: true, omegas };
 }
 
-// 規定値（行 row の ω = value）を満たす ω = N q のうち、残りの自由度を力のつり合いで決めたもの。両立しなければ null
-function solveFixed(
+// 規定値（行 row の ω = value）を満たす ω = N q のうち、残りの自由度を力のつり合いで決めたもの。両立しなければ null。
+// 自由度 2 以上の成分を手で回すとき（S3-03）にも使う
+export function solveFixed(
   basis: Matrix,
   dof: number,
   fixed: ReadonlyArray<{ row: number; value: number }>,

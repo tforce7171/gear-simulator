@@ -14,7 +14,7 @@ export type Point = { x: number; y: number };
 export type Candidate = ReturnType<GearSimDebug['getCandidates']>[number];
 export type Handle = ReturnType<GearSimDebug['getHandles']>[number];
 
-export const EMPTY: Scene = { shafts: {}, gears: {}, motors: {}, anchors: {} };
+export const EMPTY: Scene = { shafts: {}, gears: {}, motors: {}, anchors: {}, carriers: {} };
 
 /** e2e/fixtures/<name>.json のシーン（SaveFile ではなく Scene の形のもの） */
 export function fixtureScene(name: string): Scene {

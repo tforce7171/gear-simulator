@@ -25,7 +25,7 @@ const OBLIQUE_VIEW = { position: [120, 210, 200] as Vec3, target: [0, 35, 0] as 
 
 type Candidate = {
   index: number;
-  kind: 'perimeter' | 'bevel' | 'skew' | 'enclose' | 'coaxial';
+  kind: 'perimeter' | 'bevel' | 'skew' | 'enclose' | 'planetary' | 'coaxial';
   center: Vec3;
 };
 

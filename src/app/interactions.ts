@@ -5,7 +5,7 @@ import { newInterferences } from '../core/layout/interference-diff';
 import { resolveLayout } from '../core/layout/resolve';
 import type { Vec3 } from '../core/math/vec3';
 import type { IdKind } from '../core/scene/ids';
-import { type Axis, isChildPlacement, type Scene } from '../core/scene/types';
+import { type Axis, isFreePlacement, type Scene } from '../core/scene/types';
 import { grabTarget, type HandRotateSession, startHandRotate } from '../input/hand-rotate';
 import {
   type DragInput,
@@ -540,7 +540,7 @@ export function createInteractions(deps: InteractionsDeps): Interactions {
       if (shaftId === null) return;
       const placement = scene.shafts[shaftId]?.placement;
       // mesh・bevel のシャフトの向きは親から導くので、R では変えない
-      if (placement === undefined || isChildPlacement(placement)) return;
+      if (placement === undefined || !isFreePlacement(placement)) return;
       store.dispatch({
         type: 'command',
         command: { type: 'setShaftAxis', shaftId, axis: nextAxis(placement.axis) },

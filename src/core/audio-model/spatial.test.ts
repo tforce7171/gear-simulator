@@ -39,6 +39,7 @@ function layoutWith(gears: Record<string, { center: Vec3; pitchRadius: number }>
         { center: g.center, axis: 'y', pitchRadius: g.pitchRadius, basePhase: 0 },
       ]),
     ),
+    carriers: {},
     meshes: [],
     interferences: [],
   };

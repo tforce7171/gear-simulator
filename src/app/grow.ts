@@ -8,7 +8,7 @@ import type { CandidateSpec } from '../render/candidates';
 
 // 歯車を生やす（S1-18）。純粋関数のみ。選んだ歯車の候補を列挙し、候補を編集コマンドに変換する
 
-export type CandidateKind = GrowCandidate['kind']; // 'perimeter' | 'bevel' | 'skew' | 'enclose' | 'coaxial'（S1-10、S2-02、S2-03、S3-02）
+export type CandidateKind = GrowCandidate['kind']; // 'perimeter' | 'bevel' | 'skew' | 'enclose' | 'planetary' | 'coaxial'（S1-10、S2-02、S2-03、S3-02、S3-03）
 
 // 生やす歯車の大きさと歯数。外周は親と同じ大きさ（同じ大きさ同士しかかみ合わない）、
 // 同じ軸はパレットで選んでいる大きさ。歯数はどちらも DEFAULT_TEETH[大きさ]
@@ -70,6 +70,9 @@ export function growCommand(candidate: GrowCandidate): Command {
       teeth: candidate.teeth,
     };
   }
+  if (candidate.kind === 'planetary') {
+    return { type: 'growGear', mode: 'planetary', parentGearId: candidate.parentGearId };
+  }
   if (candidate.kind === 'skew') {
     return {
       type: 'growGear',
@@ -111,6 +114,20 @@ export function candidateSpec(scene: Scene, candidate: GrowCandidate): Candidate
   }
   const parent = scene.gears[candidate.parentGearId];
   if (parent === undefined) throw new Error(`candidateSpec: no gear ${candidate.parentGearId}`);
+  if (candidate.kind === 'planetary') {
+    // 遊星歯車機構（S3-03）: リングの輪と遊星を、止めたまま見せる
+    return {
+      ...common,
+      phase: candidate.basePhase,
+      followShaftId: parent.shaftId,
+      followRatio: 0,
+      withShaft: false,
+      planets: {
+        teeth: candidate.planetTeeth,
+        items: candidate.planets.map((p) => ({ center: p.center, phase: p.basePhase })),
+      },
+    };
+  }
   // 外周は −(親の歯数 / 子の歯数)。かさ歯車（S2-02）は apex_親·z·ω_親 + apex_子·z·ω_子 = 0、apex_子 = −side から 親の apex × side。
   // ねじれた位置の組（S2-03）は z_子·ω_子 + s·z_親·ω_親 = 0（s = (e_親 × u)·e_子）から −s·z_親 / z_子。
   // 内歯車の組（S3-02。囲む候補、内歯車の親の内側の候補）は同じ向きに回るので +z_親 / z_子

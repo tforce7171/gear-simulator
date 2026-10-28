@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import type { Page } from '@playwright/test';
 import type { Layout } from '../src/core/layout/types';
 import type { Vec3 } from '../src/core/math/vec3';
-import { isChildPlacement, type Scene, type ShaftPlacement } from '../src/core/scene/types';
+import type { Scene, ShaftPlacement } from '../src/core/scene/types';
 import { expect, test } from './fixtures/test';
 
 // S1-17: パレットから起点のシャフトを置く、R で向きを変える、位置と高さのハンドル
@@ -18,7 +18,7 @@ const chainThree = fixture('chain-three');
 // 縦軸の起点を 2 本、x 方向に 100mm 離して置いたもの（どちらも中・20 歯）
 const twoRoots = fixture('two-roots');
 
-const EMPTY: Scene = { shafts: {}, gears: {}, motors: {}, anchors: {} };
+const EMPTY: Scene = { shafts: {}, gears: {}, motors: {}, anchors: {}, carriers: {} };
 // 斜め上から見下ろす視点
 const OBLIQUE_VIEW = { position: [120, 170, 200] as Vec3, target: [0, 15, 20] as Vec3 };
 
@@ -66,7 +66,7 @@ function placementOf(scene: Scene, shaftId: string): ShaftPlacement {
 
 function originOf(scene: Scene, shaftId: string): Vec3 {
   const p = placementOf(scene, shaftId);
-  if (isChildPlacement(p)) throw new Error(`${shaftId} は ${p.kind}`);
+  if (p.kind !== 'root' && p.kind !== 'detached') throw new Error(`${shaftId} は ${p.kind}`);
   return p.origin;
 }
 

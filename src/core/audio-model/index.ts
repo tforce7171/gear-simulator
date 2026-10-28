@@ -272,7 +272,7 @@ export function computeMeshVoices(scene: Scene, layout: Layout, motion: MotionSt
       teeth: gear.teeth,
       frequency,
       ...clickToneMix(frequency),
-      position: meshContactPoint(layout, mesh),
+      position: meshContactPoint(layout, mesh, motion),
       kind: mesh.kind,
       slide: slideNoiseLevel(mesh.kind, speed),
     });

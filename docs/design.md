@@ -96,6 +96,12 @@ export const INTERNAL_MIN_TEETH = 24; // 内歯車の歯数の最小（最大は
 export const INTERNAL_MIN_TOOTH_DIFF = 12; // 内歯車とかみ合う外歯車の歯数差の最小（S3-02）
 export const INTERNAL_WEB_GAP = 8; // mm。内歯車のリングの面からウェブまでの隙間（SHAFT_END_MARGIN より大きく。S3-02）
 export const INTERNAL_WEB_THICKNESS = 4; // mm。内歯車のウェブ（円板とボス）が軸方向に占める幅（S3-02）
+export const PLANET_COUNT_RANGE = { min: 1, max: 6 } as const; // 1 つのキャリアの遊星の数（S3-03）
+export const DEFAULT_PLANET_COUNT = 3; // 候補から作る遊星の数（S3-03）
+export const PLANET_MIN_TEETH = 12; // 候補から作る遊星の歯数の最小（S3-03）
+export const CARRIER_THICKNESS = { S: 4, M: 4, L: 8 } as const; // mm。キャリアの板の厚み（S3-03）
+export const CARRIER_GAP = 4; // mm。太陽の歯幅の正側の面からキャリアの板までの隙間（S3-03）
+export const CARRIER_RADIUS_MARGIN = 4; // mm。キャリアの腕の半径 = 公転半径 + この余白（S3-03）
 ```
 
 各タスクで足す定数（足したタスクがこの一覧の値と合わせる）:
@@ -120,6 +126,12 @@ export const INTERNAL_WEB_THICKNESS = 4; // mm。内歯車のウェブ（円板�
 | `INTERNAL_MIN_TOOTH_DIFF` | 12（内歯車とかみ合う外歯車との歯数差の最小。内側での歯先の干渉を避ける。満たさない組は `canMesh` が偽） | S3-02 |
 | `INTERNAL_WEB_GAP` | 8 mm（内歯車のリングのウェブ側の面からウェブまで。段階 1 のシャフトの端の余白 `SHAFT_END_MARGIN`（4 mm）より大きくし、内側の歯車のシャフトの端がウェブに当たらないようにする） | S3-02 |
 | `INTERNAL_WEB_THICKNESS` | 4 mm（内歯車のウェブ（厚さ m の円板と、残りのボス）が軸方向に占める幅。`AXIAL_SNAP` の倍数にして、内歯車全体が 4 mm の格子に乗るようにする） | S3-02 |
+| `PLANET_COUNT_RANGE` | 1〜6（1 つのキャリアの遊星の数） | S3-03 |
+| `DEFAULT_PLANET_COUNT` | 3（遊星歯車機構の候補・`growGear`（planetary）で作る遊星の数） | S3-03 |
+| `PLANET_MIN_TEETH` | 12（`defaultPlanetTeeth` が試す遊星の歯数の最小） | S3-03 |
+| `CARRIER_THICKNESS` | `{ S: 4, M: 4, L: 8 }` mm（キャリアの板の厚み。`AXIAL_SNAP` の倍数） | S3-03 |
+| `CARRIER_GAP` | 4 mm（太陽の歯幅の正側の面からキャリアの板の負側の面まで。`SHAFT_END_MARGIN` と同じにし、遊星のシャフトの端がちょうど板に届き、太陽・遊星の歯車が板に当たらない） | S3-03 |
+| `CARRIER_RADIUS_MARGIN` | 4 mm（キャリアの腕の半径 = 公転半径 + この余白。遊星のシャフトの太さの分） | S3-03 |
 
 音・カメラ・UI だけで使う定数は、各タスクの資料に書く。
 
@@ -132,6 +144,7 @@ type ShaftId = string; // "shaft_xxx"
 type GearId = string;  // "gear_xxx"
 type MotorId = string; // "motor_xxx"
 type AnchorId = string; // "anchor_xxx"（S3-01）
+type CarrierId = string; // "carrier_xxx"（S3-03）
 type Axis = 'x' | 'y' | 'z';
 type SizeKey = 'S' | 'M' | 'L';
 
@@ -140,6 +153,7 @@ interface Scene {
   readonly gears: Readonly<Record<GearId, Gear>>;
   readonly motors: Readonly<Record<MotorId, Motor>>;
   readonly anchors: Readonly<Record<AnchorId, Anchor>>; // 固定具（S3-01）
+  readonly carriers: Readonly<Record<CarrierId, Carrier>>; // 遊星歯車のキャリア（S3-03）
 }
 
 interface Shaft {
@@ -174,10 +188,21 @@ type ShaftPlacement =
       readonly side: 1 | -1;         // 子の中心 = 親の中心 + (r_親 + r_子)·side·u（u は 2 本の軸のどちらとも直交する座標軸）
     }
   // 親が削除されてその場に残ったシャフト。削除時点のワールド座標と向きを持つ
-  | { readonly kind: 'detached'; readonly origin: Vec3; readonly axis: Axis };
-// 親から位置と向きを導く配置（mesh・bevel・skew）と、自分で持つ配置（root・detached）。isChildPlacement(p) で分ける（S2-02）
+  | { readonly kind: 'detached'; readonly origin: Vec3; readonly axis: Axis }
+  // 親のシャフトと同じ線上の別のシャフト（S3-03）。原点・軸は親と同じ。キャリアやリングのシャフトに使う
+  | { readonly kind: 'concentric'; readonly parentShaftId: ShaftId }
+  // キャリアに載った遊星のシャフト（S3-03）
+  | {
+      readonly kind: 'planet';
+      readonly carrierId: CarrierId;
+      readonly parentGearId: GearId; // かみ合う相手。キャリアのシャフトと同じ線上の歯車（太陽歯車かリング）
+      readonly childGearId: GearId;  // このシャフト上の、親とかみ合う歯車
+      readonly angle: number;        // キャリアの角度が 0 のときの、キャリアの軸まわりの角度（rad）
+    };
+// 親の歯車から位置と向きを導く配置（mesh・bevel・skew・planet）、自分で持つ配置（root・detached）、親のシャフトと同じ位置と
+// 向きの concentric（S3-03）。isChildPlacement(p)・isFreePlacement(p) で分ける（S2-02、S3-03）
 type ChildPlacement = Extract<ShaftPlacement, { parentGearId: GearId }>;
-type FreePlacement = Exclude<ShaftPlacement, ChildPlacement>;
+type FreePlacement = Extract<ShaftPlacement, { origin: Vec3 }>; // root・detached
 
 interface GearBase {
   readonly id: GearId;
@@ -208,6 +233,15 @@ interface Motor {
 }
 
 // 固定具（S3-01）。対象のシャフトを地面に固定する（運動の拘束 ω = 0。§6）
+// 遊星歯車のキャリア（S3-03）。シャフト shaftId と一緒に回る剛体で、遊星のシャフトを支える。
+// 遊星の数は、このキャリアを参照する遊星のシャフトの数（別に持たない）
+interface Carrier {
+  readonly id: CarrierId;
+  readonly shaftId: ShaftId; // このシャフトと一緒に回る
+  readonly offset: number;   // 板の負側の面の位置（mm）。AXIAL_SNAP の倍数（Gear.offset と同じ考え方）
+  readonly size: SizeKey;    // 板の厚み（CARRIER_THICKNESS）に使う
+}
+
 interface Anchor {
   readonly id: AnchorId;
   readonly target: { readonly kind: 'shaft'; readonly id: ShaftId }; // S3-04 で { kind: 'rack'; id: RackId } を足す
@@ -268,6 +302,13 @@ interface Anchor {
   - 検証（`validateScene`）: キーと `id` の一致（`idMismatch`）、対象の種類が `'shaft'`（`invalidAnchorTarget`）、対象のシャフトがある（`missingRef`）、1 つのシャフトに 2 つ以上（`multipleAnchors`）。`parseScene` は `anchor_` の接頭辞・`target` のオブジェクト・`kind` と `id` の文字列を確かめる。
   - **保存（暫定）**: `parseScene` は `anchors` の無いシーン（S3-01 より前に保存したもの）に `{}` を補う（`anchors` があればオブジェクトでなければ `invalidShape`）。保存形式は version 2 のまま。S3-05 で version 3 に上げ、この暫定処理を `MIGRATIONS[2]`（2 → 3 で `anchors: {}` を足す）に置き換える（§9）。
   - テストのフィクスチャ（`e2e/fixtures/*.json` の `Scene` の形のもの）は、S3-01 からすべて `"anchors": {}` を持つ。`e2e/fixtures/anchor-pair.json`: 縦軸の起点 `shaft_a`（原点 `[0, 35, 0]`）に中・20 歯 `gear_a` とモーター 中（30 rpm、正の向き、ON）、`gear_a` の外周（角度 0）に中・40 歯 `gear_b`（`shaft_b`）。固定具はなし。
+- **遊星歯車**（S3-03。条件は `src/core/geometry/planetary.ts`、部品の組み立ては `src/core/scene/planetary.ts` の `withPlanetary`、関係の引きは `src/core/scene/scene.ts` の `planetShaftsOf`・`carrierOfPlanetShaft`・`carriersOnShaft`・`lineRootOf`・`placementParentShafts`）:
+  - 部品: 太陽歯車（平歯車）、キャリア（太陽と同じ線上の別のシャフト `concentric` に載る）、遊星歯車（`planet` のシャフトの平歯車）、リング（S3-02 の内歯車。太陽と同じ線上の別のシャフト `concentric`）。リングは遊星と contact でかみ合う（木の親子ではない）。
+  - **同じ線上**: `concentric` を親へたどった先のシャフト（線の根。`lineRootOf`）が同じシャフトどうし。原点・軸は線の根と同じ。
+  - **配置の条件**（`planetaryConditions(zs, zp, zr | null, n)`。候補と編集のコマンドが守る）: 等配 `(z_s + z_r) / n` が整数（リングなしなら真。満たさないと 1 番以降の遊星とリングの位相が合わず、歯が重なって見える。contact は位相を問わないので干渉としては検出されない）、同心 `z_r = z_s + 2·z_p`、隣どうしの遊星が当たらない `(z_s + z_p)·sin(π/n) > z_p + 2`（n = 1 は真）。n は `PLANET_COUNT_RANGE`（1〜6）。`defaultPlanetTeeth(sun, n)` は、`PLANET_MIN_TEETH` 以上で 3 条件・遊星とリングの歯数の範囲（`teethRange`）・内歯車の歯数差を満たす最小の z_p と z_r（中・24 歯 → 12・48、中・20 歯 → 13・46、大・12 歯 → 12・36、大・16 歯 → null）。
+  - **作り方**（`growGear { mode: 'planetary', parentGearId }`。`withPlanetary`）: キャリアのシャフト（`concentric`）とキャリア（`offset` = 太陽の `offset` + 歯幅 + `CARRIER_GAP`。リングのウェブの反対側＝太陽の軸の正の側）、遊星のシャフト `DEFAULT_PLANET_COUNT` 本（`angle` = 2πk/n）と遊星歯車（太陽と同じ大きさ、`offset` 0）、リングのシャフト（`concentric`）と内歯車（`webSide` −1、`offset` は太陽と同じ）。`created` は `[キャリアのシャフト, キャリア, (遊星のシャフト, 遊星歯車) × n, リングのシャフト, リング]`。
+  - 検証（`validateScene`）: `concentric` の親のシャフトがある（`missingRef`）、`planet` のキャリアがある（`missingRef`）、`planet` の親の歯車がキャリアのシャフトと同じ線上（`planetLineMismatch`）、`planet` の子・親の歯車の条件は `mesh` と同じ（子の `offset` 0、同じ大きさ、平行にかみ合える組）、キャリアのシャフトがあり `offset` が `AXIAL_SNAP` の倍数・大きさが正しい、キャリアのシャフト・`concentric` の親・`mesh` などの親の歯車のシャフトが遊星のシャフトでない（`nestedOrbit`。2 段以上の遊星は範囲外）。配置の親（`placementParentShafts`。`planet` は親の歯車のシャフトとキャリアのシャフトの 2 つ）をたどって循環しない（`meshCycle`）。
+  - **保存（暫定）**: `parseScene` は `carriers` の無いシーンに `{}` を補う（`anchors` と同じ。S3-05 で version 3 の移行に置き換える）。`e2e/fixtures/*.json` の `Scene` の形のものは S3-03 からすべて `"carriers": {}` を持つ。`e2e/fixtures/planetary-ring-fixed.json`: 縦軸の起点 `shaft_s`（原点 `[0, 60, 0]`）に中・24 歯の太陽 `gear_s`（`offset` 0）とモーター 中（60 rpm、正の向き、ON）、キャリア `carrier_k`（`shaft_k`、`offset` 12）、遊星 `gear_p0`〜`p2`（中・12 歯、`shaft_p0`〜`p2`、angle 0・2π/3・4π/3）、リング `gear_r`（中・48 歯、`shaft_r`）、リングのシャフトに固定具 `anchor_r`。
 
 ## 5. 導出データ（レイアウト）
 
@@ -275,8 +316,9 @@ interface Anchor {
 
 ```ts
 interface Layout {
-  shafts: Record<ShaftId, { origin: Vec3; axis: Axis; span: [number, number] }>;
-  gears: Record<GearId, { center: Vec3; axis: Axis; pitchRadius: number; basePhase: number }>;
+  shafts: Record<ShaftId, { origin: Vec3; axis: Axis; span: [number, number]; orbit?: Orbit }>; // orbit は S3-03
+  gears: Record<GearId, { center: Vec3; axis: Axis; pitchRadius: number; basePhase: number; orbit?: Orbit }>;
+  carriers: Record<CarrierId, { center: Vec3; axis: Axis; radius: number; planetShaftIds: ShaftId[] }>; // S3-03
   meshes: Mesh[];           // かみ合っている歯車の組
   interferences: Array<[string, string]>; // 干渉している部品の組（赤い警告に使う）
 }
@@ -286,23 +328,31 @@ interface Mesh {
   b: GearId;
   source: 'tree' | 'contact'; // 木の親子による / 偶然ちょうどの距離にある
   kind: MeshKind;             // かみ合いの種類（S2-01。meshKindOf）
+  carrierShaftId?: ShaftId;   // 遊星のシャフトの歯車がかかわるかみ合いの、キャリアのシャフト（S3-03。§6 のウィリスの式）
 }
+
+// 公転（S3-03）。遊星のシャフトとその歯車に付く。center はキャリアの軸の上の点（キャリアのシャフトの原点）
+interface Orbit { carrierId: CarrierId; carrierShaftId: ShaftId; center: Vec3 }
 
 type MeshKind = 'spur' | 'helical' | 'bevel' | 'worm' | 'crossedHelical' | 'internal'; // 'internal' は S3-02
 ```
 
 - **かみ合える組**（S2-01。`src/core/geometry/can-mesh.ts`）: `canMesh(a, b)` は種類・大きさ・形を変える属性だけで判定する（位置は見ない）。同じ大きさで、平歯車同士か、ねじれの向きが逆のハスバ歯車同士か、同じ歯数のかさ歯車同士（S2-02。歯数比 1:1 のみなので歯数も見る。`apex` は問わない）か、ウォームとホイール（S2-03。`meshKindOf` はどちらも `'worm'`）か、ねじ歯車同士（S2-04。どれも右ねじれ 45° なので向きは見ない。歯数は問わない。`meshKindOf` は `'crossedHelical'`）。ねじ歯車とハスバ歯車・平歯車・ホイールはかみ合わない。平歯車とハスバ歯車、同じ向きのハスバ歯車同士はかみ合わない（ねじれの向きが 2 種類しかないので、ハスバ歯車 3 枚の三角形は作れない）。内歯車（S3-02）は同じ大きさの平歯車とだけ、歯数差が `INTERNAL_MIN_TOOTH_DIFF` 以上のとき（`meshKindOf` は `'internal'`）。木の親子（`mesh`）も、かみ合える組でなければ検証で弾く。`meshKindOf(a, b)` が組のかみ合いの種類を返す（S3-02 で 2 つの形を取るようにした。どちらかが内歯車なら `'internal'`、それ以外は組のどちらの形からも同じ）。
 
-- **木構造**: `mesh`・`bevel`・`skew` のシャフトは親の歯車の位置から決まる。根（`root` / `detached`）から幅優先でたどって位置を求める（`resolve.ts` の `placeChild` が配置の種類ごとに原点・向き・位相を決める。`resolveAddition` も同じものを使う）。
+- **木構造**: `mesh`・`bevel`・`skew` のシャフトは親の歯車の位置から決まる。根（`root` / `detached`）から幅優先でたどって位置を求める（`resolve.ts` の `placeChild` が配置の種類ごとに原点・向き・位相を決める。`resolveAddition` も同じものを使う）。（S3-03: `concentric` のシャフトは親のシャフトと同じ原点・向きで、親を置いたときに続けて置く。`planet` のシャフトは `mesh` と同じ求め方（`placeChild`）で、キャリアのシャフトが置かれてから置く（まだなら、置かれた後にもう一度試す））
   - `bevel` のシャフト（S2-02）: §4 のかさ歯車の式（`bevelChildFrame`・`bevelChildOrigin`）。
   - `skew` のシャフト（S2-03。S2-04 のねじ歯車も同じ）: §4 のウォームギアの式（`skewChildFrame`、原点 = 子の中心 − 区画の幅/2·軸）。
   - `mesh` のシャフト: 向きは親の歯車の軸。原点 = 親の歯車の負側の面の位置（親のシャフトの原点 + 親の `offset` × 軸）+ `radialDirection(親の軸, angle) × centerDistance(親, 子)`（外歯車同士は `r_a + r_b`、内歯車と外歯車は `R − r`。S3-02。外歯車同士の式は `geometry/mesh.ts` の `spurCenterDistance(大きさ, 歯数, 歯数)`）。
   - 位相: 根のシャフトの歯車は 0、`mesh` のシャフトの子の歯車は `meshPhase(親の basePhase, 親の歯数, 子の歯数, angle)`、`bevel` のシャフトの子の歯車は `bevelPhase`（下）、`skew` のシャフトの子の歯車は `skewPhase`（下）、子以外の歯車は 0。
-  - `descendantShafts(scene, shaftId)`（`resolve.ts`）: `shaftId` とその先（mesh・bevel・skew で子孫になる）シャフトの ID を幅優先の順で返す（S1-11 の削除・付け直しの循環の判定、S1-19 の吸着の相手の除外に使う）。シーンに無いシャフトなら空。
-- **シャフトの長さ（`span`）**: シャフトの原点から軸方向の区間。載っている歯車ごとに、両面（`offset` と `offset + 区画の幅`。ウォーム以外は区画の幅 = 歯幅）から `SHAFT_END_MARGIN` ずつ伸ばした区間を求め、その最小〜最大をとる（`spanOf`）。歯車が載っていないシャフトは `[−EMPTY_SHAFT_HALF_LENGTH, +EMPTY_SHAFT_HALF_LENGTH]`。内歯車（S3-02）の区間は、ウェブの外側の面 − `SHAFT_END_MARGIN` 〜 ウェブの内側の面（`webSide` 1 なら向きが逆。§4）。
+  - `descendantShafts(scene, shaftId)`（`resolve.ts`）: `shaftId` とその先（mesh・bevel・skew で子孫になる）シャフトの ID を幅優先の順で返す（S1-11 の削除・付け直しの循環の判定、S1-19 の吸着の相手の除外に使う）。シーンに無いシャフトなら空。S3-03 から、`concentric` の子と、シャフトに載ったキャリアの遊星のシャフトも子孫に含める。
+- **シャフトの長さ（`span`）**: シャフトの原点から軸方向の区間。載っている歯車ごとに、両面（`offset` と `offset + 区画の幅`。ウォーム以外は区画の幅 = 歯幅）から `SHAFT_END_MARGIN` ずつ伸ばした区間を求め、その最小〜最大をとる（`spanOf`）。歯車が載っていないシャフトは `[−EMPTY_SHAFT_HALF_LENGTH, +EMPTY_SHAFT_HALF_LENGTH]`。内歯車（S3-02）の区間は、ウェブの外側の面 − `SHAFT_END_MARGIN` 〜 ウェブの内側の面（`webSide` 1 なら向きが逆。§4）。キャリア（S3-03）の載ったシャフトは、板 `[offset, offset + 厚み]` の両面から `SHAFT_END_MARGIN` 伸ばした区間も含める（歯車が無ければ板の区間だけ）。遊星のシャフトは、板の遠い側の面まで伸ばす（板を貫いて支えられる）。
   - かさ歯車（S2-02）は、自分の区間の頂点側の端を `頂点 − BEVEL_APEX_CLEARANCE`（`apex` −1 なら `頂点 + BEVEL_APEX_CLEARANCE`）より先へ伸ばさない（余白込みの端は大端から `歯幅 + SHAFT_END_MARGIN` で、小の 12〜15 歯では頂点を越え、小の 16 歯・中の 12 歯ではちょうど頂点に届くため）。切ったあとの端が、かさ歯車自身の区画の内側に入ってもよい。同じシャフトの頂点側にほかの部品が載っていれば、その部品の区間（面 + `SHAFT_END_MARGIN`）まで伸び、相手のシャフトと交われば干渉として赤く出る。
 - **meshes の並び**: 各組は `a < b`（ID の符号単位の比較）、一覧は `(a, b)` の辞書順。`tree` は `mesh` のシャフトの `parentGearId` と `childGearId` の組。
 - **偶然のかみ合い（contact）**: 木の親子でない、別のシャフトの歯車の組で、`canMesh(a, b)` が真（同じ大きさを含む）で、軸が同じ、歯幅の軸方向の重なりが `COLLISION_EPS` より大きく、軸に垂直な方向の中心距離がピッチ円半径の和と `MESH_DISTANCE_EPS` 以内で一致する組は、木の親子でなくてもかみ合いとして扱う。かさ歯車（S2-02）は、どちらもかさ歯車、同じ大きさ・同じ歯数、軸が直交し、頂点の距離が `MESH_DISTANCE_EPS` 以内の組（頂点が一致すればピッチ円すいは必ず接する）。ウォームとホイール（S2-03）は、同じ大きさで、軸が直交し、2 つの中心を結ぶ線が両方の軸に直交し（軸方向の成分がどちらも `MESH_DISTANCE_EPS` 以内）、その長さが `r_ウォーム + r_ホイール`（`5m + m·z/2`）と `MESH_DISTANCE_EPS` 以内の組。ねじ歯車（S2-04）も同じ条件で、どちらもねじ歯車・同じ大きさ、長さが `r_a + r_b`（`m·(z_a + z_b)/2`）と `MESH_DISTANCE_EPS` 以内の組（`inContact` の位置関係 `'skew'` の判定は種類に共通で、最後に `canMesh` を見る）。内歯車と平歯車（S3-02）は、平行軸の条件（軸が同じ、歯幅が重なる）で、軸に垂直な中心距離が `R − r` と `MESH_DISTANCE_EPS` 以内、歯数差が 12 以上（`canMesh`）の組（平行軸の中心距離は `centerDistance(a, b)` で求める）。**位相が合っているかどうかは問わない**（拘束として扱い、干渉にもしない）。三角形のロックなどは、ここから生まれる。かみ合えない組（平歯車とハスバ歯車など）がちょうどの距離にあると、歯先円の円柱が重なるので干渉になる。
+- **遊星歯車の基準配置と実際の位置**（S3-03。`src/core/layout/world.ts`）: `resolveLayout` はシーンだけから求める純粋関数のまま、遊星のシャフトとその歯車の位置を **基準配置**（すべてのキャリアの角度が 0）で返し、公転の情報 `orbit`（`carrierId`・`carrierShaftId`・`center` = キャリアのシャフトの原点）を添える。実際の位置は `shaftWorldOrigin(layout, motion, shaftId)`・`gearWorldCenter(layout, motion, gearId)` で、キャリアのシャフトの回転角 `motion.angles[carrierShaftId]` だけ、`center` を通るキャリアの軸まわりに回す（`rotateAboutAxis`）。描画（毎フレーム置き直す）・音源の位置（`meshContactPoint(layout, mesh, motion)`）・情報表示のラベルと矢印・`__gearSim.getShaftWorldOrigin` はこれを使う（ピッキングは描画の位置で当たる。`projectToScreen` はワールド座標を受けるのでそのまま）。`MotionState` の形は変えない（キャリアの ω はそのシャフトの ω）。
+  - `Layout.carriers`: 板の中心 = キャリアのシャフトの原点 + (`offset` + 厚み/2)·軸、`radius` = 遊星のシャフトの公転半径の最大 + `CARRIER_RADIUS_MARGIN`（遊星が無ければ余白の 2 倍）、`planetShaftIds` は `angle` の昇順（同じなら ID 順）。
+  - contact と干渉の判定は基準配置で行う。太陽・リングはキャリアと同軸なので、公転しても遊星との距離は変わらない。contact は、同じキャリアで公転する組と、公転する歯車とキャリアの軸の上の歯車（太陽・リング）の組だけ（公転する歯車と、キャリアと同軸でない歯車の偶然のかみ合い・別のキャリアで公転する組は扱わない）。遊星のシャフトの歯車がかかわるかみ合いには `carrierShaftId` を添える。
+  - 位相: `planet` のシャフトの子は `mesh` と同じ（`meshPhase`・`internalMeshPhase`）。`concentric` のシャフトの歯車で遊星と contact でかみ合うもの（リング）は、かみ合う遊星のうち最初のもの（`angle` の昇順、次にシャフトの ID 順。候補から作ったものでは 0 番の遊星）に合わせる（遊星を親、リングを遊星から見た向き `angle + π` の子とした `internalMeshPhase`。外歯車なら `meshPhase`）。等配の条件を満たせば、残りの遊星とも位相が合う（接点で歯の位置の端数が 0.5 ずれる）。
 - **ループを作る操作**: 外周の角度ハンドル（S1-19）は、子の歯車が別の歯車とちょうどかみ合う角度に吸着する。これで、ループを意図して作れる。
 - **ループの辻褄**: 編集の結果、contact の距離がずれた組は、単にかみ合いではなくなる（木の辺ではないので位置は変わらない）。重なっていれば干渉として赤く表示する。
 - **位相（basePhase）**: 基準シャフト（§6）の回転角が 0 のときの、歯車の回転のずれ。歯車の回転角 = `basePhase + シャフトの回転角` で、回転角 0 のとき 0 番目の歯の中心線が `u` の向き（2D 輪郭の +x）にある。木の親子では、子の歯が親の歯の谷に入るように決める（S1-03 の `meshPhase`）。
@@ -312,16 +362,19 @@ type MeshKind = 'spur' | 'helical' | 'bevel' | 'worm' | 'crossedHelical' | 'inte
   - ウォームとホイール（S2-03。`skewPhase` → `wheelPhaseFromWorm`・`wormPhaseFromWheel`）: 接点でウォームのねじ山の中心とホイールの歯溝の中心が重なるようにする。ウォームの位相は、ねじ山が軸方向に進む量と同じに扱う（位相 0 で、ウォームの軸まわりの角度 θ の方向のねじ山の中心は、ウォームの中心から軸方向に `π·m·θ/2π`（π·m を法として）。回転角 φ でねじ山は `π·m·φ/2π` だけ軸の負の向きに移る）。n = ウォームの中心からホイールの中心への単位ベクトル、θ_c = n のウォームの軸まわりの角度、α_c = −n のホイールの軸まわりの角度、s = `(e_W × n)·e_H` として `z·(φ_H − α_c)/2π + 1/2 ≡ s·(θ_c − φ_W)/2π (mod 1)`。時間で微分すると §6 の拘束 `z·ω_H + s·ω_W = 0` と一致するので、回してもずれない。ホイールの歯幅の中央の面はウォームの軸を通るので、ねじれ（中央の断面が平歯車と一致）は位相に効かない。
   - ねじ歯車（S2-04。`skewPhase` → `crossedHelicalPhase`）: 接点（中心を結ぶ線上。歯幅の中央の断面どうし）で、親の歯の中心と子の歯溝の中心が重なるようにする。ウォームとホイールの式の条数 1 を親の歯数に置き換えたもの: P = 親（歯数 `z_P`、位相 `φ_P`）、C = 子（歯数 `z_C`）、n = P の中心から C の中心への単位ベクトル、`θ_c` = n の P の軸まわりの角度、`α_c` = −n の C の軸まわりの角度、`s = (e_P × n)·e_C` として `z_C·(φ_C − α_c)/2π + 1/2 ≡ s·z_P·(θ_c − φ_P)/2π (mod 1)`。`φ_C` を `[0, 2π/z_C)` に正規化する。時間で微分すると拘束の式になり、P と C を入れ替えても同じ関係になる。
   - かさ歯車（S2-02。`bevelPhase`）: 2 つの大端のピッチ円の接点 `P = 親の大端の中心 + R·side·(子の軸)` で、親の歯の中心と子の歯溝の中心が重なるようにする。`f_A` = P での親の歯の位置（歯 1 ピッチを 1 とした端数。`toothFraction`）。P での周速の向き `e × (P − 大端の中心)` が親子で同じ（ω の比が +1）なら子の端数 `f_B = f_A + 1/2`、逆（比が −1）なら `f_B = 1/2 − f_A`。`φ_B = (P の子の軸まわりの角度) − (2π/z)·f_B` を `[0, 2π/z)` に正規化する。
-- **シャフトの向き**: `Shaft` は `axis` を持たない。`root`・`detached` は `placement.axis`、`mesh` は親の歯車のシャフトの向き、`bevel`・`skew` は親の歯車のシャフトの向きを `axisStep` 回進めたもの（S2-02、S2-03）。`core/scene` の `shaftAxis(scene, shaftId)` で親をたどって求める（循環していれば `null`）。`Layout.shafts[id].axis` も同じ値になる。
+- **シャフトの向き**: `Shaft` は `axis` を持たない。`root`・`detached` は `placement.axis`、`mesh` は親の歯車のシャフトの向き、`bevel`・`skew` は親の歯車のシャフトの向きを `axisStep` 回進めたもの（S2-02、S2-03）。`core/scene` の `shaftAxis(scene, shaftId)` で親をたどって求める（循環していれば `null`）。`Layout.shafts[id].axis` も同じ値になる。`concentric` は親のシャフト、`planet` はキャリアのシャフトの向き（S3-03）。
 - **干渉の判定**（S1-08。`src/core/layout/collision.ts`）: 歯車は円柱（`gearCollider`。中心・軸・半径 = 歯先円半径・半分の厚み = 歯幅/2。かさ歯車（S2-02）は歯のある円すい台に外接する円柱: 大端の中心から頂点の側へ `b·cos45°` の長さ、半径 `R + m·cos45°`（大端の歯先）。ウォーム（S2-03）は半径 `5m + m`・長さ `5πm`（区画の幅ではなく歯のある部分）の円柱、ホイールとねじ歯車（S2-04）は歯先円の円柱（`gearEnvelope`）。内歯車（S3-02）は、リングとつなぎの筒を **中空の円柱**（`kind: 'hollow'`。内側の半径 `R − m`、外側 `R + 3.25m`、軸方向はリングとウェブまでの隙間）と、ウェブの円柱（半径 `R + 3.25m`、軸方向に `INTERNAL_WEB_THICKNESS`）の 2 つ（どちらも歯車の ID）で近似する）、シャフトは線分（`origin + span × 軸`、太さ 0）で近似する。モーターは段階 1 では判定しない（§4）。重なりの深さが `COLLISION_EPS` 以下（触れているだけ）は干渉にしない。円柱 × 円柱は軸が平行なら軸方向の区間と中心間の距離、直交なら残りの軸の座標で切った断面の区間の重なりで正確に判定する。線分 × 円柱は円柱を `COLLISION_EPS` だけ内側に縮めたものに線分の一部が入るか、線分 × 線分は同じ直線の上で `COLLISION_EPS` より長く重なるか、平行でなく両方の内側の点で交わるか。長さ 0 の線分どうしは判定しない。`findInterferences(colliders, exempt)` は全ての組を調べ（軸に平行な外接箱を x の区間で並べる sweep and prune で粗く絞り込み、箱が重なる組だけを詳しく判定する）、`exempt` の組（`meshes` の組。順序は問わない）と、歯車とそれが載ったシャフトの組を除く。結果は `[小さい ID, 大きい ID]` を辞書順（符号単位の比較）に並べ、重複しない。部品 400 個（歯車 200 枚 + シャフト 200 本）で 1 回 1ms 未満。**中空の円柱**（S3-02）: 平行な円柱（軸からの距離 d、半径 ρ）は `d + ρ ≤ R − m` なら空洞に収まって干渉なし、`d − ρ ≥ R + 3.25m` なら外にあって干渉なし、それ以外で軸方向が重なれば干渉。平行な線分は軸からの距離が `R − m` 以下なら空洞を通るので干渉なし（ウェブまで伸びればウェブの円柱と干渉。自分のシャフトは除く）。平行でない部品は空洞を無視して外側の円柱として扱う（安全側）。中空同士は、どちらかがもう一方の空洞に収まるか外側どうしが離れていれば干渉なし。`resolveLayout` は、全ての歯車の円柱と全てのシャフトの線分を渡し、`exempt` に `meshes` の組（contact を含む）を渡して `interferences` を埋める
+  - **遊星歯車**（S3-03）: キャリアの板を円柱（板の中心・`radius`・厚み）で足す。同じ線上のシャフト同士（`lineRootOf` が同じ。入れ子の中空軸）と、機構の部品（キャリアとそのシャフト、遊星のシャフトとその子の歯車、親の歯車（太陽）、子の歯車と contact でかみ合うキャリアの軸の上の歯車（リング）、太陽とリングのシャフト）の間の組は `exempt` に入れる（かみ合いと支えの関係。隣どうしの遊星は配置の条件で保証する）。公転する部品（遊星のシャフトとその歯車）は、同じキャリアで公転する部品とは基準配置で、それ以外の部品とは **公転で掃く範囲**（キャリアの軸まわりの中空の円柱。歯車は軸からの距離 d・半径 ρ で内側 d − ρ・外側 d + ρ、シャフトの線分は内側・外側とも d。軸方向の範囲はそのまま）で判定する（`findInterferences` を 2 回呼び、組の公転の有無で分ける）。段付きの遊星（遊星のシャフトに同じ軸で足した歯車）は機構の部品に含めないので、リングやキャリアと重なれば干渉になる。
 - **生やす候補**（S1-10。`src/core/layout/candidates.ts` の `listGrowCandidates(scene, gearId, spec)`）: 選んだ歯車について 2 種類を返す。並びは外周（角度の昇順）→ 同じ軸（負の側 → 正の側）。
   - 候補は作る歯車の形 `shape: GearShape` を持つ（S2-01）。
   - **かさ歯車**（`kind: 'bevel'`。S2-02）: 親がかさ歯車なら、外周の代わりに `axisStep` 1 → 2、それぞれ `side` −1 → 1 の 4 か所に、親と同じ大きさ・同じ歯数（`spec.perimeterTeeth` は使わない）・`apex: −side` のかさ歯車を新しい `bevel` のシャフト（子の `offset` 0）に載せる。並びは外周 → かさ歯車 → 同じ軸。`growGear { mode: 'bevel', parentGearId, axisStep, side }` に変換できる。
   - **ねじれた位置**（`kind: 'skew'`。S2-03）: 親がウォームかホイールかねじ歯車（S2-04）なら、外周の代わりに `axisStep` 1 → 2、それぞれ `side` −1 → 1 の 4 か所に、相手（`skewPartnerShape`。ウォームにはホイール（`spec.perimeterTeeth` 歯）、ホイールにはウォーム（1 条）、ねじ歯車にはねじ歯車（`spec.perimeterTeeth` 歯））を同じ大きさで新しい `skew` のシャフト（子の `offset` 0）に載せる。並びは外周 → かさ歯車 → ねじれた位置 → 同じ軸。`growGear { mode: 'skew', parentGearId, axisStep, side, teeth }` に変換できる。
   - **内歯車**（S3-02）: 内歯車の親の外周の候補は、内側の外周（角度の取り方は同じ、中心距離 `R − r`）の平歯車で、歯数は `min(spec.perimeterTeeth, 親の歯数 − 12)`（大きさの最小 12 を下回れば出さない。中・30 歯 → 18、中・24 歯 → 12、小・24 歯（既定 30）→ 12）。**囲む候補**（`kind: 'enclose'`）: パレットで内歯車を選んでいるとき（`spec.coaxialKind === 'internal'`）、平歯車の親に、親を囲む内歯車（`webSide` −1）を 1 つ出す。歯数は `2 × 親の歯数` を `max(24, 親 + 12)` 以上・大きさの最大以下に収めたもの（収まらなければ出さない）。向きは `k·π/4` を順に試し、干渉の増えない最初の 1 つ。並びは外周 → 囲む → かさ歯車 → ねじれた位置 → 同じ軸。`growGear { mode: 'enclose', parentGearId, angle, teeth }` に変換できる。パレットの選択で出し分けるのは、いつも出すと親を覆う大きなリングの候補が、親をつかんで回す操作や外周の候補のクリックを奪うため（ピッキングは候補を歯車より優先する）。
+  - **遊星歯車機構**（`kind: 'planetary'`。S3-03）: 平歯車の親（遊星のシャフト上でないもの）に 1 つ。歯数は `defaultPlanetTeeth(親, DEFAULT_PLANET_COUNT)`（無ければ出さない）。機構を足した仮のシーン（仮の ID）全体を `resolveLayout` し、元のシーンに無かった干渉の組があれば出さない。並びは外周 → 囲む → 遊星歯車機構 → かさ歯車 → ねじれた位置 → 同じ軸。`center`・`axis`・`basePhase` はリング、`planets` は遊星の中心と位相、`teeth` はリング・`planetTeeth` は遊星の歯数。`growGear { mode: 'planetary', parentGearId }` に変換できる。仮の表示（`render/candidates.ts`）はリングを歯を省いた輪と、ウェブの側へ伸びるつなぎの筒で描き（ウェブの円板は描かない。太陽の下に入って太陽のクリックを奪うため）、遊星を仮の歯車として添える。輪は外周の候補と同じ面で重なるので、輪と遊星は描くだけで選べなくし、押す所は輪と筒の外側の壁（外向きの面だけの見えない円筒）にする。
+  - **遊星のシャフトの歯車**（S3-03）からは、同じ軸の候補（段付きの遊星）だけを出す（外周・囲む・遊星歯車機構・かさ歯車・ねじれた位置は出さない）。
   - **外周**（`kind: 'perimeter'`。かさ歯車・ウォーム・ホイール・ねじ歯車の親には出さない）: 親と同じ大きさ・`spec.perimeterTeeth` 歯・親とかみ合う形（`meshPartnerShape`。ハスバ歯車なら逆の `hand`）の歯車を、新しい `mesh` のシャフト（子の `offset` 0）に載せる。角度は連続だが、親の軸まわりの `PERIMETER_CANDIDATE_COUNT`（8）方向 `k·π/4` で代表させる（細かい角度は S1-19 の円弧ハンドル）。`center`・`axis`・`basePhase` は仮のシーンのレイアウト（`resolveAddition`）から得る。
   - **同じ軸**（`kind: 'coaxial'`）: 選んだ歯車のシャフトに載った歯車の並びの両端の外側に、面を接して置く 2 か所（負の側 `offset = 最小の面 − 新しい区画の幅`、正の側 `offset = 最大の面`。面は区画の両端で、ウォームは区画の幅。S2-03）。種類が `'worm'` なら歯数によらず 1 条。大きさ・歯数・種類は `spec.coaxialSize`・`spec.coaxialTeeth`・`spec.coaxialKind`（S2-01。形は `newGearShape`。ハスバ歯車は `'right'`。パレットで種類を選ぶ UI は S2-05 で、それまで app は `'spur'` を渡す）。並びの途中の隙間は候補にしない。内歯車（S3-02）: 面は内歯車全体（ウェブまで。`axialExtent`）の両端で、新しい内歯車はウェブの側まで含めて並びの外に置く（負の側 `offset = 最小の面 − 歯幅`、正の側 `offset = 最大の面 + INTERNAL_WEB_GAP + INTERNAL_WEB_THICKNESS`）。新しい内歯車の歯数は `spec.coaxialTeeth` を `teethRange` に収めたもの（中・既定 20 → 24）。
-  - 絞り込み: 候補を足した仮のシーン（仮の ID `__candidate_gear`・`__candidate_shaft`）で、元のシーンに無かった干渉の組が 1 つでもあれば出さない。仮のシーン全体を `resolveLayout` し直す代わりに、`resolve.ts` の `resolveAddition(scene, layout, shaft, gear)` で、足した歯車のレイアウトと、変わった部品（足した歯車・足したシャフト・同じ軸なら伸びたシャフト）を含む干渉の組だけを求める（それ以外の部品の位置・形・かみ合いは変わらないので、結果は `resolveLayout` の該当部分と一致する。S2-01。歯車 200 枚の木で、候補ごとに全体を解き直すと余裕が無かったため）（既存の干渉は候補を減らさない。contact は干渉ではないので、偶然ちょうどの距離でかみ合う候補は位相によらず出る）。歯数が大きさの範囲外・整数でない、シーンに無い歯車は例外。根からたどれない歯車は空。
+  - 絞り込み: 候補を足した仮のシーン（仮の ID `__candidate_gear`・`__candidate_shaft`）で、元のシーンに無かった干渉の組が 1 つでもあれば出さない。仮のシーン全体を `resolveLayout` し直す代わりに、`resolve.ts` の `resolveAddition(scene, layout, shaft, gear)` で、足した歯車のレイアウトと、変わった部品（足した歯車・足したシャフト・同じ軸なら伸びたシャフト）を含む干渉の組だけを求める（それ以外の部品の位置・形・かみ合いは変わらないので、結果は `resolveLayout` の該当部分と一致する。S2-01。歯車 200 枚の木で、候補ごとに全体を解き直すと余裕が無かったため）（既存の干渉は候補を減らさない。contact は干渉ではないので、偶然ちょうどの距離でかみ合う候補は位相によらず出る）。歯数が大きさの範囲外・整数でない、シーンに無い歯車は例外。根からたどれない歯車は空。キャリアのあるシーン（S3-03）では、`resolveAddition` は全体を解き直して、変わった部品を含む組を取り出す（公転・機構の扱いを `resolveLayout` と一致させるため。機構は小さい）。
   - 戻り値は S1-11 の `growGear` の引数にそのまま変換できる（`perimeter` → `parentGearId`・`angle`・`teeth`、`coaxial` → `shaftId`・`offset`・`size`・`teeth`・`kind`）。歯車 200 枚で 1 回約 40ms。
 - **歯車の中心**: `core/scene` の `gearCenter(シャフトの原点, 軸, gear)` = `シャフトの原点 + (offset + 歯幅/2) × 軸`（§4）。
 - **歯形の 2D 輪郭の向き**（S1-02 の `spurOutline`）: 歯車の中心が原点、**0 番目の歯の中心線が +x 軸に乗る**（輪郭は x 軸について対称）。点は **反時計回り**（符号付き面積が正）に並べ、最後の点で最初の点を繰り返さない。位相 0 は「0 番目の歯がローカルの +x を向いた状態」で、basePhase（S1-03）とシャフトの角度はここからの回転角。
@@ -382,10 +435,13 @@ function initialMotionState(): MotionState; // 全て空
   | 内歯車と外歯車（`'internal'`） | `±z_a` | `±z_b` | S3-02（外歯車は `+z`、内歯車は `−z`。`z_ext·ω_ext − z_int·ω_int = 0` で、内側でかみ合うので同じ向きに回る） |
   | かさ歯車（`'bevel'`） | `apex_a·z_a` | `apex_b·z_b` | S2-02（ピッチ点 P での周速の一致 `ω_a·(e_a × (P − c_a)) = ω_b·(e_b × (P − c_b))` から導いた。親の向き・子の軸・side の 24 通りで成り立つことを Vitest で確かめている） |
 
+- **ウィリスの式**（S3-03）: 遊星のシャフトの歯車がかかわるかみ合い（`mesh.carrierShaftId` がある）は、両方の ω からキャリアの ω_c を引いた相対値で拘束を書く: `c_a·(ω_a − ω_c) + c_b·(ω_b − ω_c) = 0`（係数は上の表のまま。行の項は `meshTerms(mesh, scene)` が `[シャフト a, c_a]`・`[シャフト b, c_b]`・`[キャリアのシャフト, −(c_a + c_b)]` で返し、`buildMeshGraph` と `worm-solve.ts` が同じシャフトの項を足し合わせて行にする。連結成分も 3 本をつなぐ）。太陽 s・遊星 p・リング r では `z_s·(ω_s − ω_c) + z_p·(ω_p − ω_c) = 0`、`z_p·(ω_p − ω_c) − z_r·(ω_r − ω_c) = 0`。ω_p は遊星のシャフトの、ワールドに対する自転の角速度。拘束は ω について一次のままなので、零空間・つり合い・角度の積分はそのまま使う（角度も `θ = N q` で拘束を満たすので、公転しても歯の位相がずれない）。自由度 2 の機構（太陽・キャリア・リング）は、固定具で 1 つ止めると 1 になる。
+
 - **固定具の拘束**（S3-01）: 固定されたシャフトは `ω = 0`（拘束行列 C に、そのシャフトの列だけ 1 の行を 1 つ足す）。`buildMeshGraph(scene, meshes, anchored?)` の第 3 引数（固定するシャフトの集合）で入れ、`KinematicComponent.anchoredShaftIds` に残す。運動は `anchoredMeshGraphOf(scene, layout)`（固定具の拘束を入れたグラフ。固定具が無ければ `meshGraphOf` と同じオブジェクト）で解き、`meshGraphOf`（かみ合いだけ）は `'anchor'` の判定と情報表示の逃げ道に使う。固定具は連結のしかたを変えないので、2 つのグラフの連結成分は同じシャフトの組になる。固定具があっても、駆動されていなければロックではない（止まっているだけ。ω の二乗和の最小で ω = 0 になる）。
   - 情報表示のギア比（S1-23）は、固定具を入れたグラフの `speedRatio` で求め、決まらなければ（固定具で止まった成分など）かみ合いだけのグラフで求める（S3-03 の遊星歯車で、1 つを固定して自由度 1 になったときの比が出るように）。
 - **力のつり合い**: モーターのトルクは `τ_i = T_stall · (d_i − ω_i / ω0_i)`（d_i は向き、ω0_i は無負荷角速度）で、ω に対して一次。仮想仕事の原理から `Nᵀ τ(N q) = 0` を解く（q についての一次方程式）。
 - **解が一意でないとき**: 駆動されていない自由度があると、方程式の解が 1 つに決まらない。その場合は、解のうち **ω の二乗和が最小のもの** をとる（N の基底の取り方に結果が左右されない）。モーターがつながっていない連結成分は、これで自然に ω = 0（止まったまま）になる。OFF のモーターは無いものとして扱う。
+  - S3-03 で、遊星歯車機構（自由度 2、駆動はモーター 1 つ）がこの方式のまま解けることを確かめた。二乗和には遊星のシャフトも 1 本ずつ数える（`planetary-ring-fixed` の固定具を外し太陽 60 rpm だけ → キャリア ≈ 37.190、リング ≈ 25.785、遊星 ≈ −8.430 rpm。基底を入れ替えても同じ）。
 - **つり合いの実装**（S1-06。`src/core/kinematics/motor.ts` と `balance.ts`）: シャフトごとに `D_s = Σ T_stall/ω0`、`b_s = Σ T_stall·d`（そのシャフトの ON のモーターの和）とし、シャフトに働くトルクを `b − D ω` とする。成分ごとに `(Nᵀ D N) q = Nᵀ b` を解く（`solveBalance(basis, drives)`）。一意でないときは一般解 `q_p + Z z`（`Z` は `Nᵀ D N` の零空間の基底）について `|N (q_p + Z z)|²` を最小にする `z` を取る。シーン全体は `solveVelocities(scene, graph, { paused? })` で解き、全シャフトの `omegas`、ON のモーターだけの解でのトルク `motorTorques`、成分ごとの `componentQ` を返す。`paused` なら全モーターを OFF とみなす（`motorTorques` は空）。自由度 0 の成分は `ω = 0` で、そこの ON のモーターのトルクは `T_stall·d`。ロックの判定はしない（S1-07）。rpm と rad/s の換算は `rpmToRadPerSec`・`radPerSecToRpm`。
 - **基準シャフトと角度の引き継ぎ**: 連結成分ごとに基準シャフトを 1 本決める（root / detached を優先し、次に ID 順）。N は基準シャフトの行が単位行列になるように作り、q は基準シャフトの角度とする。構成が変わったら、新しい基準シャフトの現在の角度から q を引き継ぐ（S1-05、S1-07）。
 - **かみ合いのグラフ**（S1-05。`src/core/kinematics/graph.ts` の `buildMeshGraph(scene, meshes)`、線形代数は `linalg.ts`）: 頂点はシャフト、辺は `Mesh`（多重辺あり、`source` は問わない）。連結成分ごとに、`Mesh` 1 つにつき 1 行の拘束行列を作り、零空間の基底 N（行 = シャフト、列 = 自由度 `dof`）を求める。`dof = 0` が回転条件の矛盾。一般の自由度では基準シャフトは `dof` 本（`referenceShaftIds`）で、root / detached を先に、次に ID の昇順（ロケールに依らない文字列の比較）に見て、それまでに選んだ行と独立なものを取る。N はその行が単位行列になる。階数の判定は、行列の成分の最大の絶対値 × 1e-9 をしきい値にする。拘束の行の係数は `meshCoefficients` の 1 か所で決める（S2-02。後続の種類はここに足す）。基準シャフトの優先は root / detached が先（`mesh`・`bevel`・`skew` は後）。速度比は `speedRatio(graph, from, to)`（`ω_to / ω_from`、決まらなければ `null`）。
@@ -410,7 +466,7 @@ function initialMotionState(): MotionState; // 全て空
   - 実装（S1-07）: 成分ごとに、前の状態の基準シャフトの角度を `q` とみなし（前の状態に無ければ 0）、`q += q̇·dt`（`q̇` は S1-06 の `componentQ`。ロックした成分は 0）、全シャフトの角度を `θ = N q` で求め直す。かみ合いの構成が変わったときも同じ式なので、基準シャフトの角度は保たれ、他のシャフトはそれに合わせて付き直る。自由度 0 の成分の角度は前の値のまま（無ければ 0）。角度は `2π` で折り返さない
   - かみ合いのグラフは `stepMotion` の中で `buildMeshGraph(scene, layout.meshes)` で作り、`Layout` の参照をキーに、シーンの参照が同じ間は使い回す
 - **手で回す**: つかんだシャフトの角度を手の位置で拘束する（無限に強い力）。手を離したら、つり合いの解に戻す。
-  - 実装（S1-07 の `opts.hand`）: つかんだシャフトの成分（段階 1 では自由度 1）は、`(N q)_{つかんだ行} = angle` となる `q` に決め、`θ = N q`、`ω = N (q − q_前) / dt`（`q_前` は前の状態の基準シャフトの角度。`dt = 0` なら 0）とする。モーターのつり合いは無視し、`stalemate` のロックは出さない。自由度 0 なら角度を変えず `contradiction` のロックにする（モーターの有無によらない）。**固定具**（S3-01）: つかんだシャフトが固定具で動けない（固定具の拘束を入れた零空間で、そのシャフトの行の成分がすべて `1e-9` 未満）なら、ドラッグ中はロック（角度を変えない）。理由は、固定具を外した成分の自由度が 1 以上なら `'anchor'`、0 なら `contradiction`。動ける自由度が残っていればそちらが動く（自由度 1 なら段階 1 の手の扱い）。一時停止中でも効く。シーンに無いシャフトをつかんでいたら手は無いものとして扱う。自由度 2 以上は今は例外を投げる（S3-03 で、残りの自由度をつり合いで解く）
+  - 実装（S1-07 の `opts.hand`）: つかんだシャフトの成分（段階 1 では自由度 1）は、`(N q)_{つかんだ行} = angle` となる `q` に決め、`θ = N q`、`ω = N (q − q_前) / dt`（`q_前` は前の状態の基準シャフトの角度。`dt = 0` なら 0）とする。モーターのつり合いは無視し、`stalemate` のロックは出さない。自由度 0 なら角度を変えず `contradiction` のロックにする（モーターの有無によらない）。**固定具**（S3-01）: つかんだシャフトが固定具で動けない（固定具の拘束を入れた零空間で、そのシャフトの行の成分がすべて `1e-9` 未満）なら、ドラッグ中はロック（角度を変えない）。理由は、固定具を外した成分の自由度が 1 以上なら `'anchor'`、0 なら `contradiction`。動ける自由度が残っていればそちらが動く（自由度 1 なら段階 1 の手の扱い）。一時停止中でも効く。シーンに無いシャフトをつかんでいたら手は無いものとして扱う。自由度 2 以上（S3-03 の遊星歯車など）は、つかんだシャフトの ω（= 角度の差 / dt）を規定値として、残りの自由度をつり合いで解く（ウォームの規定値と同じ `solveFixed`。モーターも効き、二乗和が最小になる）。`dt = 0` では角度の差を一度に動かす（モーターは無いものとし、動きの二乗和が最小。ω は 0）。遊星の歯車・遊星のシャフト・キャリアをつかむと、キャリアのシャフトをつかんだものとする（`grabTarget`。公転を手で回す）
   - 入力（S1-21）: 回している間の手の拘束は `AppState.sim.hand`。`src/app/loop.ts` の `runFrame` は `sim.hand` が null でなければ `stepMotion` の `opts` に `{ hand }` を渡す。目標の角度は `src/input/hand-rotate.ts` の `startHandRotate`（押したときのシャフトの角度 + 手の角度の変化量の積算。手の角度は `src/input/handle-drag.ts` の `pointerAngleAroundAxis` で、円弧のハンドルと共用。面を真横から見ているときは画面上の角度で代用し、求め方が切り替わった間の変化は数えない）。つかむシャフトと中心は `grabTarget`（歯車はその中心、シャフト・モーターは当たった点を軸に下ろした点）。ポインターを動かすたびに `store.setHand` で目標を入れ、離す（`pointerup`・`pointercancel`・Esc）と `null` に戻す。ロック中の成分の扱い: `contradiction`（自由度 0）は回らず、`stalemate` は回している間ロックを外す（どちらも上の `stepMotion` の実装のとおり）
 - **一時停止**（Space）: すべてのモーターを止めた状態で解く。シーンは変えない。`opts.paused` で渡す（S1-07）。ON のモーターが無いのと同じなので、ロックも負けたモーターも出ない
 
@@ -466,11 +522,12 @@ interface Settings {
   - `setGearTeeth { gearId, teeth }`（かさ歯車では、`bevel` の木の親子でつながったかさ歯車すべてを同じ歯数にする。1 コマンド＝Undo 1 回。S2-02。ウォームは `notAllowed`。S2-03）、`setMeshAngle { shaftId, angle }`（`mesh` だけ。`[0, 2π)` に正規化）、`setGearOffset { gearId, offset }`（`AXIAL_SNAP` の倍数。`mesh`・`bevel`・`skew` のシャフトの子は `notAllowed`）
   - `flipBevelApex { gearId }`（S2-02。かさ歯車の `apex` を反転する。区画はそのままで大端と頂点が移り、この歯車を親に持つ `bevel` のシャフトはついてくる。`bevel` のシャフトの子（`apex` は `−side` で決まる）と、かさ歯車でない歯車は `notAllowed`。UI のボタンは S2-05）
   - `addAnchor { shaftId }`（S3-01。シャフトを固定する。`created` は `[固定具の ID]`。既に固定されていれば何もしない（同じシーンを返し、履歴にも積まない）。シーンに無いシャフトは `notFound`）、`removeAnchor { anchorId }`（S3-01。無ければ `notFound`）
+  - 遊星歯車（S3-03）: `growGear { mode: 'planetary', parentGearId }`（§4 の作り方。平歯車でない親・遊星のシャフトの歯車・歯数の組が無いものは `notAllowed`）、`setPlanetCount { carrierId, count }`（遊星のシャフトを消して作り直し、1 本目の `angle` から等配にする。1 本目のシャフトの歯車の並びを新しい ID で写す。範囲外は `invalidValue`、配置の条件を満たさない数は `notAllowed`。同じ並びなら何もしない）。`setGearTeeth` は機構の中の歯車（太陽・遊星・リング。`planetaryOfGear`）では、太陽か遊星を変えるとリングを `z_s + 2·z_p` に、同じキャリアの遊星を全部同じ歯数にする（リングを直接変える変更・範囲や配置の条件を満たさない変更は `notAllowed`）。`addMotor`・`addAnchor` は遊星のシャフトで `notAllowed`。`growGear` の `perimeter`・`enclose`・`bevel`・`skew`・`planetary` は、遊星のシャフトの歯車を親にすると `notAllowed`（同じ軸の `coaxial` だけ）。`moveShaft`・`setShaftAxis` は `root`・`detached` だけ（`concentric` は `notAllowed`）
   - `addMotor { shaftId, size }`（`rpm` は `MOTOR_SIZES[size].defaultRpm`、`direction 1`、`on: true`。1 本に 1 個）、`updateMotor { motorId, patch: { size?, rpm?, direction?, on? } }`（`size` を変えても `rpm` は変えない）
   - `moveShaft { shaftId, origin }`・`setShaftAxis { shaftId, axis }`（`root`・`detached` だけ。その先の `mesh`・`bevel`・`skew` は書き換えない）
   - `reattachShaft { shaftId, childGearId, parentGearId, angle }`（`detached` だけ。大きさが同じで、親がこのシャフトとその先（`descendantShafts`）に無いこと。付け直しは `mesh` だけなので、かさ歯車の組（S2-02）とウォーム・ホイール（S2-03）は `notAllowed`）
   - `replaceScene { scene }`（`validateScene` を通らなければ `invalidValue`）
-- **削除の規則**: 歯車を消すと、その歯車を `parentGearId` に持つ `mesh`・`bevel`・`skew` のシャフトと、その歯車を `childGearId` に持つ自分のシャフトは、消す直前（入力のシーンの `resolveLayout`）の原点と向きで `detached` になる（その先はそのまま）。歯車が 1 枚も残らなくなったシャフトはモーター（と固定具。S3-01）ごと消す。シャフトを消すと載っている歯車とモーター・固定具も消える。同じコマンドの中で先に消えた ID は無視し、シーンに無い ID が 1 つでもあれば `notFound`。
+- **削除の規則**: 歯車を消すと、その歯車を `parentGearId` に持つ `mesh`・`bevel`・`skew` のシャフトと、その歯車を `childGearId` に持つ自分のシャフトは、消す直前（入力のシーンの `resolveLayout`）の原点と向きで `detached` になる（その先はそのまま）。歯車が 1 枚も残らなくなったシャフトはモーター（と固定具。S3-01）ごと消す。シャフトを消すと載っている歯車とモーター・固定具も消える。同じコマンドの中で先に消えた ID は無視し、シーンに無い ID が 1 つでもあれば `notFound`。遊星歯車（S3-03）: `deleteParts` はキャリアの ID も受け付ける。キャリアを消すと、その遊星のシャフトは消す直前の基準配置の位置で `detached` になり、キャリアのシャフトに歯車もほかのキャリアも残らなければシャフトも消す。シャフトを消すと、載っているキャリアも消え（遊星のシャフトは `detached`）、`concentric` の子のシャフトはその場に `detached` で残る。太陽歯車を消すと、それを親とする遊星のシャフトは `detached` になる（`planet` も `isChildPlacement`）。
 - **Undo/Redo の履歴**（S1-11。`src/core/edit/history.ts`）: `History { past（古い順）, future（次に Redo するものが先頭）, coalesceKey }`。`execute(state, command, ctx, { coalesceKey? })` は成功し、シーンの参照が変わったときだけ積み（未来は消える。上限 `HISTORY_LIMIT`、古いものから捨てる）、失敗・何も変えないコマンドでは履歴もそのまま。`coalesceKey` を渡すと、直前に積んだときと同じキーなら新しく積まない（ドラッグなど連続した入力を 1 回の Undo にする。UI は操作ごとに別のキーを作る）。Undo・Redo・キーなしの実行でキーは途切れる。
 - **ストアのアクション**（S1-11）: `loadScene`（履歴を空にしてシーンを置き換え、運動を初期化）、`command { command, coalesceKey? }`、`undo`、`redo`。シーンが変わったときは角度を引き継いで `solveMotion` で ω などを求め直す。失敗したコマンドや戻せない Undo は状態を変えず、購読者にも知らせない。新しい部品の ID は `createStore(scene, { ids })` の生成関数（既定はランダム）で作る。
 - シーンの検証エラー（`SceneError`）は、問題の場所を示す `path` を持つ（S1-03 で作り、S1-28 が表示に使う。S1-28 で形の確認の `code` `'invalidShape'` を足した）。`code` の一覧は `src/core/scene/validate.ts` の `SceneErrorCode`。
@@ -480,6 +537,7 @@ interface Settings {
 - **描画の層**（S1-04）: app は `src/render/scene-view.ts` の `SceneView`（`sync(scene, layout)` / `update(motion, layout)` / `render()` / `projectToScreen(world)`）だけを使う。毎フレームの更新ループは `src/app/loop.ts`（`requestAnimationFrame`、`dt` は 0.1 秒で頭打ち）で、`sync` → 運動を進める（`stepMotion`）→ `update` → `render` の順に呼ぶ。`loadScene` の直後の運動は `solveMotion(scene, layout, initialMotionState())`（`src/app/store.ts` の `initialMotion`）。歯車は中心に置いた `Group` のローカルの x・y・z を `u`・`v`・`w` に合わせ、その子のメッシュをローカルの z まわりに `basePhase + シャフトの角度` だけ回す。
 - ストア（S1-04 の `src/app/store.ts`）は、`dispatch` で状態が変わったときに購読者に知らせる（S1-11 から。失敗したコマンドでは知らせない）。毎フレームの運動は `setMotion` で入れ、購読者には知らせない。
 - render は、前回と参照が変わった部品だけを作り直す。形状データ（BufferGeometry）は `(種類, 大きさ, 歯数, 形を変える属性)` をキーに共有する（`gearShapeKey(shape, size, teeth)`。ハスバ歯車では `hand`。`GeometryCache.acquire(shape, size, teeth)` の `shape` は `GearShape`（歯車そのものを渡してよい））。
+- **遊星歯車の描画**（S3-03。`render/sync.ts`・`render/carrier.ts`）: 遊星のシャフトと歯車は、`update` で毎フレーム `shaftWorldOrigin`・`gearWorldCenter` の位置に置き直す。キャリアは腕のある板（中央のボス、遊星のシャフトへの腕、先の円板。`buildCarrierGeometries`）を板の中心に置き、キャリアのシャフトの回転角だけローカルの z まわりに回す（材質はシャフトと同じ。ピッキングは `'carrier'`）。同じ線上のシャフト（`lineRootOf` が同じ）は入れ子の中空軸に見せる: シーンの `shafts` の並び（作った順）で 0, 1, 2, … と順位を付け（`shaftNestRanks`）、半径を `SHAFT_RADIUS + 順位 × SHAFT_NEST_STEP`（1 mm）にする（後から作ったほうが一回り太い）。
 - UI は素の TypeScript で書き、DOM を直接操作する。文字列はすべて `t('key')` を通す。
 - **カメラと入力**（S1-13）: `src/render/renderer.ts` の `createRenderer` は `SceneView` に加えて `camera`・`canvas`・`pickPoint(pageX, pageY)`（部品に当たればその点、なければ床 y = 0 との交点、どちらも無ければ null）を返す。カメラは `src/input/camera.ts` の `createCameraInput` が camera-controls で動かし、`main.ts` が描く前に毎フレーム `update()` を呼ぶ。マウスのボタンは camera-controls に渡さず、`src/input/pointer-route.ts` の `routePointerDown` で振り分けて自前で `rotate` / `truck` を呼ぶ（ホイールだけ camera-controls の `dollyToCursor`）。カメラのドラッグは、どのボタンも押した位置から `DRAG_THRESHOLD_PX`（4px）動いてから始まる。
   - 「部品の上か」は `CameraInput.setHitTest((pageX, pageY) => PointerTarget)` で差し替える（`'none' | 'app' | 'click-only'`。既定は常に `'none'`。S1-16 がピッキングに差し替え、S1-18 が候補のための `'click-only'` を足した）。左ボタンは `'app'` なら経路 `'app'`、`'click-only'`（候補）ならカメラの回転（クリックは `selection-input` が受ける）。経路が `'app'` のポインターはカメラが無視する（受け取り手は S1-16 以降が canvas に付ける）。
@@ -488,7 +546,7 @@ interface Settings {
   - キー入力は `src/input/keyboard.ts` の `createKeyboard(window).bind({ key | code, ctrl?, alt?, shift? }, { onDown, onUp })` にまとめる。フォーカスがテキストの入力先（`isTypingTarget`）なら `onDown` を呼ばない。`ctrl`・`alt` は省略すると「押されていない」、`shift` は「どちらでもよい」。文字キーは `event.key`（大文字・小文字を区別しない）、テンキーは `event.code`。Space（押している間は平行移動の修飾キー）・F・Home は `camera.ts` が登録する。
   - F で寄る先の選択は `CameraInputDeps.getSelection`（S1-16 で `AppState.selection` を渡す。それまでは省略して常に全体表示）。全体表示の範囲は `src/core/layout/bounds.ts` の `boundsOf`。
 - **選択とピッキング**（S1-16）:
-  - ピッキングは `src/render/picking.ts`。render が作る Object3D に `setPickTarget(object, kind, id)` で `userData` の `{ pickKind, pickId }` を付け、当たった物から親をたどって判別する。`Renderer.pick(pageX, pageY): PickHit | null`（`{ kind, id, point }`）は `Renderer.pickRoot`（`Group`）の下だけを `activeCamera()` で調べ、`src/input/pick-priority.ts` の `choosePick`（ハンドル ＞ 候補 ＞ 歯車 ＞ モーター ＞ シャフト、同じ種類なら手前）で 1 つ選ぶ。ハンドル（S1-17・S1-19）と候補（S1-18）は、自分の Object3D を `pickRoot` に足して `setPickTarget` する。シャフトには見えない太めの当たり判定（半径 `SHAFT_PICK_RADIUS` = 3 mm、`render/sync.ts`）を子に付けている。`pickPoint` も同じピッキングを使う（当たらなければ床）。
+  - ピッキングは `src/render/picking.ts`。render が作る Object3D に `setPickTarget(object, kind, id)` で `userData` の `{ pickKind, pickId }` を付け、当たった物から親をたどって判別する。`Renderer.pick(pageX, pageY): PickHit | null`（`{ kind, id, point }`）は `Renderer.pickRoot`（`Group`）の下だけを `activeCamera()` で調べ、`src/input/pick-priority.ts` の `choosePick`（ハンドル ＞ 候補 ＞ 歯車 ＞ モーター ＞ シャフト、同じ種類なら手前）で 1 つ選ぶ。ハンドル（S1-17・S1-19）と候補（S1-18）は、自分の Object3D を `pickRoot` に足して `setPickTarget` する。シャフトには見えない太めの当たり判定（半径 `SHAFT_PICK_RADIUS` = 3 mm、`render/sync.ts`）を子に付けている。`pickPoint` も同じピッキングを使う（当たらなければ床）。S3-03 で `'carrier'`（キャリアの板。歯車の次、モーターの前）を足した。キャリアは選べ（選択の ID はキャリアの ID。`selectionForPick`・`pruneSelection`）、プロパティパネル（遊星の数の表示・モーター・固定具。固定とモーターはキャリアのシャフトに付ける）とコンテキストメニュー（`targetShaftId` はキャリアのシャフト）が使う。遊星のシャフト（とその歯車）では、プロパティパネルのモーター・固定具の欄とメニューの「モーター」「固定する」を出さない。
   - `main.ts` の `pickAt` は、描く前（`loadScene` や編集の直後）でも今のシーンで当たるように、`sync` してから `pick` する。`CameraInput.setHitTest` には「`pickAt` が null なら `'none'`、候補なら `'click-only'`、それ以外は `'app'`」を渡す。
   - クリックは `src/input/selection-input.ts` の `createSelectionInput` が canvas で受ける（カメラの経路とは別。左ボタンを `DRAG_THRESHOLD_PX` 未満の移動で離したら `onClick`。何もない所も知らせる）。`main.ts` が `selectionForPick(pickAt(x, y), scene)`（`src/app/selection.ts`。モーターはそのシャフト、ハンドル・候補は null）をストアの `select { id }` に渡す（ハンドルのクリックは選択を変えず、候補のクリックは生やす。S1-17・S1-18）。S1-21 の手で回すは、`'app'` の経路のドラッグ（しきい値以上動いたもの）だけを扱えばよい（動かさずに離したクリックは、このまま選択になる）。
   - ストアのアクション `select { id }`（シーンに無い ID は null として扱う）。シーンが変わるアクション（編集・Undo・Redo・`loadScene`）のあとは `pruneSelection` で、無くなった部品の選択を外す。
@@ -630,7 +688,7 @@ interface SaveFile {
   - S1-31 から: 画面の大きさは `test.use({ viewport: VISUAL_VIEWPORT })`（1280×800）にそろえ、撮る前に `prepareCapture(page)` を呼ぶ（Space で一時停止して回転を止め、カメラの動きが終わる（3 フレーム続けて動かない）のを待つ）。一時停止で見るものが消える場面（ロックの赤 `lock-red`、回転の矢印と rpm の `info-overlay-on`）は `prepareCapture(page, { pause: false })`。
   - 段階 1 の場面: `theme-brass`・`theme-wood`（showcase、Home）、`theme-brass-mesh-closeup`・`theme-wood-mesh-closeup`（接点から 60 mm）、`theme-brass-low`、`lock-red`、`interference-warning`、`info-overlay-on`、`ui-ja`・`ui-ja-settings`・`ui-en`・`ui-en-settings`（シーン A で g2 を選んだ状態と設定画面）、`works-list`、`context-menu`。各タスクで撮った `empty-scene`・`two-spur`・`axis-gizmo-*`・`candidates`・`selection-highlight` も残す。
   - 段階 2 の場面: `helical-closeup`（S2-01。`helical-pair` のかみ合いを接点から 60 mm）、`bevel-closeup`（S2-02。`bevel-pair` のかみ合いの歯の中ほどを 60 mm から）、`worm-closeup`（S2-03。`worm-basic` の接点 `[16, 70, 0]` を斜め前から）、`worm-locked`（S2-03。`worm-backdrive` のロック中。`pause: false`）、`crossed-helical-closeup`（S2-04。`crossed-pair` の接点 `[4, 100, 0]` を、接点での歯すじ `(1, 0, 1)` と中心を結ぶ線のどちらとも直交する向きの少し上から）。S2-05（`e2e/visual/stage2.spec.ts`）: `stage2-showcase-brass`・`stage2-showcase-wood`（`stage2-showcase` の全体。Home）、`stage2-<helical|bevel|worm|crossed-helical>-<brass|wood>`（`stage2-showcase` の各かみ合いの接点から 70 mm）、`stage2-info-worm`（`worm-basic` の情報表示 ON。ラベルの 3 行目にウォーム比 `30:1`。`pause: false`）、`stage2-ui-ja`・`stage2-ui-en`（パレットでウォームを選び、かさ歯車を選んだ状態）。
-  - 段階 3 の場面: `anchor-locked`（S3-01。`anchor-pair` の B を固定してロックしている場面。台座・支柱と赤い震え。`pause: false`）、`internal-closeup`（S3-02。`internal-pair` の接点 `[0, 39, −20]` を、開いている側（上）から斜めに見下ろす拡大）。
+  - 段階 3 の場面: `anchor-locked`（S3-01。`anchor-pair` の B を固定してロックしている場面。台座・支柱と赤い震え。`pause: false`）、`internal-closeup`（S3-02。`internal-pair` の接点 `[0, 39, −20]` を、開いている側（上）から斜めに見下ろす拡大）、`planetary`（S3-03。`planetary-ring-fixed` を斜め上から）。
 - **通しテスト**（`e2e/flows/`。S1-31）: 主要な操作の流れを、操作は画面（パレット・候補・プロパティパネル・ツールバー・キー・メニュー）から行い、状態は `__gearSim` で確かめる。`loadScene` は準備にだけ使う。共通の操作は `e2e/fixtures/sim.ts`（`fixtureScene`・`openApp`・`getScene` などの読み出し・`gearPoint`（pick がその歯車を返す画面の点）・`clickGear`・`clickPerimeterCandidate`（中心が近い外周の候補）・`deselect`・`setPaused`・`settleCamera`・`nextFrames`・`waitAutosaved`）。新しい spec はこれを使う（S1-30 までの spec は各自の補助関数のまま）。
 - **性能の計測**（S1-31。`pnpm perf`、`scripts/perf.ts`。`pnpm verify` には入れない）: `vite build --mode e2e` → `vite preview --mode e2e --port 4175` を起動し、Playwright の Chromium を画面ありで開く（`--ignore-gpu-blocklist --disable-gpu-vsync --disable-frame-rate-limit`。SwiftShader は使わない）。画面は 1280×800、`devicePixelRatio` は実機の値。`generatePerfScene(count)`（`src/debug/perf-scene.ts`）を読み込み、条件（高品質／軽量・情報表示 ON／OFF・音あり／ミュート、テーマは真鍮）ごとに、キャンバスをクリック（音を開始）→ Home → 眺めるモード → 3 秒待つ → 指定の秒数だけページ内の `requestAnimationFrame` の間隔を記録する。平均 fps・フレーム時間の中央値・p95・p99・最大、実際に描いた回数（`renderer.info.render.frame` の増え方）、`calls`・`triangles`、描き直しの判定 1 回の時間を表で出し、`perf-results/<YYYYMMDD-HHmmss>.json`（git で無視）にも書く。平均 60fps 以上かつ p95 ≤ 16.7 ms で `OK`、それ以外は `BELOW TARGET`。終了コードは結果によらない。引数は `--count <n>`（初期値 200）・`--seconds <n>`（初期値 10）・`--headless`（動くかの確かめ用。数値は参考にならない）。TypeScript は `tsx` で動かす（`page.evaluate` に関数を渡すと tsx が差し込む `__name` がページに無いので、ページで動かす長い処理は文字列で渡す）。
   - `generatePerfScene(count, seed = 1)`: 歯車 count 枚の、干渉もロックもない、すべて回る 1 本の木（根のシャフト 1 本）。10 枚ずつの列（大きさは S・M・L の順、歯数は 20〜40 を seed で決める、±30° の折れ線）を、前の列の先頭のシャフトに重ねた歯車（列ごとに上の層へ。同じシャフトに 2 枚）と間の 1 枚でつなぎ、各列の先頭のシャフトに列の大きさのモーター（初期値の rpm、+1、ON）を付ける。200 枚でかみ合い 180 組、重ねた歯車 19 枚。
@@ -642,6 +700,7 @@ interface GearSimDebug {
   getScene(): Scene;
   getLayout(): Layout;
   getMotion(): MotionState;
+  getShaftWorldOrigin(shaftId: ShaftId): Vec3; // シャフトの原点の実際の位置（遊星のシャフトは公転した位置。S3-03）
   getSelection(): string[];          // 選択が無ければ []、あれば [id]（S1-16。AppState.selection は string | null）
   loadScene(scene: Scene): void;     // 履歴を空にする（Undo の対象にしない）
   dispatch(command: Command): void;  // 編集コマンドを実行して履歴に積む。失敗したら何も変えない
@@ -667,7 +726,7 @@ interface GearSimDebug {
   getHandles(): Array<{ kind: 'move' | 'height' | 'arc' | 'axial'; targetId: string; position: Vec3 }>;
   // 今表示している候補（S1-18）。center は仮の歯車の中心のワールド座標。
   // index は一覧の番号で、pick の結果（kind: 'candidate'）の id は String(index)
-  getCandidates(): Array<{ index: number; kind: 'perimeter' | 'bevel' | 'skew' | 'coaxial'; center: Vec3 }>; // 'bevel' は S2-02、'skew' は S2-03
+  getCandidates(): Array<{ index: number; kind: 'perimeter' | 'bevel' | 'skew' | 'enclose' | 'planetary' | 'coaxial'; center: Vec3 }>; // 'bevel' は S2-02、'skew' は S2-03、'enclose' は S3-02、'planetary' は S3-03
   getHand(): HandConstraint | null;  // 手で回しているシャフトと目標の角度。回していなければ null（S1-21）
   isPaused(): boolean;               // 全モーターの一時停止中か（S1-22）
   // ロック中・干渉中として表示している部品の ID（どちらも昇順。interfering はロック中を除く。S1-22）
@@ -702,7 +761,7 @@ interface GearSimDebug {
 }
 
 // src/render/picking.ts（S1-16）
-type PickKind = 'handle' | 'candidate' | 'gear' | 'motor' | 'shaft';
+type PickKind = 'handle' | 'candidate' | 'gear' | 'carrier' | 'motor' | 'shaft'; // 'carrier' は S3-03
 interface PickHit { kind: PickKind; id: string; point: Vec3 }
 
 // src/input/camera.ts（S1-13）
@@ -739,6 +798,7 @@ API はタスクで必要になった時点で足していく。足したらこ�
 | S2-03 | なし（`getCandidates()` の `kind` に `'skew'`、`getScene()` に `'worm'`・`'wormWheel'` と `'skew'` の配置、`getLayout().meshes[].kind` に `'worm'`、`getMotion().locks[].reason` に `'wormBackDrive'` が増えただけ） |
 | S2-04 | なし（`getScene()` に `'crossedHelical'`、`getLayout().meshes[].kind` に `'crossedHelical'` が増えただけ） |
 | S2-05 | `getAudio` を広げた（済。`voices[].kind`（`MeshKind`）と `voices[].slide`。新しい関数は足していない） |
+| S3-03 | `getShaftWorldOrigin(shaftId)`（済。`core/layout/world.ts` の `shaftWorldOrigin(layout, motion, shaftId)`。`getCandidates()` の `kind` に `'planetary'`、`getScene()` に `carriers` と `concentric`・`planet` の配置、`getLayout()` に `carriers`・`orbit`・`meshes[].carrierShaftId`、`pick` の `kind` に `'carrier'` が増えた） |
 
 - トーストは `__gearSim` を通さず、Playwright から `page.evaluate` で `/src/ui/toast.ts` を動的 import して呼ぶ（S1-15）。`tsconfig.json` の `paths`（`/src/*` → `./src/*`）で、この形の import にも型が付く。時間で消えることは `page.clock.install()` で開いたあと `pauseAt` で時計を止め、`runFor` で進めて確かめる。
 - 描画領域は S1-15 からページより小さい（ツールバーとパネルの分）。ページ座標で「画面の内側」を確かめるときは、`page.viewportSize()` ではなく `page.locator('canvas').boundingBox()` を使う。

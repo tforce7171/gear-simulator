@@ -19,7 +19,8 @@ export interface GrabTarget {
 }
 
 // ポインターの下の部品の本体（ピッキングの結果）から、つかむシャフトと中心を求める。
-// 歯車はその中心、シャフト・モーターは当たった点を軸に下ろした点を中心にする。
+// 歯車はその中心、シャフト・モーター・キャリアは当たった点を軸に下ろした点を中心にする。
+// 遊星の歯車・シャフト（S3-03）はキャリアのシャフトをつかむ（中心は歯車の中心をキャリアの軸に下ろした点）。
 // ハンドル・候補・配置の決まらない部品は null
 export function grabTarget(
   scene: Scene,
@@ -30,6 +31,9 @@ export function grabTarget(
     const gear = scene.gears[body.id];
     const placed = layout.gears[body.id];
     if (gear === undefined || placed === undefined) return null;
+    // 遊星の歯車（S3-03）は、キャリアのシャフトをつかんだものとする（公転を手で回す）
+    if (placed.orbit !== undefined)
+      return onShaft(layout, placed.orbit.carrierShaftId, placed.center);
     return { shaftId: gear.shaftId, center: placed.center, axis: placed.axis };
   }
   const shaftId =
@@ -37,12 +41,21 @@ export function grabTarget(
       ? body.id
       : body.kind === 'motor'
         ? scene.motors[body.id]?.shaftId
-        : undefined;
+        : body.kind === 'carrier'
+          ? scene.carriers[body.id]?.shaftId
+          : undefined;
   if (shaftId === undefined) return null;
+  // 遊星のシャフト（S3-03）も、キャリアのシャフトをつかんだものとする
+  const orbit = layout.shafts[shaftId]?.orbit;
+  return onShaft(layout, orbit?.carrierShaftId ?? shaftId, body.point);
+}
+
+// シャフト shaftId をつかみ、点 point を軸に下ろした点を中心にする
+function onShaft(layout: Layout, shaftId: ShaftId, point: Vec3): GrabTarget | null {
   const shaft = layout.shafts[shaftId];
   if (shaft === undefined) return null;
   const w = axisVector(shaft.axis);
-  const [x, y, z] = add(shaft.origin, scale(w, dot(sub(body.point, shaft.origin), w)));
+  const [x, y, z] = add(shaft.origin, scale(w, dot(sub(point, shaft.origin), w)));
   // −0 を 0 にそろえる
   return { shaftId, center: [x + 0, y + 0, z + 0], axis: shaft.axis };
 }

@@ -45,3 +45,15 @@ export const INTERNAL_MIN_TEETH = 24;
 export const INTERNAL_MIN_TOOTH_DIFF = 12;
 export const INTERNAL_WEB_GAP = 8;
 export const INTERNAL_WEB_THICKNESS = 4;
+
+// 遊星歯車（S3-03）
+export const PLANET_COUNT_RANGE = { min: 1, max: 6 } as const; // 1 つのキャリアの遊星の数
+export const DEFAULT_PLANET_COUNT = 3; // 候補から作る遊星の数
+export const PLANET_MIN_TEETH = 12; // 候補から作る遊星の歯数の最小
+// キャリアの板の厚み（大きさごと。AXIAL_SNAP の倍数）
+export const CARRIER_THICKNESS = { S: 4, M: 4, L: 8 } as const;
+// 太陽歯車の歯幅の正側の面から、キャリアの板の負側の面までの隙間（AXIAL_SNAP の倍数）。遊星のシャフトの端の余白
+// SHAFT_END_MARGIN と同じにし、遊星のシャフトがちょうど板に届き、遊星・太陽の歯車が板に当たらないようにする
+export const CARRIER_GAP = 4;
+// キャリアの腕の半径 = 公転半径 + この余白（遊星のシャフトの太さの分）
+export const CARRIER_RADIUS_MARGIN = 4;

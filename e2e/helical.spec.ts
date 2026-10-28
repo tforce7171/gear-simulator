@@ -82,6 +82,7 @@ test('平歯車とハスバ歯車はかみ合わない: ちょうどの距離に
     },
     motors: {},
     anchors: {},
+    carriers: {},
   };
   await openApp(page, { scene: scene as typeof helicalPair });
   const layout = await getLayout(page);

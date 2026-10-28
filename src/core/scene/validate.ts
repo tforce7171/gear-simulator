@@ -2,7 +2,8 @@ import { AXIAL_SNAP, GEAR_SIZES, MOTOR_RPM_RANGE, WORM_THREADS } from '../consta
 import { canMesh, meshGeometryOf, placementKindOf } from '../geometry/can-mesh';
 import { teethRange } from '../geometry/dimensions';
 import { isApex, isGearKind, isHand, isWebSide } from './gear-shape';
-import { isChildPlacement, type Scene, type ShaftId, type ShaftPlacement } from './types';
+import { lineRootOf, placementParentShafts } from './scene';
+import type { Scene, ShaftId } from './types';
 
 // シーンの検証（design.md §4・§9）。不正なら理由の一覧を返す（例外にしない）。
 // 保存形式の読み込み（S1-28）もここを通すので、型の上ではありえない値（文字列の軸など）も調べる。
@@ -42,7 +43,9 @@ export type SceneErrorCode =
   | 'bevelApexMismatch' // bevel の配置の子の apex が −side でない（S2-02）
   | 'meshCycle'
   | 'invalidAnchorTarget' // 固定具の対象の種類が 'shaft' でない（S3-01。S3-04 でラックを足す）
-  | 'multipleAnchors'; // 1 つの対象に固定具が 2 つ以上（S3-01）
+  | 'multipleAnchors' // 1 つの対象に固定具が 2 つ以上（S3-01）
+  | 'planetLineMismatch' // 遊星の親の歯車のシャフトが、キャリアのシャフトと同じ線上にない（S3-03）
+  | 'nestedOrbit'; // キャリア・同じ線上のシャフトの親が遊星のシャフト（2 段以上の遊星は範囲外。S3-03）
 
 const AXES: readonly unknown[] = ['x', 'y', 'z'];
 
@@ -63,7 +66,7 @@ export function validateScene(scene: Scene): { ok: true } | { ok: false; errors:
   };
 
   // キーと id の一致
-  for (const collection of ['shafts', 'gears', 'motors', 'anchors'] as const) {
+  for (const collection of ['shafts', 'gears', 'motors', 'anchors', 'carriers'] as const) {
     for (const [key, item] of Object.entries(scene[collection])) {
       if (item.id !== key) {
         push(
@@ -88,8 +91,26 @@ export function validateScene(scene: Scene): { ok: true } | { ok: false; errors:
       if (origin.length !== 3 || !origin.every(isFiniteNumber)) {
         push('notFinite', key, `${base}.origin`, 'origin must be 3 finite numbers');
       }
-    } else if (p.kind === 'mesh' || p.kind === 'bevel' || p.kind === 'skew') {
-      if (p.kind === 'mesh' && !isFiniteNumber(p.angle)) {
+    } else if (p.kind === 'concentric') {
+      // 同じ線上のシャフト（S3-03）。親のシャフトがあり、遊星のシャフトでない
+      const parentShaft = scene.shafts[p.parentShaftId];
+      if (parentShaft === undefined) {
+        push('missingRef', key, `${base}.parentShaftId`, `shaft "${p.parentShaftId}" not found`);
+      } else if (parentShaft.placement.kind === 'planet') {
+        push(
+          'nestedOrbit',
+          key,
+          `${base}.parentShaftId`,
+          `parent shaft "${p.parentShaftId}" is a planet shaft`,
+        );
+      }
+    } else if (
+      p.kind === 'mesh' ||
+      p.kind === 'bevel' ||
+      p.kind === 'skew' ||
+      p.kind === 'planet'
+    ) {
+      if ((p.kind === 'mesh' || p.kind === 'planet') && !isFiniteNumber(p.angle)) {
         push('notFinite', key, `${base}.angle`, 'angle must be finite');
       }
       if (p.kind === 'bevel' || p.kind === 'skew') {
@@ -150,7 +171,8 @@ export function validateScene(scene: Scene): { ok: true } | { ok: false; errors:
         parent !== undefined &&
         isGearKind(child.kind) &&
         isGearKind(parent.kind) &&
-        (!canMesh(child, parent) || placementKindOf(meshGeometryOf(parent)) !== p.kind)
+        (!canMesh(child, parent) ||
+          placementKindOf(meshGeometryOf(parent)) !== (p.kind === 'planet' ? 'mesh' : p.kind))
       ) {
         // かみ合えない組か、配置の種類がかみ合いの位置関係に合わない
         // （平行は mesh、かさ歯車は bevel（S2-02）、ウォームとホイールは skew（S2-03））
@@ -175,12 +197,65 @@ export function validateScene(scene: Scene): { ok: true } | { ok: false; errors:
           `child bevel gear "${p.childGearId}" must have apex ${-p.side}`,
         );
       }
+      if (p.kind !== 'planet' && parent !== undefined) {
+        // 遊星のシャフトの歯車から外へ生やした子（2 段以上の遊星）は扱わない（S3-03）
+        if (scene.shafts[parent.shaftId]?.placement.kind === 'planet') {
+          push(
+            'nestedOrbit',
+            key,
+            `${base}.parentGearId`,
+            `parent gear "${p.parentGearId}" is on a planet shaft`,
+          );
+        }
+      }
+      if (p.kind === 'planet') {
+        // 遊星のシャフト（S3-03）: キャリアがあり、親の歯車がキャリアのシャフトと同じ線上にある
+        const carrier = scene.carriers[p.carrierId];
+        if (carrier === undefined) {
+          push('missingRef', key, `${base}.carrierId`, `carrier "${p.carrierId}" not found`);
+        } else if (
+          parent !== undefined &&
+          scene.shafts[carrier.shaftId] !== undefined &&
+          lineRootOf(scene, parent.shaftId) !== lineRootOf(scene, carrier.shaftId)
+        ) {
+          push(
+            'planetLineMismatch',
+            key,
+            `${base}.parentGearId`,
+            `parent gear "${p.parentGearId}" is not on the line of carrier "${p.carrierId}"`,
+          );
+        }
+      }
     } else {
       push(
         'invalidKind',
         key,
         `${base}.kind`,
         `invalid placement kind "${String((p as { kind: unknown }).kind)}"`,
+      );
+    }
+  }
+
+  // キャリア（S3-03）: シャフトがあり、遊星のシャフトでない。offset は AXIAL_SNAP の倍数
+  for (const [key, carrier] of Object.entries(scene.carriers)) {
+    const base = `carriers.${key}`;
+    const shaft = scene.shafts[carrier.shaftId];
+    if (shaft === undefined) {
+      push('missingRef', key, `${base}.shaftId`, `shaft "${carrier.shaftId}" not found`);
+    } else if (shaft.placement.kind === 'planet') {
+      push('nestedOrbit', key, `${base}.shaftId`, `shaft "${carrier.shaftId}" is a planet shaft`);
+    }
+    if (!isSizeKey(carrier.size)) {
+      push('invalidSize', key, `${base}.size`, `invalid size "${String(carrier.size)}"`);
+    }
+    if (!isFiniteNumber(carrier.offset)) {
+      push('notFinite', key, `${base}.offset`, 'offset must be finite');
+    } else if (carrier.offset % AXIAL_SNAP !== 0) {
+      push(
+        'offsetNotSnapped',
+        key,
+        `${base}.offset`,
+        `offset ${carrier.offset} is not a multiple of ${AXIAL_SNAP}`,
       );
     }
   }
@@ -322,27 +397,33 @@ export function validateScene(scene: Scene): { ok: true } | { ok: false; errors:
     }
   }
 
-  // mesh・bevel・skew の親子をたどると root か detached に行き着く（循環しない）
-  for (const key of Object.keys(scene.shafts)) {
-    const start = scene.shafts[key]?.placement;
-    if (start === undefined || !isChildPlacement(start)) continue;
-    const visited = new Set<ShaftId>();
-    let current: ShaftId | undefined = key;
-    while (current !== undefined) {
-      if (visited.has(current)) {
-        push(
-          'meshCycle',
-          key,
-          `shafts.${key}.placement.parentGearId`,
-          `mesh parents of shaft "${key}" form a cycle`,
-        );
-        break;
-      }
-      visited.add(current);
-      const placement: ShaftPlacement | undefined = scene.shafts[current]?.placement;
-      if (placement === undefined || !isChildPlacement(placement)) break; // 根に着いた（参照切れは上で報告済み）
-      current = scene.gears[placement.parentGearId]?.shaftId;
+  // 配置の親（mesh・bevel・skew・planet の親の歯車のシャフト、planet のキャリアのシャフト、concentric の親のシャフト）を
+  // たどると root か detached に行き着く（循環しない。S3-03 で親が 2 つの planet を足したので、深さ優先で調べる）
+  const state = new Map<ShaftId, 'visiting' | 'done'>();
+  const cyclic = new Set<ShaftId>();
+  const visit = (id: ShaftId): boolean => {
+    const st = state.get(id);
+    if (st === 'done') return cyclic.has(id);
+    if (st === 'visiting') return true;
+    state.set(id, 'visiting');
+    let found = false;
+    for (const parent of placementParentShafts(scene, id)) {
+      if (visit(parent)) found = true;
     }
+    state.set(id, 'done');
+    if (found) cyclic.add(id);
+    return found;
+  };
+  for (const key of Object.keys(scene.shafts)) {
+    if (!visit(key)) continue;
+    const p = scene.shafts[key]?.placement;
+    const field = p?.kind === 'concentric' ? 'parentShaftId' : 'parentGearId';
+    push(
+      'meshCycle',
+      key,
+      `shafts.${key}.placement.${field}`,
+      `placement parents of shaft "${key}" form a cycle`,
+    );
   }
 
   return errors.length === 0 ? { ok: true } : { ok: false, errors };

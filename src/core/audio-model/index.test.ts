@@ -76,6 +76,7 @@ function sceneA(motor: { on?: boolean; rpm?: number } = {}): Scene {
       },
     },
     anchors: {},
+    carriers: {},
   };
 }
 

@@ -27,11 +27,11 @@ export interface MenuItem {
   checked?: boolean;
 }
 
-// モーターを付け外しする対象のシャフト。シャフトならそれ自身、歯車なら載っているシャフト。
-// シーンに無い ID（モーターの ID を含む）は null
+// モーターを付け外しする対象のシャフト。シャフトならそれ自身、歯車なら載っているシャフト、
+// キャリア（S3-03）ならそのシャフト。シーンに無い ID（モーターの ID を含む）は null
 export function targetShaftId(scene: Scene, partId: string): ShaftId | null {
   if (scene.shafts[partId] !== undefined) return partId;
-  return scene.gears[partId]?.shaftId ?? null;
+  return scene.gears[partId]?.shaftId ?? scene.carriers[partId]?.shaftId ?? null;
 }
 
 // 対象のシャフトに付いているモーター。無ければ null
@@ -65,7 +65,9 @@ export function buildContextMenuItems(
     ];
   }
   const items = [item('delete')];
-  if (targetShaftId(state.scene, target.partId) !== null) {
+  const shaftId = targetShaftId(state.scene, target.partId);
+  // 遊星のシャフト（S3-03）にはモーターも固定具も付けられないので、項目を出さない
+  if (shaftId !== null && state.scene.shafts[shaftId]?.placement.kind !== 'planet') {
     items.push(
       item(targetMotorId(state.scene, target.partId) === null ? 'attachMotor' : 'detachMotor'),
       // 固定する／固定を外す（S3-01）。歯車ならそのシャフト
