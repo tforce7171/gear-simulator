@@ -123,6 +123,7 @@ export const CROSSED_HELIX_ANGLE = Math.PI / 4; // ねじ歯車のねじれ角 4
 type ShaftId = string; // "shaft_xxx"
 type GearId = string;  // "gear_xxx"
 type MotorId = string; // "motor_xxx"
+type AnchorId = string; // "anchor_xxx"（S3-01）
 type Axis = 'x' | 'y' | 'z';
 type SizeKey = 'S' | 'M' | 'L';
 
@@ -130,6 +131,7 @@ interface Scene {
   readonly shafts: Readonly<Record<ShaftId, Shaft>>;
   readonly gears: Readonly<Record<GearId, Gear>>;
   readonly motors: Readonly<Record<MotorId, Motor>>;
+  readonly anchors: Readonly<Record<AnchorId, Anchor>>; // 固定具（S3-01）
 }
 
 interface Shaft {
@@ -195,6 +197,12 @@ interface Motor {
   readonly direction: 1 | -1; // 回転の正の向きに対する向き
   readonly on: boolean;
 }
+
+// 固定具（S3-01）。対象のシャフトを地面に固定する（運動の拘束 ω = 0。§6）
+interface Anchor {
+  readonly id: AnchorId;
+  readonly target: { readonly kind: 'shaft'; readonly id: ShaftId }; // S3-04 で { kind: 'rack'; id: RackId } を足す
+}
 ```
 
 - **歯車の種類ごとの追加フィールド**（`GearBase` に足すもの）:
@@ -240,7 +248,10 @@ interface Motor {
 - モーターは 1 本のシャフトに 1 個まで。軸方向の位置は持たず、描画ではシャフトの端の外側に置く。段階 1 では干渉判定に含めない。
 - 歯車が 1 枚も残らなくなったシャフトは、モーターごと削除する。
 - ID は `core/scene` の ID 生成関数で作る。テストでは決まった順の ID を返す生成関数を注入する。
-- 段階 3 で `anchors` などのコレクションを足すときは、保存形式のバージョンを上げて移行を書く（§9）。
+- **固定具**（S3-01）: `anchors` は固定具のコレクション。対象はシャフトで、歯車を固定するときはその歯車のシャフトを固定する（剛体の単位がシャフトのため。§6）。1 つの対象に固定具は最大 1 つ。S3-03 のキャリアはシャフトに載るので、キャリアの固定はそのシャフトの固定になる（S3-04 で対象にラックを足す）。シャフトを消すとその固定具も消える（同じ `deleteParts` の中。Undo で両方戻る）。歯車を消しても、シャフトが残る限り固定具は残る。干渉判定には含めない（見た目のための部品）。`anchorOfShaft(scene, shaftId)`・`anchoredShaftIds(scene)` は `src/core/scene/scene.ts`。
+  - 検証（`validateScene`）: キーと `id` の一致（`idMismatch`）、対象の種類が `'shaft'`（`invalidAnchorTarget`）、対象のシャフトがある（`missingRef`）、1 つのシャフトに 2 つ以上（`multipleAnchors`）。`parseScene` は `anchor_` の接頭辞・`target` のオブジェクト・`kind` と `id` の文字列を確かめる。
+  - **保存（暫定）**: `parseScene` は `anchors` の無いシーン（S3-01 より前に保存したもの）に `{}` を補う（`anchors` があればオブジェクトでなければ `invalidShape`）。保存形式は version 2 のまま。S3-05 で version 3 に上げ、この暫定処理を `MIGRATIONS[2]`（2 → 3 で `anchors: {}` を足す）に置き換える（§9）。
+  - テストのフィクスチャ（`e2e/fixtures/*.json` の `Scene` の形のもの）は、S3-01 からすべて `"anchors": {}` を持つ。`e2e/fixtures/anchor-pair.json`: 縦軸の起点 `shaft_a`（原点 `[0, 35, 0]`）に中・20 歯 `gear_a` とモーター 中（30 rpm、正の向き、ON）、`gear_a` の外周（角度 0）に中・40 歯 `gear_b`（`shaft_b`）。固定具はなし。
 
 ## 5. 導出データ（レイアウト）
 
@@ -316,7 +327,7 @@ interface MotionState {
   backDriven: MotorId[];           // 負けて逆に回されているモーター
 }
 
-type LockReason = 'contradiction' | 'stalemate' | 'wormBackDrive'; // 'wormBackDrive' は S2-03。段階 3 で 'anchor' | 'rackEnd' を足す
+type LockReason = 'contradiction' | 'stalemate' | 'wormBackDrive' | 'anchor'; // 'wormBackDrive' は S2-03、'anchor' は S3-01。S3-04 で 'rackEnd' を足す
 
 interface LockInfo {
   reason: LockReason;
@@ -351,6 +362,8 @@ function initialMotionState(): MotionState; // 全て空
   | ねじれた位置の組（`'worm'`・`'crossedHelical'`） | `s·z_a` | `z_b` | S2-03、S2-04（`s = (e_a × u_ab)·e_b`。e は各シャフトの軸の単位ベクトル、`u_ab` は a の中心から b の中心への単位ベクトルで、a と b を入れ替えても s は変わらない。ウォームの z は条数（1）。中心は `resolveLayout(scene)` から取る。右ねじのウォームと右ねじれのホイールのねじ山の向きから導いた。例: ウォームの軸 x、ホイールの軸 z で中心が −y 側 → s = −1 → `ω_H = ω_W / z`。ねじ歯車（S2-04）も同じ係数の関数で、右ねじれ 45° 同士の、接点での歯すじの法線方向の周速の一致から導いた式が同じ形になる。例: A（軸 x、20 歯）、B（軸 z、40 歯）で B が +y 側 → s = 1 → `ω_B = −ω_A / 2`。ねじ歯車の組は一方通行にしない（セルフロックしない）） |
   | かさ歯車（`'bevel'`） | `apex_a·z_a` | `apex_b·z_b` | S2-02（ピッチ点 P での周速の一致 `ω_a·(e_a × (P − c_a)) = ω_b·(e_b × (P − c_b))` から導いた。親の向き・子の軸・side の 24 通りで成り立つことを Vitest で確かめている） |
 
+- **固定具の拘束**（S3-01）: 固定されたシャフトは `ω = 0`（拘束行列 C に、そのシャフトの列だけ 1 の行を 1 つ足す）。`buildMeshGraph(scene, meshes, anchored?)` の第 3 引数（固定するシャフトの集合）で入れ、`KinematicComponent.anchoredShaftIds` に残す。運動は `anchoredMeshGraphOf(scene, layout)`（固定具の拘束を入れたグラフ。固定具が無ければ `meshGraphOf` と同じオブジェクト）で解き、`meshGraphOf`（かみ合いだけ）は `'anchor'` の判定と情報表示の逃げ道に使う。固定具は連結のしかたを変えないので、2 つのグラフの連結成分は同じシャフトの組になる。固定具があっても、駆動されていなければロックではない（止まっているだけ。ω の二乗和の最小で ω = 0 になる）。
+  - 情報表示のギア比（S1-23）は、固定具を入れたグラフの `speedRatio` で求め、決まらなければ（固定具で止まった成分など）かみ合いだけのグラフで求める（S3-03 の遊星歯車で、1 つを固定して自由度 1 になったときの比が出るように）。
 - **力のつり合い**: モーターのトルクは `τ_i = T_stall · (d_i − ω_i / ω0_i)`（d_i は向き、ω0_i は無負荷角速度）で、ω に対して一次。仮想仕事の原理から `Nᵀ τ(N q) = 0` を解く（q についての一次方程式）。
 - **解が一意でないとき**: 駆動されていない自由度があると、方程式の解が 1 つに決まらない。その場合は、解のうち **ω の二乗和が最小のもの** をとる（N の基底の取り方に結果が左右されない）。モーターがつながっていない連結成分は、これで自然に ω = 0（止まったまま）になる。OFF のモーターは無いものとして扱う。
 - **つり合いの実装**（S1-06。`src/core/kinematics/motor.ts` と `balance.ts`）: シャフトごとに `D_s = Σ T_stall/ω0`、`b_s = Σ T_stall·d`（そのシャフトの ON のモーターの和）とし、シャフトに働くトルクを `b − D ω` とする。成分ごとに `(Nᵀ D N) q = Nᵀ b` を解く（`solveBalance(basis, drives)`）。一意でないときは一般解 `q_p + Z z`（`Z` は `Nᵀ D N` の零空間の基底）について `|N (q_p + Z z)|²` を最小にする `z` を取る。シーン全体は `solveVelocities(scene, graph, { paused? })` で解き、全シャフトの `omegas`、ON のモーターだけの解でのトルク `motorTorques`、成分ごとの `componentQ` を返す。`paused` なら全モーターを OFF とみなす（`motorTorques` は空）。自由度 0 の成分は `ω = 0` で、そこの ON のモーターのトルクは `T_stall·d`。ロックの判定はしない（S1-07）。rpm と rad/s の換算は `rpmToRadPerSec`・`radPerSecToRpm`。
@@ -359,7 +372,8 @@ function initialMotionState(): MotionState; // 全て空
 - **ロック**: 次の場合に、その連結成分をロックとし、ω = 0 にする。
   - 零空間が 0 次元なのにモーターがある（回転条件の矛盾）
   - 解の |ω| が `LOCK_OMEGA_EPS` 未満なのに、トルクを出しているモーターがある
-  - ウォームの逆駆動（S2-03。下の「ウォームのセルフロック」）。段階 3 で、ラックの端、固定具との矛盾
+  - ウォームの逆駆動（S2-03。下の「ウォームのセルフロック」）。段階 3 で、ラックの端（S3-04）
+  - **固定具との矛盾**（S3-01。理由 `'anchor'`）: 固定具の拘束を入れて解いた成分が、上の条件（零空間が 0 次元なのに ON のモーターがある／|ω| < `LOCK_OMEGA_EPS` で ON のモーターがある／ウォームの区画の条件）に当たり、かつ、その成分から固定具の拘束を外して解き直す（`meshGraphOf` の同じ成分を、段階 1 のつり合い、ウォームを含めば `solveWormSections` で）とロックしない場合。外してもロックするなら、外して解き直したときの理由（段階 1 の `contradiction`・`stalemate`、ウォームの `wormBackDrive`）にする（固定具で自由度 0 になっても、本当の原因がウォームの逆駆動なら `wormBackDrive`）。`motion.ts` の `anchorAware`・`freeLockReason`
   - 実装（S1-07）: 成分ごとに判定する。`contradiction` は自由度 0 の成分に ON のモーターがある（一時停止中は無いとみなす）か、手でつかんでいるとき。`stalemate` は成分に ON のモーターがあり、つり合いの解で成分の全シャフトの `|ω| < LOCK_OMEGA_EPS` のとき（ON のモーターは速度 0 で `|τ| = T_stall > 0` を出すので、「トルクを出しているモーターがある」を満たす）。`LockInfo.shaftIds`・`gearIds` はその成分のシャフトと歯車（ID の昇順）。`locks` は成分の順（先頭のシャフトの ID の昇順）。ロックした成分は `ω = 0` で、他の成分には影響しない
 - **ウォームのセルフロック**（S2-03。`src/core/kinematics/worm-solve.ts`）: ホイール側から駆動しようとすると、強さに関係なくロックする（要件 §5）。ウォームのかみ合いを **一方通行の拘束** として扱う（ウォーム側はホイール側の影響を受けず、ホイール側はウォームの動きに無限の強さで従う）。ウォームのかみ合いを含む連結成分（自由度 1 以上）は、段階 1 のつり合いの代わりに次のとおり解く（`wormSections`・`solveWormSections`）。
   1. ウォームのかみ合いを除いたかみ合いでつながる部分を「区画」とする
@@ -370,12 +384,13 @@ function initialMotionState(): MotionState; // 全て空
   - 手で、入ってくる辺のある区画のシャフトをつかむと、手と上流のウォームの両方が規定値になるので、手の動きに関係なく常に `wormBackDrive` のロック（角度は変えない）。入ってくる辺のない区画をつかんだときは段階 1 の手の扱い（つかんだシャフトの角度から成分全体を決め、モーターは無視する）
   - 区画ごとに解いた ω も連結成分全体の拘束 `C ω = 0` を満たすので、`q̇` = 基準シャフトの ω として、角度の積分（`θ = N q`）はそのまま使う
   - 区画の構造（`wormSections`）はグラフの参照ごとに覚える
+  - 固定具（S3-01）: 固定具の拘束 `ω = 0` は、固定したシャフトを含む区画の拘束の行として足す（`WormSections.anchoredShaftIds`。区画の中の拘束なので、その区画の零空間に入る）。規定値を受ける区画のホイールを固定して上流のウォームが回っていれば、規定値と両立しないので区画の解き方では `wormBackDrive` になるが、固定具を外して解き直すとロックしないので理由は `'anchor'`
 - **負けたモーター**（`backDriven`。S1-07）: ON のモーター（一時停止中は無い）のうち、そのシャフトの `ω · direction < −LOCK_OMEGA_EPS` のもの。ID の昇順。ロックした成分のモーターは ω = 0 なので入らない。手で回している成分では、手で求めた ω で同じ式を使う
 - **角度の積分**: 毎フレーム q を積分して `θ = N q` で角度を求める。シャフトごとに積分しないので、かみ合った歯車の位相がずれない。
   - 実装（S1-07）: 成分ごとに、前の状態の基準シャフトの角度を `q` とみなし（前の状態に無ければ 0）、`q += q̇·dt`（`q̇` は S1-06 の `componentQ`。ロックした成分は 0）、全シャフトの角度を `θ = N q` で求め直す。かみ合いの構成が変わったときも同じ式なので、基準シャフトの角度は保たれ、他のシャフトはそれに合わせて付き直る。自由度 0 の成分の角度は前の値のまま（無ければ 0）。角度は `2π` で折り返さない
   - かみ合いのグラフは `stepMotion` の中で `buildMeshGraph(scene, layout.meshes)` で作り、`Layout` の参照をキーに、シーンの参照が同じ間は使い回す
 - **手で回す**: つかんだシャフトの角度を手の位置で拘束する（無限に強い力）。手を離したら、つり合いの解に戻す。
-  - 実装（S1-07 の `opts.hand`）: つかんだシャフトの成分（段階 1 では自由度 1）は、`(N q)_{つかんだ行} = angle` となる `q` に決め、`θ = N q`、`ω = N (q − q_前) / dt`（`q_前` は前の状態の基準シャフトの角度。`dt = 0` なら 0）とする。モーターのつり合いは無視し、`stalemate` のロックは出さない。自由度 0 なら角度を変えず `contradiction` のロックにする（モーターの有無によらない）。一時停止中でも効く。シーンに無いシャフトをつかんでいたら手は無いものとして扱う。自由度 2 以上は今は例外を投げる（S3-03 で、残りの自由度をつり合いで解く）
+  - 実装（S1-07 の `opts.hand`）: つかんだシャフトの成分（段階 1 では自由度 1）は、`(N q)_{つかんだ行} = angle` となる `q` に決め、`θ = N q`、`ω = N (q − q_前) / dt`（`q_前` は前の状態の基準シャフトの角度。`dt = 0` なら 0）とする。モーターのつり合いは無視し、`stalemate` のロックは出さない。自由度 0 なら角度を変えず `contradiction` のロックにする（モーターの有無によらない）。**固定具**（S3-01）: つかんだシャフトが固定具で動けない（固定具の拘束を入れた零空間で、そのシャフトの行の成分がすべて `1e-9` 未満）なら、ドラッグ中はロック（角度を変えない）。理由は、固定具を外した成分の自由度が 1 以上なら `'anchor'`、0 なら `contradiction`。動ける自由度が残っていればそちらが動く（自由度 1 なら段階 1 の手の扱い）。一時停止中でも効く。シーンに無いシャフトをつかんでいたら手は無いものとして扱う。自由度 2 以上は今は例外を投げる（S3-03 で、残りの自由度をつり合いで解く）
   - 入力（S1-21）: 回している間の手の拘束は `AppState.sim.hand`。`src/app/loop.ts` の `runFrame` は `sim.hand` が null でなければ `stepMotion` の `opts` に `{ hand }` を渡す。目標の角度は `src/input/hand-rotate.ts` の `startHandRotate`（押したときのシャフトの角度 + 手の角度の変化量の積算。手の角度は `src/input/handle-drag.ts` の `pointerAngleAroundAxis` で、円弧のハンドルと共用。面を真横から見ているときは画面上の角度で代用し、求め方が切り替わった間の変化は数えない）。つかむシャフトと中心は `grabTarget`（歯車はその中心、シャフト・モーターは当たった点を軸に下ろした点）。ポインターを動かすたびに `store.setHand` で目標を入れ、離す（`pointerup`・`pointercancel`・Esc）と `null` に戻す。ロック中の成分の扱い: `contradiction`（自由度 0）は回らず、`stalemate` は回している間ロックを外す（どちらも上の `stepMotion` の実装のとおり）
 - **一時停止**（Space）: すべてのモーターを止めた状態で解く。シーンは変えない。`opts.paused` で渡す（S1-07）。ON のモーターが無いのと同じなので、ロックも負けたモーターも出ない
 
@@ -430,11 +445,12 @@ interface Settings {
   - `deleteParts { ids }`（複数を 1 回の Undo で。下の削除の規則）、`removeMotor { motorId }`（モーターだけを消す別名）
   - `setGearTeeth { gearId, teeth }`（かさ歯車では、`bevel` の木の親子でつながったかさ歯車すべてを同じ歯数にする。1 コマンド＝Undo 1 回。S2-02。ウォームは `notAllowed`。S2-03）、`setMeshAngle { shaftId, angle }`（`mesh` だけ。`[0, 2π)` に正規化）、`setGearOffset { gearId, offset }`（`AXIAL_SNAP` の倍数。`mesh`・`bevel`・`skew` のシャフトの子は `notAllowed`）
   - `flipBevelApex { gearId }`（S2-02。かさ歯車の `apex` を反転する。区画はそのままで大端と頂点が移り、この歯車を親に持つ `bevel` のシャフトはついてくる。`bevel` のシャフトの子（`apex` は `−side` で決まる）と、かさ歯車でない歯車は `notAllowed`。UI のボタンは S2-05）
+  - `addAnchor { shaftId }`（S3-01。シャフトを固定する。`created` は `[固定具の ID]`。既に固定されていれば何もしない（同じシーンを返し、履歴にも積まない）。シーンに無いシャフトは `notFound`）、`removeAnchor { anchorId }`（S3-01。無ければ `notFound`）
   - `addMotor { shaftId, size }`（`rpm` は `MOTOR_SIZES[size].defaultRpm`、`direction 1`、`on: true`。1 本に 1 個）、`updateMotor { motorId, patch: { size?, rpm?, direction?, on? } }`（`size` を変えても `rpm` は変えない）
   - `moveShaft { shaftId, origin }`・`setShaftAxis { shaftId, axis }`（`root`・`detached` だけ。その先の `mesh`・`bevel`・`skew` は書き換えない）
   - `reattachShaft { shaftId, childGearId, parentGearId, angle }`（`detached` だけ。大きさが同じで、親がこのシャフトとその先（`descendantShafts`）に無いこと。付け直しは `mesh` だけなので、かさ歯車の組（S2-02）とウォーム・ホイール（S2-03）は `notAllowed`）
   - `replaceScene { scene }`（`validateScene` を通らなければ `invalidValue`）
-- **削除の規則**: 歯車を消すと、その歯車を `parentGearId` に持つ `mesh`・`bevel`・`skew` のシャフトと、その歯車を `childGearId` に持つ自分のシャフトは、消す直前（入力のシーンの `resolveLayout`）の原点と向きで `detached` になる（その先はそのまま）。歯車が 1 枚も残らなくなったシャフトはモーターごと消す。シャフトを消すと載っている歯車とモーターも消える。同じコマンドの中で先に消えた ID は無視し、シーンに無い ID が 1 つでもあれば `notFound`。
+- **削除の規則**: 歯車を消すと、その歯車を `parentGearId` に持つ `mesh`・`bevel`・`skew` のシャフトと、その歯車を `childGearId` に持つ自分のシャフトは、消す直前（入力のシーンの `resolveLayout`）の原点と向きで `detached` になる（その先はそのまま）。歯車が 1 枚も残らなくなったシャフトはモーター（と固定具。S3-01）ごと消す。シャフトを消すと載っている歯車とモーター・固定具も消える。同じコマンドの中で先に消えた ID は無視し、シーンに無い ID が 1 つでもあれば `notFound`。
 - **Undo/Redo の履歴**（S1-11。`src/core/edit/history.ts`）: `History { past（古い順）, future（次に Redo するものが先頭）, coalesceKey }`。`execute(state, command, ctx, { coalesceKey? })` は成功し、シーンの参照が変わったときだけ積み（未来は消える。上限 `HISTORY_LIMIT`、古いものから捨てる）、失敗・何も変えないコマンドでは履歴もそのまま。`coalesceKey` を渡すと、直前に積んだときと同じキーなら新しく積まない（ドラッグなど連続した入力を 1 回の Undo にする。UI は操作ごとに別のキーを作る）。Undo・Redo・キーなしの実行でキーは途切れる。
 - **ストアのアクション**（S1-11）: `loadScene`（履歴を空にしてシーンを置き換え、運動を初期化）、`command { command, coalesceKey? }`、`undo`、`redo`。シーンが変わったときは角度を引き継いで `solveMotion` で ω などを求め直す。失敗したコマンドや戻せない Undo は状態を変えず、購読者にも知らせない。新しい部品の ID は `createStore(scene, { ids })` の生成関数（既定はランダム）で作る。
 - シーンの検証エラー（`SceneError`）は、問題の場所を示す `path` を持つ（S1-03 で作り、S1-28 が表示に使う。S1-28 で形の確認の `code` `'invalidShape'` を足した）。`code` の一覧は `src/core/scene/validate.ts` の `SceneErrorCode`。
@@ -448,7 +464,7 @@ interface Settings {
 - **カメラと入力**（S1-13）: `src/render/renderer.ts` の `createRenderer` は `SceneView` に加えて `camera`・`canvas`・`pickPoint(pageX, pageY)`（部品に当たればその点、なければ床 y = 0 との交点、どちらも無ければ null）を返す。カメラは `src/input/camera.ts` の `createCameraInput` が camera-controls で動かし、`main.ts` が描く前に毎フレーム `update()` を呼ぶ。マウスのボタンは camera-controls に渡さず、`src/input/pointer-route.ts` の `routePointerDown` で振り分けて自前で `rotate` / `truck` を呼ぶ（ホイールだけ camera-controls の `dollyToCursor`）。カメラのドラッグは、どのボタンも押した位置から `DRAG_THRESHOLD_PX`（4px）動いてから始まる。
   - 「部品の上か」は `CameraInput.setHitTest((pageX, pageY) => PointerTarget)` で差し替える（`'none' | 'app' | 'click-only'`。既定は常に `'none'`。S1-16 がピッキングに差し替え、S1-18 が候補のための `'click-only'` を足した）。左ボタンは `'app'` なら経路 `'app'`、`'click-only'`（候補）ならカメラの回転（クリックは `selection-input` が受ける）。経路が `'app'` のポインターはカメラが無視する（受け取り手は S1-16 以降が canvas に付ける）。
   - 右クリック（ドラッグなし）は `CameraInput.onContextRequest(listener)` で通知する（S1-29 が使う）。ブラウザ標準のメニューは canvas の `contextmenu` で止める。
-- **コンテキストメニュー**（S1-29。`src/ui/context-menu/`）: 項目の並び・表示名のキー（`contextMenu.<action>`）・チェックの印は `items.ts` の純粋関数 `buildContextMenuItems(target, state)`、位置は `placeMenu`（カーソルの右下、はみ出すなら左・上に反転、それでも足りなければ画面の端に寄せる）。`controller.ts` の `createContextMenu` が、`onContextRequest` の位置で部品の本体（歯車・モーター・シャフト。ハンドル・候補は除く `bodyAt`）を当て、部品なら `selectionForPick` で選択を置き換えて部品のメニュー、何もなければ選択を変えずに何もない所のメニューを開く。項目の動作はストアのアクション（`deleteParts`・`addMotor`・`removeMotor`・`setWatchMode`・`setInfoOverlay`）と `CameraInput.dollyToPoint`・`fitAll`。メニューから付けるモーターは大きさ中（`CONTEXT_MENU_MOTOR_SIZE`。回転数・向き・ON は `addMotor` の初期値）。表示（`menu.ts`）は `document.body` に `position: fixed` の `role="menu"`（`data-testid="context-menu"`、項目は `data-action`）を置き、項目を選ぶ・Esc・Tab・外での押下とホイール・リサイズ・`blur` で閉じる。メニューの中のキーは `stopAppKeys` で window のショートカットに届けない（Esc で選択が外れない。`main.ts` の Esc も、メニューが開いていれば閉じるだけにする）。
+- **コンテキストメニュー**（S1-29。`src/ui/context-menu/`）: 項目の並び・表示名のキー（`contextMenu.<action>`）・チェックの印は `items.ts` の純粋関数 `buildContextMenuItems(target, state)`、位置は `placeMenu`（カーソルの右下、はみ出すなら左・上に反転、それでも足りなければ画面の端に寄せる）。`controller.ts` の `createContextMenu` が、`onContextRequest` の位置で部品の本体（歯車・モーター・シャフト。ハンドル・候補は除く `bodyAt`）を当て、部品なら `selectionForPick` で選択を置き換えて部品のメニュー、何もなければ選択を変えずに何もない所のメニューを開く。部品の項目は「削除」・「モーターを付ける／外す」・「固定する／固定を外す」（S3-01。`anchor`／`unanchor`。歯車ならそのシャフト。`targetAnchorId`）・「ここに寄る」の順。項目の動作はストアのアクション（`deleteParts`・`addMotor`・`removeMotor`・`addAnchor`・`removeAnchor`・`setWatchMode`・`setInfoOverlay`）と `CameraInput.dollyToPoint`・`fitAll`。メニューから付けるモーターは大きさ中（`CONTEXT_MENU_MOTOR_SIZE`。回転数・向き・ON は `addMotor` の初期値）。表示（`menu.ts`）は `document.body` に `position: fixed` の `role="menu"`（`data-testid="context-menu"`、項目は `data-action`）を置き、項目を選ぶ・Esc・Tab・外での押下とホイール・リサイズ・`blur` で閉じる。メニューの中のキーは `stopAppKeys` で window のショートカットに届けない（Esc で選択が外れない。`main.ts` の Esc も、メニューが開いていれば閉じるだけにする）。
   - キー入力は `src/input/keyboard.ts` の `createKeyboard(window).bind({ key | code, ctrl?, alt?, shift? }, { onDown, onUp })` にまとめる。フォーカスがテキストの入力先（`isTypingTarget`）なら `onDown` を呼ばない。`ctrl`・`alt` は省略すると「押されていない」、`shift` は「どちらでもよい」。文字キーは `event.key`（大文字・小文字を区別しない）、テンキーは `event.code`。Space（押している間は平行移動の修飾キー）・F・Home は `camera.ts` が登録する。
   - F で寄る先の選択は `CameraInputDeps.getSelection`（S1-16 で `AppState.selection` を渡す。それまでは省略して常に全体表示）。全体表示の範囲は `src/core/layout/bounds.ts` の `boundsOf`。
 - **選択とピッキング**（S1-16）:
@@ -484,9 +500,11 @@ interface Settings {
 - **プロパティパネル**（S1-20。`src/ui/properties.ts` の `createProperties({ setContent, getState, getLayout, dispatch })`。S2-05 で種類ごとの表示を足した: 種類の名前 `prop-kind`（`data-kind`、辞書 `gearKind.<種類>`）、ハスバ歯車のねじれの向き `prop-hand`（表示だけ）、かさ歯車の注記 `prop-bevel-note` と「向きを反転」`prop-bevel-flip`（`flipBevelApex`。`bevel` のシャフトの子では `disabled`）、ウォームの「1 条」`prop-worm-threads`（歯数の欄を出さない）。ホイール・ねじ歯車は歯数を編集できる）: `main.ts` がストアの購読で `refresh()` を呼び、選択かシーン（Undo を含む）の参照が前回と変わったときと、言語が変わったときに中身を作り直して `UiShell.properties.setContent` に渡す（選択が無ければ `null` で案内文）。作り直す前にフォーカスのあった要素は、作り直した後の同じ `data-testid` の要素に戻す。
   - 歯車を選んでいるとき: 見出し（`prop-heading`）・種類（平歯車）・大きさ（`prop-size`）・歯数（`prop-teeth`、`prop-teeth-dec`、`prop-teeth-inc`。範囲は `GEAR_SIZES[size]`）と、そのシャフトのモーターの欄。シャフトを選んでいるとき: 見出し・向き（`prop-shaft-axis`、`getLayout().shafts[id].axis`）とモーターの欄。
   - モーターの欄（`prop-motor`、見出し `prop-motor-heading`）: 無ければ `prop-motor-add-<S|M|L>`（`addMotor`）。あれば大きさ `prop-motor-size-<S|M|L>`（`role="radio"`・`aria-checked`）、rpm のスライダー `prop-motor-rpm-slider`（`input` は表示だけ、`change` で確定）と入力欄 `prop-motor-rpm`、向き `prop-motor-direction`（`data-direction` が `1`／`-1`）、ON/OFF `prop-motor-on`（`aria-pressed`）、外す `prop-motor-remove`。
+  - 固定具の欄（S3-01。`prop-anchor`、見出し「固定具」）: 「固定する」のチェック `prop-anchor-check`（`addAnchor`／`removeAnchor`）。歯車を選んでいるときは、そのシャフトを固定する旨の注記 `prop-anchor-note` を出す。歯車・シャフトのどちらでもモーターの欄の後に置く。
   - 数値の入力欄は `type="text"`（`inputmode="numeric"`）。Enter でフォーカスを外し、`blur` で `parseClampedInt`（`src/ui/number-input.ts`。四捨五入・範囲の端に丸め・数でなければ null）で確定する。Esc は元の値に戻してフォーカスを外す。値が変わらない確定ではコマンドを出さない。どの変更も 1 回の確定が 1 回のコマンド（Undo 1 回）で、`coalesceKey` は使っていない（スライダーは離したときにだけ確定するため）。
   - 情報表示のウォームの組（S2-05）: `computeGearInfo` の `GearInfo.wormRatio`（ウォームの組（`Layout.meshes` の kind `'worm'`）に入っている歯車に `{ wheelTeeth, threads }`、それ以外は null）と `formatWormRatio`（`"30:1"`）。ラベル（`src/ui/info-labels.ts`）の 3 行目 `info-label-worm` に「ウォーム比 30:1」（辞書 `info.wormRatio`）を、ウォームとホイールの両方に出す。
   - モーターの見た目（`render/sync.ts`）: シャフトの `span[0]` のさらに外（すき間 1 mm）に、一辺 `MOTOR_BOX[size]`（S 6・M 8・L 11 mm）の箱。質感はテーマで変わる（S1-24。形は箱のまま）。
+  - 固定具の見た目（S3-01。配置は `src/render/anchor.ts` の `anchorFrame`、描画は `render/sync.ts`）: 固定したシャフトの負の端（`span[0]`。モーターがあればその箱のさらに外、すき間 1 mm）に、軸に垂直な一辺 12 mm・厚み 3 mm の四角い台座。台座の下の端（縦のシャフトでは厚みの半分、横のシャフトでは一辺の半分だけ下）が床（y = 0）より上なら、台座の下から床まで半径 1.2 mm の支柱と、床に一辺 8 mm・厚み 1 mm の足を置く（見た目だけ。重力はない）。材質は固定したシャフトと同じ組（シャフトの選択・ロックの赤の発光が固定具にも付く）。震えない（地面に固定されているため）。当たり判定は付けない（選べない）。固定具専用の材質は S3-05。
 - **テーマと質感**（S1-24。値は `src/core/theme.ts`、見た目は `src/render/themes.ts`）:
   - `core/theme.ts`: `ThemeId`（`'brass' | 'wood'`）・`Quality`（`'high' | 'low'`）・`AudioMaterialId`（`'metal' | 'wood'`）、`THEME_IDS`・`DEFAULT_THEME`・`DEFAULT_QUALITY`・`THEME_AUDIO_MATERIAL`（brass → metal、wood → wood。S1-25・S1-30 が使う）・`QUALITY_PROFILES`（影・影マップの大きさ・解像度の上限・PMREM の大きさ・木目の大きさ・異方性フィルタ）・`nextTheme`。
   - `render/themes.ts` の `THEME_LOOKS`（シャフト・モーターの色・metalness・roughness、床・グリッド・背景の色、環境マップの強さ、照明）と `createThemeController`。歯車の材質は種類ごと（S2-05）: `GEAR_KIND_MATERIALS`（`Record<GearKind, Record<ThemeId, GearMaterialId>>`。種類の追加漏れを型で検出する。平歯車・ハスバ・かさ・ねじ歯車は真鍮／明るい木、ウォームは鋼（銀色）／濃い木、ホイールは青銅（真鍮より赤み）／明るい木）と `GEAR_MATERIAL_LOOKS`（`'brass' | 'steel' | 'bronze' | 'lightWood' | 'darkWood'` の見た目）、`gearLook(theme, kind)`。`SceneSync.setBaseMaterials` の `gear` は `Record<GearKind, MeshStandardMaterial>`（同じ材質の種類は同じ材質を共有し、選択・ロックなどの材質の組も共有する）。音の材質（`THEME_AUDIO_MATERIAL`）はテーマで決まるままで、歯車の種類では変えない。`createRenderer(canvas, { theme, quality })` が作り、`Renderer.applyTheme(theme, quality)`（同じ値なら何もしない）で切り替える。`main.ts` はストアの購読で設定が変わるたびに呼ぶ。
@@ -569,6 +587,7 @@ interface SaveFile {
   - `MIGRATIONS[1]`（1 → 2）は中身を変えない（version 1 のシーンは平歯車と `root`・`mesh`・`detached` だけで、version 2 の形にそのまま含まれる）。S2-01〜S2-04 の間に version 1 として保存された段階 2 の部品を含むシーンも、移行して version 2 の検証を通れば読める（version 1 だからといって段階 2 の種類を拒否しない）。
   - version 2 の検証は `parseScene`（形）と `validateScene`（意味）のまま（S2-01〜S2-04 で足した `invalidHand`・`invalidApex`・`invalidAxisStep`・`invalidSide`・`bevelApexMismatch`・`meshKindMismatch`・ウォームの `teethOutOfRange`）。
   - テストのフィクスチャ: `src/core/io/save-file-v1.json`（version 1 の `SaveFile`。平歯車 3 枚・モーター 1 つ。シーンは `e2e/fixtures/scene-a.json`）と `e2e/fixtures/stage2-showcase.json`（`Scene` の形。平歯車・ハスバ・かさ・ウォーム・ホイール・ねじ歯車を含み、起点のモーター 1 つで全部が回る。干渉・ロックなし）。
+- **固定具の暫定の読み込み**（S3-01）: version 2 のまま、`parseScene` が `anchors` の無いシーンに `anchors: {}` を補う（§4）。S3-05 で `CURRENT_SAVE_VERSION = 3` にし、`MIGRATIONS[2]` に置き換える。
 - **S1-28 で作ったもの**:
   - `src/core/io/save-file.ts` に `SaveFileErrorCode`・`SaveFileError`・`ParseResult`・`serializeSaveFile`・`parseSaveFile`・`Migration`・`MIGRATIONS`・`migrate`・`exportFileName` を足した。`src/core/scene/parse.ts` の `parseScene`。
   - `src/app/json-io.ts` の `createJsonIo({ store, download, fitAll, showToast, now? })`: `exportScene()`（いまのシーンを書き出す）と `importFile(file)`（読めたら `replaceScene` のコマンド → `setCurrentWork { work: null }` → 全体表示。読めなければ理由ごとのトーストを出し、`console.warn` だけでシーンは変えない）。`importErrorMessage(error)` が文言のキーを選ぶ（`import.error.tooLarge`・`invalidJson`・`notGearSimulator`・`invalidVersion`・`unsupportedVersion`・`invalidScene`。`invalid-scene` は `path` の最後が `teeth` なら `import.error.invalidScene.teeth`、`rpm` なら `import.error.invalidScene.rpm`。どれも `{path}` を差し込む）。
@@ -591,6 +610,7 @@ interface SaveFile {
   - S1-31 から: 画面の大きさは `test.use({ viewport: VISUAL_VIEWPORT })`（1280×800）にそろえ、撮る前に `prepareCapture(page)` を呼ぶ（Space で一時停止して回転を止め、カメラの動きが終わる（3 フレーム続けて動かない）のを待つ）。一時停止で見るものが消える場面（ロックの赤 `lock-red`、回転の矢印と rpm の `info-overlay-on`）は `prepareCapture(page, { pause: false })`。
   - 段階 1 の場面: `theme-brass`・`theme-wood`（showcase、Home）、`theme-brass-mesh-closeup`・`theme-wood-mesh-closeup`（接点から 60 mm）、`theme-brass-low`、`lock-red`、`interference-warning`、`info-overlay-on`、`ui-ja`・`ui-ja-settings`・`ui-en`・`ui-en-settings`（シーン A で g2 を選んだ状態と設定画面）、`works-list`、`context-menu`。各タスクで撮った `empty-scene`・`two-spur`・`axis-gizmo-*`・`candidates`・`selection-highlight` も残す。
   - 段階 2 の場面: `helical-closeup`（S2-01。`helical-pair` のかみ合いを接点から 60 mm）、`bevel-closeup`（S2-02。`bevel-pair` のかみ合いの歯の中ほどを 60 mm から）、`worm-closeup`（S2-03。`worm-basic` の接点 `[16, 70, 0]` を斜め前から）、`worm-locked`（S2-03。`worm-backdrive` のロック中。`pause: false`）、`crossed-helical-closeup`（S2-04。`crossed-pair` の接点 `[4, 100, 0]` を、接点での歯すじ `(1, 0, 1)` と中心を結ぶ線のどちらとも直交する向きの少し上から）。S2-05（`e2e/visual/stage2.spec.ts`）: `stage2-showcase-brass`・`stage2-showcase-wood`（`stage2-showcase` の全体。Home）、`stage2-<helical|bevel|worm|crossed-helical>-<brass|wood>`（`stage2-showcase` の各かみ合いの接点から 70 mm）、`stage2-info-worm`（`worm-basic` の情報表示 ON。ラベルの 3 行目にウォーム比 `30:1`。`pause: false`）、`stage2-ui-ja`・`stage2-ui-en`（パレットでウォームを選び、かさ歯車を選んだ状態）。
+  - 段階 3 の場面: `anchor-locked`（S3-01。`anchor-pair` の B を固定してロックしている場面。台座・支柱と赤い震え。`pause: false`）。
 - **通しテスト**（`e2e/flows/`。S1-31）: 主要な操作の流れを、操作は画面（パレット・候補・プロパティパネル・ツールバー・キー・メニュー）から行い、状態は `__gearSim` で確かめる。`loadScene` は準備にだけ使う。共通の操作は `e2e/fixtures/sim.ts`（`fixtureScene`・`openApp`・`getScene` などの読み出し・`gearPoint`（pick がその歯車を返す画面の点）・`clickGear`・`clickPerimeterCandidate`（中心が近い外周の候補）・`deselect`・`setPaused`・`settleCamera`・`nextFrames`・`waitAutosaved`）。新しい spec はこれを使う（S1-30 までの spec は各自の補助関数のまま）。
 - **性能の計測**（S1-31。`pnpm perf`、`scripts/perf.ts`。`pnpm verify` には入れない）: `vite build --mode e2e` → `vite preview --mode e2e --port 4175` を起動し、Playwright の Chromium を画面ありで開く（`--ignore-gpu-blocklist --disable-gpu-vsync --disable-frame-rate-limit`。SwiftShader は使わない）。画面は 1280×800、`devicePixelRatio` は実機の値。`generatePerfScene(count)`（`src/debug/perf-scene.ts`）を読み込み、条件（高品質／軽量・情報表示 ON／OFF・音あり／ミュート、テーマは真鍮）ごとに、キャンバスをクリック（音を開始）→ Home → 眺めるモード → 3 秒待つ → 指定の秒数だけページ内の `requestAnimationFrame` の間隔を記録する。平均 fps・フレーム時間の中央値・p95・p99・最大、実際に描いた回数（`renderer.info.render.frame` の増え方）、`calls`・`triangles`、描き直しの判定 1 回の時間を表で出し、`perf-results/<YYYYMMDD-HHmmss>.json`（git で無視）にも書く。平均 60fps 以上かつ p95 ≤ 16.7 ms で `OK`、それ以外は `BELOW TARGET`。終了コードは結果によらない。引数は `--count <n>`（初期値 200）・`--seconds <n>`（初期値 10）・`--headless`（動くかの確かめ用。数値は参考にならない）。TypeScript は `tsx` で動かす（`page.evaluate` に関数を渡すと tsx が差し込む `__name` がページに無いので、ページで動かす長い処理は文字列で渡す）。
   - `generatePerfScene(count, seed = 1)`: 歯車 count 枚の、干渉もロックもない、すべて回る 1 本の木（根のシャフト 1 本）。10 枚ずつの列（大きさは S・M・L の順、歯数は 20〜40 を seed で決める、±30° の折れ線）を、前の列の先頭のシャフトに重ねた歯車（列ごとに上の層へ。同じシャフトに 2 枚）と間の 1 枚でつなぎ、各列の先頭のシャフトに列の大きさのモーター（初期値の rpm、+1、ON）を付ける。200 枚でかみ合い 180 組、重ねた歯車 19 枚。

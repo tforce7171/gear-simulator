@@ -65,7 +65,7 @@ S3-01〜S3-04 で入れた固定具・内歯車・遊星歯車機構・ラック
   - `e2e/fixtures/stage3-showcase.json`: 遊星歯車機構（リングを固定）、内歯車の組、ラック、固定具を含み、モーター 1〜2 つで回るシーン（干渉なし、ロックなし。ラックは 10 秒以上端に達しない速さ）
   - version 2 のファイル: `e2e/fixtures/stage2-showcase.json`（S2-05。version 2 のまま使う）。ただしこれは `Scene` の形（`SaveFile` ではない）なので、ファイルとして読ませるときは `toSaveFile` で包む（S2-05 の `e2e/stage2.spec.ts` はエクスポートしたファイルを使った）か、`src/core/io/save-file-v1.json`（S2-05。version 1 の `SaveFile`）と同じように version 2 の `SaveFile` を足す
 - **design.md の書き換え**
-  - §4: 「段階 3 で anchors などのコレクションを足すときは…」を、version 3 で足したことに書き換える
+  - §4: 固定具の「保存（暫定）」（S3-01 で書いた。`parseScene` が `anchors` の無いシーンに `{}` を補う）を、version 3 で足したことに書き換える。`e2e/fixtures/*.json` の `Scene` の形のものは S3-01 からすべて `"anchors": {}` を持つ（`carriers`・`racks` は S3-03・S3-04 で足す）
   - §9: 最新が version 3、version 2 → 3 の移行の中身
   - §7: 歯車以外の部品の材質の表
   - §10: `getAudio` の `voices` にラックの組・遊星の組が入ること
