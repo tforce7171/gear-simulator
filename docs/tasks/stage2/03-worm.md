@@ -29,7 +29,7 @@ depends: [S1-31]
       readonly side: 1 | -1;
     }
   ```
-  - `axis` は持たない（design.md §4）。このシャフトの軸は `axisStep` で親の軸から決まり、`Layout.shafts[id].axis` に出す。軸を進める関数は S2-02 の `'bevel'` と同じもの（`stepAxis`）を使う。先にあればそれを使い、なければここで `core/math` などに作る
+  - `axis` は持たない（design.md §4）。このシャフトの軸は `axisStep` で親の軸から決まり、`Layout.shafts[id].axis` に出す。軸を進める関数は S2-02 の `'bevel'` と同じもの（`src/core/math/axis.ts` の `stepAxis`。S2-02 で作った）を使う。親から位置と向きを導く配置の判定は `isChildPlacement`（`src/core/scene/types.ts`）に `'skew'` を足し、`resolve.ts` の `placeChild` に置き方を足す
   - 2 つの軸のどちらとも直交する 3 本目の軸を u とし、子の中心 = `親の中心 + (r_親 + r_子)·side·u`（r はピッチ円半径。ウォームは `5m`）。`axisStep` 2 通り × `side` 2 通りで、親 1 枚につき 4 か所
   - ウォームの中心は区画の中央（= 歯のある部分の中央）。ホイールの中心は歯幅の中央（§4 の式どおり）。子の `offset` は 0 としてシャフトの原点を逆算する
   - 位置は離散なので、外周の角度の円弧ハンドルは出さない
@@ -80,7 +80,7 @@ depends: [S1-31]
   interface WormWheel extends GearBase { readonly kind: 'wormWheel' }
   ```
 - `src/core/layout/`: `'skew'` の配置の解決、候補、contact、干渉の近似
-- `src/core/kinematics/`: ねじれた位置の組の拘束係数（S2-02 の `meshCoefficients` に足す）、区画分けと一方通行の解法、`'wormBackDrive'` のロック
+- `src/core/kinematics/`: ねじれた位置の組の拘束係数（S2-02 の `meshCoefficients(mesh, scene)`（`src/core/kinematics/mesh-coefficients.ts`。`mesh.kind` で分ける）に足す）、区画分けと一方通行の解法、`'wormBackDrive'` のロック
   ```ts
   // LockInfo.reason に足す（S1-07 の LockReason）
   type LockReason = 'contradiction' | 'stalemate' | 'wormBackDrive';
