@@ -52,7 +52,7 @@
 | [S1-28](stage1/28-json-io.md) | JSON のエクスポートとインポート | S1-27 | done |
 | [S1-29](stage1/29-context-menu.md) | コンテキストメニュー | S1-14, S1-20, S1-23 | done |
 | [S1-30](stage1/30-settings.md) | 設定画面 | S1-14, S1-24, S1-25 | done |
-| [S1-31](stage1/31-e2e-and-perf.md) | 通しテストと見た目の確認をそろえる、性能の計測 | S1-01〜S1-30 | todo |
+| [S1-31](stage1/31-e2e-and-perf.md) | 通しテストと見た目の確認をそろえる、性能の計測 | S1-01〜S1-30 | doing |
 
 ## 段階 2: 軸の向きを変える歯車
 
