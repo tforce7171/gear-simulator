@@ -51,6 +51,14 @@ S3-01〜S3-04 で入れた固定具・内歯車・遊星歯車機構・ラック
   - 情報表示: ラベルと矢印は公転した位置に置く（済）。値は各シャフトの ω（遊星は自転の rpm）。キャリアは歯車でないのでラベルは出ていない
   - 検証: 遊星のシャフトにモーター・固定具があることは、コマンドが拒否するだけで、`validateScene` では弾いていない（version 3 の検証で足す）。`concentric` の循環は `meshCycle`、`planet` の親がキャリアと同じ線上かは `planetLineMismatch`、2 段以上の遊星は `nestedOrbit`
   - 保存（暫定）: `parseScene` は `carriers` の無いシーンに `{}` を補う。`e2e/fixtures/*.json` の `Scene` の形のものは、すべて `"carriers": {}` を持つ
+- **S3-04 の時点**（design.md §4・§5・§6・§7）
+  - データ: `Scene.racks`（`Rack`。`pinion` は向きをピニオンから導き、`detached` だけが絶対の向き）、`ShaftPlacement` の `'rack'`（`rackId`・`childGearId`・`position`）、固定具の対象 `{ kind: 'rack', id }`。`parseScene` は `racks` の無いシーンに `{}` を補う（暫定。version 3 の移行に置き換える）。`e2e/fixtures/*.json` の `Scene` の形のものは、すべて `"racks": {}` を持つ。ラックの検証（`validateScene`）は歯数・`normalSign`・`axisStep`・ピニオンが同じ大きさの平歯車で遊星のシャフトでない・浮いたラックの `direction` と `normal` が違う（`rackAxesNotDistinct`）まで済み
+  - 運動: `MotionState.rackPositions`（s、mm）・`rackVelocities`（v、mm/s）。ラックの速さはピニオンの `v = k·r·ω`。端のロックは `LockInfo.reason === 'rackEnd'`（ラックの ID は `LockInfo.rackIds`）。「端に当たった瞬間」は、前のフレームの `locks` に無く、今のフレームに `'rackEnd'` があるロック（`lockKey`）で検出できる
+  - レイアウト: `Layout.racks`（`origin`・`direction`・`normal`・`normalSign`・`width`・`length`・`travel`・`grooveOffset`）と `Layout.rackMeshes`（`{ gear, rack, position, source }`）。かみ合いの音源の位置（接点）は `rackWorldOrigin(layout, motion, rackId)`（`core/layout/world.ts`）+ `position`·direction（接点はラックが動いても動かない: ピニオンの中心 − r·normalSign·normal）。`computeMeshVoices` はまだラックの組を返さない
+  - 描画: `render/rack.ts`（`buildRackGeometry`・`placeRack`・`rackAnchorFrame`）と `render/sync.ts` の `RackEntry`。材質は平歯車と同じ組（`gearMaterials.spur`）で、ラックの材質の表はこのタスクで足す。ラックの固定具は `AnchorEntry.rack`（台座・支柱・足。材質はシャフトの組）
+  - プロパティパネル: ラックを選ぶと見出し「ラック」・大きさ・歯数の表示（`prop-rack-teeth`）・固定具の欄（`addAnchor { rackId }`）が出る（モーターの欄は出さない）。歯数を変えるコマンドは `setRackTeeth { rackId, teeth }`（範囲外は `invalidValue`）で、編集の UI はこのタスクで足す
+  - コンテキストメニュー: ラックの上で「削除」「固定する／固定を外す」「ここに寄る」が出る（済）
+  - 候補: 平歯車を選ぶとラックの候補（`kind: 'rack'`）が 4 つ、ラックを選ぶと 2 つ目のピニオンの候補（`kind: 'rackPinion'`）が出る
 - **通しテストと見た目確認の場面を追加**（S1-31・S2-05 の拡張）
   - S1-31 の時点: 通しテストは `e2e/flows/*.spec.ts`（操作は画面から、状態は `__gearSim`）。共通の操作（`openApp`・`fixtureScene`・`clickGear`・`gearPoint`・`clickPerimeterCandidate`・`deselect`・`setPaused`・`settleCamera`・`waitAutosaved` など）は `e2e/fixtures/sim.ts` にある。見た目の確認は `test.use({ viewport: VISUAL_VIEWPORT })`（1280×800）にし、撮る前に `prepareCapture(page)`（Space で一時停止してカメラの停止を待つ。ロックや回転の矢印を写す場面は `{ pause: false }`）を呼んでから `captureScene` する（`e2e/fixtures/visual.ts`）。性能は `pnpm perf`（`scripts/perf.ts`、`src/debug/perf-scene.ts` の `generatePerfScene`）で測る。
 
