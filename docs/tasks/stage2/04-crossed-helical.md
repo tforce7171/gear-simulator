@@ -1,7 +1,7 @@
 ---
 id: S2-04
 title: ねじ歯車
-status: todo
+status: doing
 depends: [S2-01, S2-03]
 ---
 
