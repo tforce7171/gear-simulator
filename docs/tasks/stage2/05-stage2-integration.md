@@ -1,7 +1,7 @@
 ---
 id: S2-05
 title: 音・テーマ・保存形式の拡張
-status: todo
+status: doing
 depends: [S2-01, S2-02, S2-03, S2-04]
 ---
 
