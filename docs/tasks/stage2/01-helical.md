@@ -1,7 +1,7 @@
 ---
 id: S2-01
 title: ハスバ歯車
-status: todo
+status: doing
 depends: [S1-31]
 ---
 
