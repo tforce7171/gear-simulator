@@ -68,5 +68,6 @@ test('dispatch で基本のシーンを作ると回り、undo 5 回で空に戻�
     shafts: {},
     gears: {},
     motors: {},
+    anchors: {}, // S3-01
   });
 });
