@@ -1,8 +1,10 @@
 import { skewSign } from '../geometry/skew';
 import { resolveLayout } from '../layout/resolve';
-import type { Mesh } from '../layout/types';
+import type { Mesh, RackMesh } from '../layout/types';
+import { axisVector } from '../math/axis';
+import { cross, dot, scale } from '../math/vec3';
 import { assertNever } from '../scene/gear-shape';
-import type { Gear, Scene, ShaftId } from '../scene/types';
+import type { Axis, Gear, Scene, ShaftId } from '../scene/types';
 
 // かみ合い 1 組の拘束 c_a·ω_a + c_b·ω_b = 0 の係数（design.md §6。S2-02）。
 // ω は各シャフトの軸の正の向きまわりの角速度。種類ごとの係数:
@@ -84,4 +86,37 @@ export function meshTerms(
     terms.push({ shaftId: mesh.carrierShaftId, coef: -(coefA + coefB) });
   }
   return terms;
+}
+
+// ラックとピニオンのかみ合い（S3-04）の拘束 v − k·r·ω = 0 の項。v はラックの速度（direction の正の向き）、ω はピニオンの
+// シャフトの角速度、k = (e × u)·d（e はピニオンの軸、u はピニオンの中心から接点への単位ベクトル −normalSign·normal、
+// d は direction の単位ベクトル）。項のシャフトの ID の欄にはラックの ID を入れる（拘束行列の列はシャフトとラック）
+export function rackMeshTerms(
+  mesh: RackMesh,
+  scene: Scene,
+): Array<{ readonly shaftId: ShaftId; readonly coef: number }> {
+  const gear = scene.gears[mesh.gear];
+  if (gear === undefined || scene.racks[mesh.rack] === undefined) {
+    throw new Error(`ラックのかみ合いの部品がシーンに無い: ${mesh.gear}, ${mesh.rack}`);
+  }
+  const layout = resolveLayout(scene);
+  const g = layout.gears[mesh.gear];
+  const r = layout.racks[mesh.rack];
+  if (g === undefined || r === undefined) {
+    throw new Error(`ラックのかみ合いの部品がレイアウトに無い: ${mesh.gear}, ${mesh.rack}`);
+  }
+  const k = rackSign(g.axis, r);
+  return [
+    { shaftId: mesh.rack, coef: 1 },
+    { shaftId: gear.shaftId, coef: -k * g.pitchRadius },
+  ];
+}
+
+// k = (e × u)·d（±1）。e はピニオンの軸、u = −normalSign·normal、d は direction
+export function rackSign(
+  pinionAxis: Axis,
+  rack: { readonly direction: Axis; readonly normal: Axis; readonly normalSign: 1 | -1 },
+): number {
+  const u = scale(axisVector(rack.normal), -rack.normalSign);
+  return Math.round(dot(cross(axisVector(pinionAxis), u), axisVector(rack.direction)));
 }

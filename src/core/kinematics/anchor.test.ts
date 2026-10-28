@@ -328,8 +328,12 @@ describe('読み込み（暫定）と検証', () => {
       codes({ anchor_1: { id: 'anchor_1', target: { kind: 'shaft', id: 'shaft_x' } } }),
     ).toEqual(['missingRef']);
     expect(
-      codes({ anchor_1: { id: 'anchor_1', target: { kind: 'rack', id: 'shaft_b' } as never } }),
+      codes({ anchor_1: { id: 'anchor_1', target: { kind: 'motor', id: 'shaft_b' } as never } }),
     ).toEqual(['invalidAnchorTarget']);
+    // S3-04 から対象にラックを足した（無いラックは missingRef）
+    expect(codes({ anchor_1: { id: 'anchor_1', target: { kind: 'rack', id: 'rack_x' } } })).toEqual(
+      ['missingRef'],
+    );
     expect(
       codes({
         anchor_1: { id: 'anchor_1', target: { kind: 'shaft', id: 'shaft_b' } },

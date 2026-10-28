@@ -1,6 +1,6 @@
 import { MOTOR_SIZES } from '../constants';
 import type { Motor, MotorId, Scene, ShaftId } from '../scene/types';
-import type { MeshGraph } from './graph';
+import { bodyIdsOf, type MeshGraph } from './graph';
 import {
   type Matrix,
   multiply,
@@ -74,7 +74,7 @@ export function solveBalanceAffine(
 }
 
 export interface BalanceResult {
-  readonly omegas: Record<ShaftId, number>; // シーンの全シャフト
+  readonly omegas: Record<ShaftId, number>; // シーンの全シャフト（ラックの成分ではラックの速度 v も。S3-04）
   readonly motorTorques: Record<MotorId, number>; // ON のモーターだけ。解の ω でのトルク
   readonly componentQ: number[][]; // graph.components と同じ順の q
 }
@@ -111,11 +111,13 @@ export function solveVelocities(
   for (const shaftId of Object.keys(scene.shafts)) omegas[shaftId] = 0;
 
   const componentQ = graph.components.map((component) => {
+    // 行はシャフト、続けてラック（S3-04。ラックはモーターを持たないので NO_DRIVE）
+    const bodyIds = bodyIdsOf(component);
     const solved = solveBalance(
       component.basis,
-      component.shaftIds.map((id) => drives.get(id) ?? NO_DRIVE),
+      bodyIds.map((id) => drives.get(id) ?? NO_DRIVE),
     );
-    component.shaftIds.forEach((id, i) => {
+    bodyIds.forEach((id, i) => {
       omegas[id] = solved.omegas[i] as number;
     });
     return solved.q;

@@ -30,7 +30,14 @@ import {
   internalTipRadius,
   internalWebRange,
 } from '../geometry/internal';
-import { meshPhase, pitchRadius } from '../geometry/mesh';
+import { meshPhase, pitchRadius, toothPitchAngle } from '../geometry/mesh';
+import {
+  rackLength,
+  rackPitch,
+  rackSectionCircle,
+  rackTravel,
+  wrapCentered,
+} from '../geometry/rack';
 import {
   crossedHelicalPhase,
   skewChildFrame,
@@ -38,10 +45,10 @@ import {
   wormPhaseFromWheel,
 } from '../geometry/skew';
 import { axisFrame, axisVector, radialDirection } from '../math/axis';
-import { add, dot, length, scale, sub, type Vec3 } from '../math/vec3';
+import { add, cross, dot, length, scale, sub, type Vec3 } from '../math/vec3';
 import { gearCenter } from '../scene/gear-center';
 import { assertNever } from '../scene/gear-shape';
-import { lineRootOf } from '../scene/scene';
+import { lineRootOf, rackFrame } from '../scene/scene';
 import {
   type Axis,
   type Carrier,
@@ -51,12 +58,23 @@ import {
   type GearId,
   isChildPlacement,
   isFreePlacement,
+  type Rack,
+  type RackId,
   type Scene,
   type Shaft,
   type ShaftId,
 } from '../scene/types';
 import { type Collider, findInterferences, gearCollider, interferingWith } from './collision';
-import type { CarrierLayout, GearLayout, Layout, Mesh, Orbit, ShaftLayout } from './types';
+import type {
+  CarrierLayout,
+  GearLayout,
+  Layout,
+  Mesh,
+  Orbit,
+  RackLayout,
+  RackMesh,
+  ShaftLayout,
+} from './types';
 
 // 配置の木構造（design.md §5）。根（root・detached のシャフト）から幅優先でたどり、
 // mesh のシャフトの位置・向き、歯車の中心・位相、シャフトの span、かみ合い（木の親子と偶然のかみ合い）、
@@ -91,6 +109,12 @@ export function descendantShafts(scene: Scene, shaftId: ShaftId): ShaftId[] {
     for (const carrier of index.carriersByShaft.get(current) ?? []) {
       children.push(...(index.planetsByCarrier.get(carrier.id) ?? []));
     }
+    // 歯車をピニオンにしたラックに載った 2 つ目以降のピニオンのシャフト（S3-04）
+    for (const pinion of index.gearsByShaft.get(current) ?? []) {
+      for (const rack of index.racksByPinion.get(pinion.id) ?? []) {
+        children.push(...(index.rackShaftsByRack.get(rack.id) ?? []));
+      }
+    }
     for (const child of children) {
       if (seen.has(child.id)) continue;
       seen.add(child.id);
@@ -109,6 +133,9 @@ interface SceneIndex {
   // シャフト → それに載ったキャリア、キャリア → それに載った遊星のシャフト（S3-03）
   readonly carriersByShaft: ReadonlyMap<ShaftId, readonly Carrier[]>;
   readonly planetsByCarrier: ReadonlyMap<CarrierId, readonly Shaft[]>;
+  // ピニオンの歯車 → それにかみ合わせて置いたラック（pinion の配置）、ラック → それに載ったシャフト（'rack' の配置。S3-04）
+  readonly racksByPinion: ReadonlyMap<GearId, readonly Rack[]>;
+  readonly rackShaftsByRack: ReadonlyMap<RackId, readonly Shaft[]>;
 }
 
 function push<K, V>(map: Map<K, V[]>, key: K, value: V): void {
@@ -123,11 +150,17 @@ function indexScene(scene: Scene): SceneIndex {
   const childShaftsByParentGear = new Map<GearId, Shaft[]>();
   const concentricChildren = new Map<ShaftId, Shaft[]>();
   const planetsByCarrier = new Map<CarrierId, Shaft[]>();
+  const rackShaftsByRack = new Map<RackId, Shaft[]>();
   for (const shaft of Object.values(scene.shafts)) {
     const p = shaft.placement;
     if (isChildPlacement(p)) push(childShaftsByParentGear, p.parentGearId, shaft);
     if (p.kind === 'concentric') push(concentricChildren, p.parentShaftId, shaft);
     if (p.kind === 'planet') push(planetsByCarrier, p.carrierId, shaft);
+    if (p.kind === 'rack') push(rackShaftsByRack, p.rackId, shaft);
+  }
+  const racksByPinion = new Map<GearId, Rack[]>();
+  for (const rack of Object.values(scene.racks)) {
+    if (rack.placement.kind === 'pinion') push(racksByPinion, rack.placement.gearId, rack);
   }
   const carriersByShaft = new Map<ShaftId, Carrier[]>();
   for (const carrier of Object.values(scene.carriers))
@@ -138,6 +171,8 @@ function indexScene(scene: Scene): SceneIndex {
     concentricChildren,
     carriersByShaft,
     planetsByCarrier,
+    racksByPinion,
+    rackShaftsByRack,
   };
 }
 
@@ -163,6 +198,36 @@ function compute(scene: Scene): Layout {
   }
   // キャリアのシャフトがまだ置かれていない遊星のシャフト（S3-03）。置かれたら置き直す
   let pending: Array<{ parent: Gear; shaft: Shaft }> = [];
+
+  // ラック（S3-04）。浮いたラックは最初に、pinion のラックはピニオンを置いたときに置き、続けて載ったシャフトを積む
+  const racks: Record<RackId, RackDraft> = {};
+  const rackTreeMeshes: RackMesh[] = [];
+  const placeRackChildren = (rack: Rack): void => {
+    const at = racks[rack.id];
+    if (at === undefined) return;
+    for (const childShaft of index.rackShaftsByRack.get(rack.id) ?? []) {
+      const p = childShaft.placement;
+      if (p.kind !== 'rack' || shafts[childShaft.id] !== undefined) continue;
+      const child = scene.gears[p.childGearId];
+      if (child === undefined || child.shaftId !== childShaft.id) continue;
+      const placed = placeRackPinion(rack, at, child, p.position);
+      rackTreeMeshes.push({ gear: child.id, rack: rack.id, position: p.position, source: 'tree' });
+      queue.push({
+        shaftId: childShaft.id,
+        origin: placed.origin,
+        axis: at.width,
+        child: { gearId: child.id, phase: placed.phase },
+      });
+    }
+  };
+  for (const rack of Object.values(scene.racks)) {
+    const p = rack.placement;
+    if (p.kind !== 'detached') continue;
+    const frame = rackFrame(scene, rack.id, () => null);
+    if (frame === null) continue;
+    racks[rack.id] = { ...frame, origin: p.origin, grooveOffset: 0 };
+    placeRackChildren(rack);
+  }
 
   // 親の歯車 parent の木の子のシャフト childShaft を置いてキューに積む。遊星のシャフトでキャリアのシャフトがまだなら false
   const placeTreeChild = (parent: Gear, childShaft: Shaft): boolean => {
@@ -229,6 +294,16 @@ function compute(scene: Scene): Layout {
         for (const childShaft of index.childShaftsByParentGear.get(parent.id) ?? []) {
           if (!placeTreeChild(parent, childShaft)) pending.push({ parent, shaft: childShaft });
         }
+        // この歯車をピニオンにしたラック（S3-04。公転する歯車には置かない）
+        const pinionLayout = gears[parent.id] as GearLayout;
+        if (pinionLayout.orbit !== undefined) continue;
+        for (const rack of index.racksByPinion.get(parent.id) ?? []) {
+          if (racks[rack.id] !== undefined || rack.placement.kind !== 'pinion') continue;
+          if (parent.kind !== 'spur' || parent.size !== rack.size) continue;
+          racks[rack.id] = placeRackOnPinion(parent, pinionLayout, rack.placement);
+          rackTreeMeshes.push({ gear: parent.id, rack: rack.id, position: 0, source: 'tree' });
+          placeRackChildren(rack);
+        }
       }
     }
     queue.length = 0;
@@ -244,12 +319,154 @@ function compute(scene: Scene): Layout {
   extendSpansForCarriers(index, shafts);
   const meshes = meshesOf(scene, gears, treePairs);
   phaseCoaxialPlanetPartners(scene, gears, meshes);
+  const rackMeshes = rackMeshesOf(scene, gears, racks, rackTreeMeshes);
+  const rackLayouts = rackLayoutsOf(scene, racks, rackMeshes);
   return {
     shafts,
     gears,
     carriers,
     meshes,
-    interferences: interferencesOf(scene, shafts, gears, carriers, meshes),
+    racks: rackLayouts,
+    rackMeshes,
+    interferences: interferencesOf(scene, shafts, gears, carriers, meshes, rackLayouts, rackMeshes),
+  };
+}
+
+// 置いたラックの、travel を決める前の形（S3-04）
+type RackDraft = Omit<RackLayout, 'travel' | 'length'>;
+
+// ピニオンにかみ合わせて置くラック（pinion の配置。S3-04）。歯幅の方向 = ピニオンの軸、direction = それを axisStep 回進めた軸、
+// normal = 残りの軸。基準位置 = ピニオンの中心 − r·normalSign·normal。ピニオンの位相は先に決まっているので、
+// その歯の中心が接点に来るように歯溝をずらす（grooveOffset）
+function placeRackOnPinion(
+  pinion: Gear,
+  layout: GearLayout,
+  p: Extract<Rack['placement'], { kind: 'pinion' }>,
+): RackDraft {
+  const width = layout.axis;
+  const direction = stepAxisOf(width, p.axisStep);
+  const normal = remaining(width, direction);
+  const n = scale(axisVector(normal), p.normalSign);
+  const origin = sub(layout.center, scale(n, layout.pitchRadius));
+  // 接点の向き u = −normalSign·normal、k = (e × u)·d（ピニオンが正に回るとき、接点の歯が direction の向きに進むなら 1）
+  const u = scale(n, -1);
+  const k = dot(cross(axisVector(width), u), axisVector(direction));
+  const beta = angleAround(width, u);
+  const dphi = wrapCentered(layout.basePhase - beta, toothPitchAngle(pinion.teeth));
+  return {
+    origin,
+    direction,
+    normal,
+    normalSign: p.normalSign,
+    width,
+    grooveOffset: wrapCentered(layout.pitchRadius * k * dphi, rackPitch(pinion.size)),
+  };
+}
+
+// ラックに載せたピニオン（'rack' の配置。S3-04）の原点と basePhase。子の中心 = 基準位置 + position·d + r·normalSign·n、
+// 子の offset は 0（区画の中心がラックの歯幅の中心にそろう）。接点に一番近い歯溝の中心に、子の歯の中心が来るようにする
+function placeRackPinion(
+  rack: Rack,
+  at: RackDraft,
+  child: Gear,
+  position: number,
+): { origin: Vec3; phase: number } {
+  const r = gearPitchRadius(child);
+  const d = axisVector(at.direction);
+  const n = scale(axisVector(at.normal), at.normalSign);
+  const center = add(add(at.origin, scale(d, position)), scale(n, r));
+  const origin = sub(center, scale(axisVector(at.width), sectionWidth(child) / 2));
+  const u = scale(n, -1);
+  const k = dot(cross(axisVector(at.width), u), d);
+  const beta = angleAround(at.width, u);
+  const delta = wrapCentered(at.grooveOffset - position, rackPitch(rack.size));
+  const pitch = toothPitchAngle(child.teeth);
+  const raw = beta + delta / (r * k);
+  return { origin, phase: raw - Math.floor(raw / pitch) * pitch };
+}
+
+// ベクトル p の、軸 axis まわりの角度（radialDirection の逆）
+function angleAround(axis: Axis, p: Vec3): number {
+  const { u, v } = axisFrame(axis);
+  return Math.atan2(dot(p, v), dot(p, u));
+}
+
+function stepAxisOf(axis: Axis, step: number): Axis {
+  const order: readonly Axis[] = ['x', 'y', 'z'];
+  return order[(order.indexOf(axis) + step) % 3] as Axis;
+}
+
+function remaining(a: Axis, b: Axis): Axis {
+  return (['x', 'y', 'z'] as const).find((x) => x !== a && x !== b) ?? a;
+}
+
+// ラックとピニオンのかみ合い（S3-04）。木（pinion の配置のピニオンと、'rack' のシャフトのピニオン）に、偶然のかみ合い（contact）を
+// 足す: 同じ大きさの平歯車で、軸がラックの歯幅の方向、中心がピッチ線から歯の側へ r（MESH_DISTANCE_EPS 以内）、歯幅の区画が
+// 重なり、接点が s = 0 のラックの長さの範囲にある。公転する歯車は除く。位相は問わない。並びはラックの ID、歯車の ID の昇順
+function rackMeshesOf(
+  scene: Scene,
+  gears: Readonly<Record<GearId, GearLayout>>,
+  racks: Readonly<Record<RackId, RackDraft>>,
+  tree: readonly RackMesh[],
+): RackMesh[] {
+  const out = [...tree];
+  const treeKeys = new Set(tree.map((m) => pairKey(m.gear, m.rack)));
+  for (const [rackId, at] of Object.entries(racks)) {
+    const rack = scene.racks[rackId] as Rack;
+    const half = rackLength(rack.size, rack.teeth) / 2;
+    const d = axisVector(at.direction);
+    const n = axisVector(at.normal);
+    const w = axisVector(at.width);
+    const faceWidth = GEAR_SIZES[rack.size].faceWidth;
+    for (const [gearId, g] of Object.entries(gears)) {
+      const gear = scene.gears[gearId];
+      if (gear === undefined || gear.kind !== 'spur' || gear.size !== rack.size) continue;
+      if (g.orbit !== undefined || g.axis !== at.width) continue;
+      if (treeKeys.has(pairKey(gearId, rackId))) continue;
+      const rel = sub(g.center, at.origin);
+      if (Math.abs(dot(rel, n) * at.normalSign - g.pitchRadius) > MESH_DISTANCE_EPS) continue;
+      if (faceWidth - Math.abs(dot(rel, w)) <= COLLISION_EPS) continue;
+      const position = dot(rel, d);
+      if (Math.abs(position) > half) continue;
+      out.push({ gear: gearId, rack: rackId, position, source: 'contact' });
+    }
+  }
+  return out.sort((a, b) => compare(a.rack, b.rack) || compare(a.gear, b.gear));
+}
+
+// ラックの長さと s の範囲（かみ合うピニオンの位置から。S3-04）
+function rackLayoutsOf(
+  scene: Scene,
+  racks: Readonly<Record<RackId, RackDraft>>,
+  rackMeshes: readonly RackMesh[],
+): Record<RackId, RackLayout> {
+  const out: Record<RackId, RackLayout> = {};
+  for (const [id, at] of Object.entries(racks)) {
+    const rack = scene.racks[id] as Rack;
+    const positions = rackMeshes.filter((m) => m.rack === id).map((m) => m.position);
+    out[id] = {
+      ...at,
+      length: rackLength(rack.size, rack.teeth),
+      travel: rackTravel(rack.size, rack.teeth, positions),
+    };
+  }
+  return out;
+}
+
+// ラックの干渉の円柱（S3-04）。動く範囲全体（s の最小 − L/2 〜 最大 + L/2）を長さとし、断面の外接円を半径とする、direction 向きの円柱
+export function rackCollider(rack: Rack, at: RackLayout): Collider {
+  const d = axisVector(at.direction);
+  const n = scale(axisVector(at.normal), at.normalSign);
+  const { radius, height } = rackSectionCircle(rack.size);
+  const [lo, hi] = at.travel;
+  return {
+    kind: 'cylinder',
+    id: rack.id,
+    shaftId: rack.id,
+    center: add(add(at.origin, scale(d, (lo + hi) / 2)), scale(n, height)),
+    axis: at.direction,
+    radius,
+    halfWidth: (hi - lo) / 2 + at.length / 2,
   };
 }
 
@@ -624,9 +841,13 @@ function interferencesOf(
   gears: Readonly<Record<GearId, GearLayout>>,
   carriers: Readonly<Record<CarrierId, CarrierLayout>>,
   meshes: readonly Mesh[],
+  racks: Readonly<Record<RackId, RackLayout>>,
+  rackMeshes: readonly RackMesh[],
 ): Array<[string, string]> {
-  const colliders = collidersOf(scene, shafts, gears);
+  const colliders = collidersOf(scene, shafts, gears, racks);
   const exempt: Array<readonly [string, string]> = meshes.map((m) => [m.a, m.b] as const);
+  // ラックとかみ合うピニオンは干渉にしない（S3-04）
+  for (const m of rackMeshes) exempt.push([m.gear, m.rack]);
   if (Object.keys(carriers).length === 0 && !Object.values(shafts).some((x) => x.orbit)) {
     return findInterferences(colliders, exempt);
   }
@@ -755,6 +976,7 @@ function collidersOf(
   scene: Scene,
   shafts: Readonly<Record<ShaftId, ShaftLayout>>,
   gears: Readonly<Record<GearId, GearLayout>>,
+  racks: Readonly<Record<RackId, RackLayout>> = {},
 ): Collider[] {
   const colliders: Collider[] = [];
   for (const [id, g] of Object.entries(gears)) {
@@ -763,6 +985,10 @@ function collidersOf(
     colliders.push(...gearCollidersOf(gear, g));
   }
   for (const [id, s] of Object.entries(shafts)) colliders.push(shaftCollider(id, s));
+  for (const [id, r] of Object.entries(racks)) {
+    const rack = scene.racks[id];
+    if (rack !== undefined) colliders.push(rackCollider(rack, r));
+  }
   return colliders;
 }
 
@@ -840,8 +1066,11 @@ export function resolveAddition(
   shaft: Shaft | null,
   gear: Gear,
 ): Addition | null {
-  // 遊星歯車（S3-03）のあるシーンは、公転・機構の扱いがあるので全体を解き直す（機構は小さいので十分速い）
-  if (Object.keys(scene.carriers).length > 0) return resolveAdditionFully(scene, base, shaft, gear);
+  // 遊星歯車（S3-03）・ラック（S3-04）のあるシーンは、公転・機構・ラックの範囲の扱いがあるので全体を解き直す
+  // （機構は小さいので十分速い）
+  if (Object.keys(scene.carriers).length > 0 || Object.keys(scene.racks).length > 0) {
+    return resolveAdditionFully(scene, base, shaft, gear);
+  }
   const placed = placeAddition(scene, base, shaft, gear);
   if (placed === null) return null;
   const { layout, shaftLayout, treePartner } = placed;
@@ -933,6 +1162,7 @@ function placeAddition(
   const span = spanOf([gear]);
   const p = shaft.placement;
   if (p.kind === 'concentric') return null; // 同じ線上のシャフトは足す候補にしない（S3-03）
+  if (p.kind === 'rack') return null; // ラックのあるシーンは全体を解き直す（S3-04）
   if (!isChildPlacement(p)) {
     return {
       layout: make(p.origin, p.axis, 0),

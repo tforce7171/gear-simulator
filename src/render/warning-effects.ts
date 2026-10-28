@@ -41,7 +41,7 @@ export interface WarningParts {
 
 export const NO_WARNINGS: WarningParts = { locked: new Set(), interfering: new Set() };
 
-// ロック中・干渉中として表示する部品の ID。ロックは歯車・シャフトと、そのシャフトに付いたモーター。
+// ロック中・干渉中として表示する部品の ID。ロックは歯車・シャフト・ラック（S3-04）と、そのシャフトに付いたモーター。
 // 干渉は組に含まれる部品（歯車・シャフト）。ロックを優先し、interfering からはロック中を除く
 export function warningParts(
   scene: Scene,
@@ -52,6 +52,7 @@ export function warningParts(
   const lockedShafts = new Set<string>();
   for (const lock of motion.locks) {
     for (const id of lock.gearIds) locked.add(id);
+    for (const id of lock.rackIds ?? []) locked.add(id); // ラック（S3-04）
     for (const id of lock.shaftIds) {
       locked.add(id);
       lockedShafts.add(id);

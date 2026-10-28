@@ -1,4 +1,5 @@
 import { gearEnvelope } from '../geometry/dimensions';
+import { rackSectionCircle } from '../geometry/rack';
 import { axisVector } from '../math/axis';
 import { add, scale, type Vec3 } from '../math/vec3';
 import type { Axis, Scene } from '../scene/types';
@@ -49,7 +50,7 @@ class Accumulator {
 
 // ids を省略すると全部品。歯車は円柱（ピッチ円でなく歯先円の半径 × 歯幅）で近似する。
 // 全部品のときは歯車と、歯車の載っていないシャフト（線分）を含める（歯車の載ったシャフトの伸びた分は含めない）。
-// ids では、歯車はその円柱、シャフトはその線分、モーターは載っているシャフトの線分。
+// ids では、歯車はその円柱、シャフトはその線分、モーターは載っているシャフトの線分、ラックは s = 0 の本体（S3-04）。
 // Layout に無い（根からたどれない）部品とシーンに無い ID は無視する。何も無ければ null
 export function boundsOf(scene: Scene, layout: Layout, ids?: readonly string[]): Aabb | null {
   const acc = new Accumulator();
@@ -69,7 +70,17 @@ export function boundsOf(scene: Scene, layout: Layout, ids?: readonly string[]):
     acc.addPoint(add(shaft.origin, scale(dir, shaft.span[1])));
   };
 
+  // ラック（S3-04）は s = 0 の本体（基準位置を中心に長さ L、断面の外接円）
+  const addRack = (id: string): void => {
+    const rack = scene.racks[id];
+    const placed = layout.racks[id];
+    if (rack === undefined || placed === undefined) return;
+    const { radius } = rackSectionCircle(rack.size);
+    acc.addCylinder(placed.origin, placed.direction, radius, placed.length / 2);
+  };
+
   if (ids === undefined) {
+    for (const id of Object.keys(scene.racks)) addRack(id);
     const shaftsWithGears = new Set<string>();
     for (const gear of Object.values(scene.gears)) {
       shaftsWithGears.add(gear.shaftId);
@@ -84,6 +95,7 @@ export function boundsOf(scene: Scene, layout: Layout, ids?: readonly string[]):
   for (const id of ids) {
     if (scene.gears[id] !== undefined) addGear(id);
     else if (scene.shafts[id] !== undefined) addShaft(id);
+    else if (scene.racks[id] !== undefined) addRack(id);
     else {
       const motor = scene.motors[id];
       if (motor !== undefined) addShaft(motor.shaftId);

@@ -18,7 +18,7 @@ const chainThree = fixture('chain-three');
 // 縦軸の起点を 2 本、x 方向に 100mm 離して置いたもの（どちらも中・20 歯）
 const twoRoots = fixture('two-roots');
 
-const EMPTY: Scene = { shafts: {}, gears: {}, motors: {}, anchors: {}, carriers: {} };
+const EMPTY: Scene = { shafts: {}, gears: {}, motors: {}, anchors: {}, carriers: {}, racks: {} };
 // 斜め上から見下ろす視点
 const OBLIQUE_VIEW = { position: [120, 170, 200] as Vec3, target: [0, 15, 20] as Vec3 };
 

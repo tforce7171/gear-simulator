@@ -119,6 +119,7 @@ describe('grabTarget', () => {
     },
     anchors: {},
     carriers: {},
+    racks: {},
   };
   const layout = resolveLayout(scene);
 

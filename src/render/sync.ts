@@ -2,6 +2,7 @@ import {
   BoxGeometry,
   Color,
   CylinderGeometry,
+  type ExtrudeGeometry,
   Group,
   Mesh,
   MeshBasicMaterial,
@@ -12,7 +13,7 @@ import {
 import { CARRIER_THICKNESS } from '../core/constants';
 import type { MotionState } from '../core/kinematics/types';
 import type { Layout, ShaftLayout } from '../core/layout/types';
-import { gearWorldCenter, shaftWorldOrigin } from '../core/layout/world';
+import { gearWorldCenter, rackWorldOrigin, shaftWorldOrigin } from '../core/layout/world';
 import { axisVector } from '../core/math/axis';
 import { add, scale, type Vec3 } from '../core/math/vec3';
 import { GEAR_KIND_LIST } from '../core/scene/gear-shape';
@@ -27,6 +28,8 @@ import type {
   GearKind,
   Motor,
   MotorId,
+  Rack,
+  RackId,
   Scene,
   Shaft,
   ShaftId,
@@ -44,6 +47,13 @@ import { buildCarrierGeometries, carrierShapeKey } from './carrier';
 import { placeOnAxis } from './frame';
 import { createGeometryCache, type GeometryCache, gearBodyScaleZ } from './gear-geometry';
 import { setPickTarget } from './picking';
+import {
+  buildRackGeometry,
+  placeRack,
+  RACK_SHAKE_MM_PER_RAD,
+  rackAnchorFrame,
+  rackShapeKey,
+} from './rack';
 import {
   lockGlowIntensity,
   lockShakeAngle,
@@ -268,11 +278,20 @@ interface CarrierEntry {
   parts: Mesh[];
 }
 
-// 固定具（S3-01）。台座・支柱・床の足。地面に固定されているので震えない。選べない（当たり判定なし）
+// 固定具（S3-01）。台座・支柱・床の足。地面に固定されているので震えない。選べない（当たり判定なし）。
+// ラックの固定具（S3-04）は、ラックの今の位置に合わせて update で置き直す（rack が null でなければ）
 interface AnchorEntry {
   anchor: Anchor;
   group: Group;
   parts: Mesh[];
+  rack: { base: Mesh; pillar: Mesh; foot: Mesh } | null;
+}
+
+// ラック（S3-04）。body を基準位置 + (s + grooveOffset)·direction に毎フレーム置く。選べる（'rack'）
+interface RackEntry {
+  rack: Rack;
+  key: string;
+  body: Mesh;
 }
 
 export interface SceneSync {
@@ -294,6 +313,7 @@ export interface SceneSync {
   gearCount(): number;
   anchorCount(): number; // 描いている固定具の数（S3-01）
   carrierCount(): number; // 描いているキャリアの数（S3-03）
+  rackCount(): number; // 描いているラックの数（S3-04）
 }
 
 // シーンとレイアウトから Three.js のオブジェクトを同期する。
@@ -330,6 +350,28 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
   const motors = new Map<MotorId, MotorEntry>();
   const anchors = new Map<AnchorId, AnchorEntry>();
   const carriers = new Map<CarrierId, CarrierEntry>();
+  const racks = new Map<RackId, RackEntry>();
+  // ラックの形状データ（大きさ・歯数ごとに共有し、使う数を数える）
+  const rackGeometries = new Map<string, { geometry: ExtrudeGeometry; count: number }>();
+  const acquireRackGeometry = (rack: Rack): ExtrudeGeometry => {
+    const key = rackShapeKey(rack.size, rack.teeth);
+    const hit = rackGeometries.get(key);
+    if (hit !== undefined) {
+      hit.count++;
+      return hit.geometry;
+    }
+    const geometry = buildRackGeometry(rack.size, rack.teeth);
+    rackGeometries.set(key, { geometry, count: 1 });
+    return geometry;
+  };
+  const releaseRackGeometry = (key: string): void => {
+    const hit = rackGeometries.get(key);
+    if (hit === undefined) return;
+    hit.count--;
+    if (hit.count > 0) return;
+    hit.geometry.dispose();
+    rackGeometries.delete(key);
+  };
   // 固定具の形（大きさは固定なので共有する。支柱は高さ 1 を scale.y で伸ばす）
   const anchorBaseGeometry = new BoxGeometry(
     ANCHOR_BASE_SIZE,
@@ -402,6 +444,26 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
         carriers.set(carrier.id, entry);
       }
       placeOnAxis(entry.group, placed.center, placed.axis);
+    }
+  }
+
+  function syncRacks(scene: Scene, layout: Layout): void {
+    for (const [id, entry] of racks) {
+      if (scene.racks[id] !== entry.rack || layout.racks[id] === undefined) {
+        root.remove(entry.body);
+        releaseRackGeometry(entry.key);
+        racks.delete(id);
+      }
+    }
+    for (const rack of Object.values(scene.racks)) {
+      const placed = layout.racks[rack.id];
+      if (placed === undefined || racks.has(rack.id)) continue;
+      const body = new Mesh(acquireRackGeometry(rack), gearMaterials.spur.none);
+      body.castShadow = true;
+      body.receiveShadow = true;
+      setPickTarget(body, 'rack', rack.id);
+      root.add(body);
+      racks.set(rack.id, { rack, key: rackShapeKey(rack.size, rack.teeth), body });
     }
   }
 
@@ -514,7 +576,27 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
     for (const entry of anchors.values()) root.remove(entry.group);
     anchors.clear();
     for (const anchor of Object.values(scene.anchors)) {
-      if (anchor.target.kind !== 'shaft') continue;
+      if (anchor.target.kind === 'rack') {
+        // ラックの固定具（S3-04）: 台座・支柱・足を作っておき、update でラックの今の位置に置く
+        if (layout.racks[anchor.target.id] === undefined) continue;
+        const group = new Group();
+        const base = new Mesh(anchorBaseGeometry, shaftMaterials.none);
+        base.castShadow = true;
+        const pillar = new Mesh(anchorPillarGeometry, shaftMaterials.none);
+        pillar.castShadow = true;
+        const foot = new Mesh(anchorFootGeometry, shaftMaterials.none);
+        foot.receiveShadow = true;
+        group.add(base, pillar, foot);
+        group.userData.anchorId = anchor.id;
+        root.add(group);
+        anchors.set(anchor.id, {
+          anchor,
+          group,
+          parts: [base, pillar, foot],
+          rack: { base, pillar, foot },
+        });
+        continue;
+      }
       const placed = layout.shafts[anchor.target.id];
       if (placed === undefined) continue;
       const motor = Object.values(scene.motors).find((m) => m.shaftId === anchor.target.id);
@@ -543,7 +625,7 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
       }
       group.userData.anchorId = anchor.id;
       root.add(group);
-      anchors.set(anchor.id, { anchor, group, parts });
+      anchors.set(anchor.id, { anchor, group, parts, rack: null });
     }
   }
 
@@ -581,7 +663,9 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
       const material = shaftMaterials[levelOf(id, entry.carrier.shaftId)];
       for (const part of entry.parts) part.material = material;
     }
-    // 固定具は固定したシャフトと同じに光らせる（ロックの赤・選択の水色。S3-01）
+    // ラック（S3-04）。材質は平歯車と同じ組（ラックの材質の表は S3-05）
+    for (const [id, entry] of racks) entry.body.material = gearMaterials.spur[levelOf(id)];
+    // 固定具は固定したシャフト（ラック）と同じに光らせる（ロックの赤・選択の水色。S3-01）
     for (const entry of anchors.values()) {
       const material = shaftMaterials[levelOf(entry.anchor.target.id)];
       for (const part of entry.parts) part.material = material;
@@ -611,6 +695,7 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
       syncMotors(scene, layout);
       syncAnchors(scene, layout);
       syncCarriers(scene, layout);
+      syncRacks(scene, layout);
       lastScene = scene;
       lastLayout = layout;
       applyHighlight();
@@ -667,6 +752,40 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
         entry.spin.rotation.z = angle;
       }
       for (const [id, entry] of motors) shake(entry.object, entry.base, shakeOf(id, timeSec));
+      // ラック（S3-04）: 基準位置 + (s + 歯溝のずれ)·direction。ロック中は動く向きに小さく震わせる
+      for (const [id, entry] of racks) {
+        const placed = layout.racks[id];
+        if (placed === undefined) continue;
+        const along = placed.grooveOffset + shakeOf(id, timeSec) * RACK_SHAKE_MM_PER_RAD;
+        const at = add(
+          rackWorldOrigin(layout, motion, id),
+          scale(axisVector(placed.direction), along),
+        );
+        if (!sameXyz(entry.body.position, at)) version++;
+        placeRack(entry.body, at, placed.direction, placed.normal, placed.normalSign);
+      }
+      for (const entry of anchors.values()) {
+        if (entry.rack === null) continue;
+        const placed = layout.racks[entry.anchor.target.id];
+        const rack = lastScene?.racks[entry.anchor.target.id];
+        if (placed === undefined || rack === undefined) continue;
+        const frame = rackAnchorFrame(
+          rackWorldOrigin(layout, motion, rack.id),
+          rack.size,
+          placed.normal,
+          placed.normalSign,
+        );
+        const { base, pillar, foot } = entry.rack;
+        placeOnAxis(base, frame.baseCenter, placed.normal);
+        pillar.visible = frame.pillar !== null;
+        foot.visible = frame.pillar !== null;
+        if (frame.pillar !== null) {
+          const { top, bottom } = frame.pillar;
+          pillar.scale.y = top[1] - bottom[1];
+          pillar.position.set(top[0], (top[1] + bottom[1]) / 2, top[2]);
+          foot.position.set(bottom[0], bottom[1] + ANCHOR_FOOT_THICKNESS / 2, bottom[2]);
+        }
+      }
       if (warnings.locked.size > 0) {
         version++; // 震えている
         for (const set of uniqueSets(gearMaterials)) pulseLocked(set, timeSec);
@@ -686,6 +805,7 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
     gearCount: () => gears.size,
     anchorCount: () => anchors.size,
     carrierCount: () => carriers.size,
+    rackCount: () => racks.size,
   };
 }
 

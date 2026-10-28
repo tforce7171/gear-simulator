@@ -153,7 +153,7 @@ const pickAt = (x: number, y: number) => {
   return renderer.pick(x, y);
 };
 // 部品の本体（候補・ハンドルを除く）。候補の陰にある本体を調べる（S1-19）
-const BODY_KINDS = ['gear', 'carrier', 'motor', 'shaft'] as const;
+const BODY_KINDS = ['gear', 'carrier', 'rack', 'motor', 'shaft'] as const;
 const bodyAt = (x: number, y: number) => {
   syncDisplay();
   return renderer.pick(x, y, BODY_KINDS);

@@ -45,6 +45,7 @@ function single(gear: Gear, axis: Axis = 'y'): Scene {
     motors: {},
     anchors: {},
     carriers: {},
+    racks: {},
   };
 }
 

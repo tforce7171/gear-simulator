@@ -12,10 +12,11 @@ import { sectionWidth } from '../core/geometry/dimensions';
 import { internalRimRadius, internalTipRadius } from '../core/geometry/internal';
 import type { MotionState } from '../core/kinematics/types';
 import type { Vec3 } from '../core/math/vec3';
-import type { Axis, GearShape, ShaftId, SizeKey } from '../core/scene/types';
+import type { Axis, GearShape, RackId, ShaftId, SizeKey } from '../core/scene/types';
 import { placeOnAxis } from './frame';
 import { type GeometryCache, gearBodyScaleZ } from './gear-geometry';
 import { setPickTarget } from './picking';
+import { buildRackGeometry, placeRack } from './rack';
 
 // 生やす候補の仮の歯車の表示（S1-18）。形状データは本物の歯車と同じ共有のもの（GeometryCache）を使い、
 // 材質だけ半透明の水色にする。外周の候補には仮のシャフトも付ける。
@@ -41,6 +42,15 @@ export interface CandidateSpec {
   // 外周は親のシャフトに −(親の歯数 / 子の歯数)、同じ軸は親のシャフトに 1
   readonly followShaftId: ShaftId;
   readonly followRatio: number;
+  // ラックの変位 s（mm）に合わせて回す（S3-04 のラックに載せるピニオン）: 回転角 = phase + followRatio × s。
+  // あれば followShaftId より優先する
+  readonly followRackId?: RackId;
+  // ラックの候補（S3-04）。本体を仮のラック（size・teeth のラック）にする。center は基準位置、axis は動く向き。止めたまま見せる
+  readonly rack?: {
+    readonly normal: Axis;
+    readonly normalSign: 1 | -1;
+    readonly grooveOffset: number;
+  };
   readonly withShaft: boolean; // 仮のシャフトも描く（外周の候補）
   // 遊星歯車機構の候補（S3-03）。本体はリング（歯を省いた輪。ウェブは描かず、太陽の上のクリックを奪わない）で、
   // 遊星を選べない仮の歯車として添える
@@ -96,7 +106,9 @@ export function createCandidateView(cache: GeometryCache): CandidateView {
   function clear(): void {
     for (const entry of entries) {
       root.remove(entry.group);
-      if (entry.spec.planets === undefined) {
+      if (entry.spec.rack !== undefined) {
+        entry.body.geometry.dispose();
+      } else if (entry.spec.planets === undefined) {
         cache.release(entry.spec.shape, entry.spec.size, entry.spec.teeth);
       } else {
         entry.body.geometry.dispose();
@@ -153,6 +165,21 @@ export function createCandidateView(cache: GeometryCache): CandidateView {
 
   function build(spec: CandidateSpec, index: number): Entry {
     const group = new Group();
+    if (spec.rack !== undefined) {
+      // ラックの候補（S3-04）
+      const body = new Mesh(buildRackGeometry(spec.size, spec.teeth), normal);
+      body.renderOrder = CANDIDATE_RENDER_ORDER;
+      group.add(body);
+      const at: Vec3 = [
+        spec.center[0] + (spec.axis === 'x' ? spec.rack.grooveOffset : 0),
+        spec.center[1] + (spec.axis === 'y' ? spec.rack.grooveOffset : 0),
+        spec.center[2] + (spec.axis === 'z' ? spec.rack.grooveOffset : 0),
+      ];
+      placeRack(group, at, spec.axis, spec.rack.normal, spec.rack.normalSign);
+      setPickTarget(group, 'candidate', candidatePickId(index));
+      root.add(group);
+      return { spec, group, body, shaft: null, proxy: null, extras: null };
+    }
     const body = new Mesh(
       spec.planets === undefined
         ? cache.acquire(spec.shape, spec.size, spec.teeth)
@@ -221,7 +248,11 @@ export function createCandidateView(cache: GeometryCache): CandidateView {
     },
     update(motion) {
       for (const { spec, body } of entries) {
-        const angle = motion.angles[spec.followShaftId] ?? 0;
+        if (spec.rack !== undefined) continue;
+        const angle =
+          spec.followRackId !== undefined
+            ? (motion.rackPositions[spec.followRackId] ?? 0)
+            : (motion.angles[spec.followShaftId] ?? 0);
         body.rotation.z = spec.phase + spec.followRatio * angle;
       }
     },

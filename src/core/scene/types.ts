@@ -7,6 +7,7 @@ export type GearId = string; // "gear_xxx"
 export type MotorId = string; // "motor_xxx"
 export type AnchorId = string; // "anchor_xxx"（S3-01）
 export type CarrierId = string; // "carrier_xxx"（S3-03）
+export type RackId = string; // "rack_xxx"（S3-04）
 export type Axis = 'x' | 'y' | 'z';
 export type SizeKey = 'S' | 'M' | 'L';
 
@@ -16,6 +17,7 @@ export interface Scene {
   readonly motors: Readonly<Record<MotorId, Motor>>;
   readonly anchors: Readonly<Record<AnchorId, Anchor>>; // 固定具（S3-01）
   readonly carriers: Readonly<Record<CarrierId, Carrier>>; // 遊星歯車のキャリア（S3-03）
+  readonly racks: Readonly<Record<RackId, Rack>>; // ラック（S3-04）
 }
 
 export interface Shaft {
@@ -64,6 +66,14 @@ export type ShaftPlacement =
       readonly parentGearId: GearId; // かみ合う相手。キャリアのシャフトと同じ線上の歯車（太陽歯車かリング）
       readonly childGearId: GearId; // このシャフト上の、親とかみ合う歯車
       readonly angle: number; // キャリアの角度が 0 のときの、キャリアの軸まわりの角度（rad）
+    }
+  // ラックに載せた 2 つ目以降のピニオンのシャフト（S3-04）。軸はラックの歯幅の方向（持たない）。
+  // 子の中心 = ラックの基準位置 + position·direction + r_子·normalSign·normal、子の offset は 0 として原点を逆算する
+  | {
+      readonly kind: 'rack';
+      readonly rackId: RackId;
+      readonly childGearId: GearId; // このシャフト上の、ラックとかみ合う平歯車
+      readonly position: number; // ラックの基準位置からの direction の向きの位置（mm）。π·m の整数倍
     };
 
 // 親の歯車から位置と向きを導く配置（mesh・bevel・skew・planet）。root・detached は自分で位置と向きを持ち、
@@ -72,6 +82,7 @@ export type ChildPlacement = Extract<ShaftPlacement, { readonly parentGearId: Ge
 export type FreePlacement = Extract<ShaftPlacement, { readonly origin: Vec3 }>;
 export type ConcentricPlacement = Extract<ShaftPlacement, { readonly kind: 'concentric' }>;
 export type PlanetPlacement = Extract<ShaftPlacement, { readonly kind: 'planet' }>;
+export type RackShaftPlacement = Extract<ShaftPlacement, { readonly kind: 'rack' }>;
 
 export function isChildPlacement(p: ShaftPlacement): p is ChildPlacement {
   return p.kind === 'mesh' || p.kind === 'bevel' || p.kind === 'skew' || p.kind === 'planet';
@@ -160,11 +171,11 @@ export interface Motor {
 }
 
 // 固定具（S3-01）。対象のシャフトを地面に固定して回らなくする（拘束 ω = 0）。1 つの対象に最大 1 つ。
-// 歯車を固定するときは、その歯車のシャフトを固定する（剛体の単位がシャフトのため）。S3-04 で対象にラックを足す
-export interface AnchorTarget {
-  readonly kind: 'shaft';
-  readonly id: ShaftId;
-}
+// 歯車を固定するときは、その歯車のシャフトを固定する（剛体の単位がシャフトのため）。
+// ラック（S3-04）を固定すると、ラックの速度 v = 0 の拘束になる
+export type AnchorTarget =
+  | { readonly kind: 'shaft'; readonly id: ShaftId }
+  | { readonly kind: 'rack'; readonly id: RackId };
 
 export interface Anchor {
   readonly id: AnchorId;
@@ -178,4 +189,31 @@ export interface Carrier {
   readonly shaftId: ShaftId; // このシャフトと一緒に回る
   readonly offset: number; // 板の負側の面の位置（mm。シャフトの原点から）。AXIAL_SNAP の倍数（Gear.offset と同じ考え方）
   readonly size: SizeKey; // 板の厚み・シャフトの太さに使う
+}
+
+// ラック（S3-04）。直線に動く剛体。長さ L = 歯数 × π·m、歯形は圧力角 20° の直線歯（台形）。
+// 向きは 3 本の軸で決まる: 動く向き direction、歯が向く軸 normal（とその向き normalSign）、残りの軸が歯幅の方向（＝ピニオンの軸）。
+// pinion: 向きはピニオンの軸から導く（direction = ピニオンの軸を axisStep 回進めた軸、normal = 残りの軸）。
+// 基準位置（変位 s = 0 のときのピッチ線の中央）= ピニオンの中心 − r·normalSign·normal。
+// detached: ピニオンが消されて浮いたラック。その時点の Layout の基準位置と向きを写す
+export type RackPlacement =
+  | {
+      readonly kind: 'pinion';
+      readonly gearId: GearId;
+      readonly axisStep: 1 | 2; // direction = ピニオンの軸を axisStep 回進めた軸。normal は残りの軸
+      readonly normalSign: 1 | -1; // 歯が normal の正・負どちらを向くか
+    }
+  | {
+      readonly kind: 'detached';
+      readonly origin: Vec3; // 基準位置のワールド座標
+      readonly direction: Axis; // 動く向き
+      readonly normal: Axis; // 歯が向く軸（direction と異なる）
+      readonly normalSign: 1 | -1;
+    };
+
+export interface Rack {
+  readonly id: RackId;
+  readonly size: SizeKey;
+  readonly teeth: number; // RACK_TEETH の範囲の整数
+  readonly placement: RackPlacement;
 }

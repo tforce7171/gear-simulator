@@ -2,7 +2,7 @@
 import type { AppState } from '../../app/store';
 import type { MessageKey } from '../../core/i18n';
 import type { Vec3 } from '../../core/math/vec3';
-import { anchorOfShaft } from '../../core/scene/scene';
+import { anchorOfRack, anchorOfShaft } from '../../core/scene/scene';
 import type { AnchorId, MotorId, Scene, ShaftId } from '../../core/scene/types';
 
 // 右クリックした所。部品の上なら選んだ部品（ShaftId | GearId。モーターはシャフトとして選ぶ）と、
@@ -41,8 +41,9 @@ export function targetMotorId(scene: Scene, partId: string): MotorId | null {
   return Object.values(scene.motors).find((m) => m.shaftId === shaftId)?.id ?? null;
 }
 
-// 対象のシャフトを固定している固定具（S3-01）。無ければ null
+// 対象のシャフト（ラックならラック。S3-04）を固定している固定具（S3-01）。無ければ null
 export function targetAnchorId(scene: Scene, partId: string): AnchorId | null {
+  if (scene.racks[partId] !== undefined) return anchorOfRack(scene, partId)?.id ?? null;
   const shaftId = targetShaftId(scene, partId);
   if (shaftId === null) return null;
   return anchorOfShaft(scene, shaftId)?.id ?? null;
@@ -73,6 +74,10 @@ export function buildContextMenuItems(
       // 固定する／固定を外す（S3-01）。歯車ならそのシャフト
       item(targetAnchorId(state.scene, target.partId) === null ? 'anchor' : 'unanchor'),
     );
+  }
+  // ラック（S3-04）はモーターを付けず、固定する／固定を外すだけ
+  if (state.scene.racks[target.partId] !== undefined) {
+    items.push(item(targetAnchorId(state.scene, target.partId) === null ? 'anchor' : 'unanchor'));
   }
   items.push(item('focusHere'));
   return items;

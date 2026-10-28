@@ -7,7 +7,14 @@ test.beforeEach(async ({ page }) => {
 
 test('dispatch で基本のシーンを作ると回り、undo 5 回で空に戻る', async ({ page }) => {
   await page.evaluate(() =>
-    window.__gearSim?.loadScene({ shafts: {}, gears: {}, motors: {}, anchors: {}, carriers: {} }),
+    window.__gearSim?.loadScene({
+      shafts: {},
+      gears: {},
+      motors: {},
+      anchors: {},
+      carriers: {},
+      racks: {},
+    }),
   );
 
   // 基本のシーン（S1-11 の資料）を作る 5 コマンド。アプリの ID はランダムなので、
@@ -69,6 +76,7 @@ test('dispatch で基本のシーンを作ると回り、undo 5 回で空に戻�
     gears: {},
     motors: {},
     anchors: {}, // S3-01
-    carriers: {}, // S3-03
+    carriers: {},
+    racks: {}, // S3-03
   });
 });

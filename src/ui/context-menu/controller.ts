@@ -62,6 +62,10 @@ export function createContextMenu(deps: ContextMenuDeps): ContextMenu {
         return;
       }
       case 'anchor': {
+        if (target.kind === 'part' && scene.racks[target.partId] !== undefined) {
+          command({ type: 'addAnchor', rackId: target.partId }); // ラック（S3-04）
+          return;
+        }
         const shaftId = target.kind === 'part' ? targetShaftId(scene, target.partId) : null;
         if (shaftId !== null) command({ type: 'addAnchor', shaftId });
         return;

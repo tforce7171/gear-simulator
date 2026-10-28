@@ -26,6 +26,7 @@ const oneRoot: Scene = {
   motors: {},
   anchors: {},
   carriers: {},
+  racks: {},
 };
 
 describe('growSpec', () => {

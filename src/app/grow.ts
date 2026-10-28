@@ -1,14 +1,21 @@
-import { DEFAULT_TEETH } from '../core/constants';
+import { DEFAULT_TEETH, GEAR_SIZES } from '../core/constants';
 import type { Command } from '../core/edit/commands';
 import { skewSign } from '../core/geometry/skew';
-import { type GrowCandidate, listGrowCandidates } from '../core/layout/candidates';
+import { rackSign } from '../core/kinematics/mesh-coefficients';
+import {
+  type GrowCandidate,
+  listGrowCandidates,
+  listRackCandidates,
+} from '../core/layout/candidates';
 import { resolveLayout } from '../core/layout/resolve';
 import type { Gear, GearKind, Scene, SizeKey } from '../core/scene/types';
 import type { CandidateSpec } from '../render/candidates';
 
 // 歯車を生やす（S1-18）。純粋関数のみ。選んだ歯車の候補を列挙し、候補を編集コマンドに変換する
 
-export type CandidateKind = GrowCandidate['kind']; // 'perimeter' | 'bevel' | 'skew' | 'enclose' | 'planetary' | 'coaxial'（S1-10、S2-02、S2-03、S3-02、S3-03）
+// 'perimeter' | 'bevel' | 'skew' | 'enclose' | 'planetary' | 'rack' | 'rackPinion' | 'coaxial'
+// （S1-10、S2-02、S2-03、S3-02、S3-03、S3-04）
+export type CandidateKind = GrowCandidate['kind'];
 
 // 生やす歯車の大きさと歯数。外周は親と同じ大きさ（同じ大きさ同士しかかみ合わない）、
 // 同じ軸はパレットで選んでいる大きさ。歯数はどちらも DEFAULT_TEETH[大きさ]
@@ -22,7 +29,8 @@ export function growSpec(
 }
 
 // 選択中の歯車の候補。選択が無い・歯車でない（シャフト）なら []
-// coaxialKind は同じ軸に作る歯車の種類（S2-01。S2-05 からパレットで選んだ種類 AppState.palette.kind）
+// coaxialKind は同じ軸に作る歯車の種類（S2-01。S2-05 からパレットで選んだ種類 AppState.palette.kind）。
+// ラック（S3-04）を選んでいれば、2 つ目以降のピニオンの候補（同じ大きさ・DEFAULT_TEETH の平歯車）
 export function candidatesFor(
   scene: Scene,
   selection: string | null,
@@ -30,6 +38,10 @@ export function candidatesFor(
   coaxialKind: GearKind,
 ): GrowCandidate[] {
   if (selection === null) return [];
+  const rack = scene.racks[selection];
+  if (rack !== undefined) {
+    return listRackCandidates(scene, rack.id, { perimeterTeeth: DEFAULT_TEETH[rack.size] });
+  }
   const parent = scene.gears[selection];
   if (parent === undefined) return [];
   const coaxial = growSpec(parent, 'coaxial', paletteSize);
@@ -73,6 +85,24 @@ export function growCommand(candidate: GrowCandidate): Command {
   if (candidate.kind === 'planetary') {
     return { type: 'growGear', mode: 'planetary', parentGearId: candidate.parentGearId };
   }
+  if (candidate.kind === 'rack') {
+    return {
+      type: 'growRack',
+      gearId: candidate.parentGearId,
+      axisStep: candidate.axisStep,
+      normalSign: candidate.normalSign,
+      teeth: candidate.teeth,
+    };
+  }
+  if (candidate.kind === 'rackPinion') {
+    return {
+      type: 'growGear',
+      mode: 'rack',
+      rackId: candidate.rackId,
+      position: candidate.position,
+      teeth: candidate.teeth,
+    };
+  }
   if (candidate.kind === 'skew') {
     return {
       type: 'growGear',
@@ -96,6 +126,45 @@ export function growCommand(candidate: GrowCandidate): Command {
 
 // 候補の仮の歯車の見た目（render/candidates.ts）。外周は親とかみ合う向きに、同じ軸は親と一緒に回す
 export function candidateSpec(scene: Scene, candidate: GrowCandidate): CandidateSpec {
+  if (candidate.kind === 'rack') {
+    // ラック（S3-04）: 仮のラックは止めたまま見せる（ピニオンに合わせて動かすと、回り続けるうちに遠くへ行くため）
+    const parent = scene.gears[candidate.parentGearId];
+    return {
+      shape: { kind: 'spur' },
+      size: candidate.size,
+      teeth: candidate.teeth,
+      center: candidate.center,
+      axis: candidate.axis,
+      phase: 0,
+      followShaftId: parent?.shaftId ?? '',
+      followRatio: 0,
+      withShaft: false,
+      rack: {
+        normal: candidate.normal,
+        normalSign: candidate.normalSign,
+        grooveOffset: candidate.grooveOffset,
+      },
+    };
+  }
+  if (candidate.kind === 'rackPinion') {
+    // ラックに載せるピニオン（S3-04）: ラックの変位 s に合わせて回す（θ = s / (k·r)）
+    const layout = resolveLayout(scene);
+    const rack = layout.racks[candidate.rackId];
+    const r = (GEAR_SIZES[candidate.size].module * candidate.teeth) / 2;
+    const k = rack === undefined ? 1 : rackSign(candidate.axis, rack);
+    return {
+      shape: candidate.shape,
+      size: candidate.size,
+      teeth: candidate.teeth,
+      center: candidate.center,
+      axis: candidate.axis,
+      phase: candidate.basePhase,
+      followShaftId: '',
+      followRatio: 1 / (k * r),
+      followRackId: candidate.rackId,
+      withShaft: true,
+    };
+  }
   const common = {
     shape: candidate.shape,
     size: candidate.size,

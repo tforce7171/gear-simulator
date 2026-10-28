@@ -282,7 +282,14 @@ test('部品が 1 つも無いときの Home → 初期の視点に戻る', asyn
   await page.waitForFunction(() => window.__gearSim?.isReady() === true);
   const initial = await getCamera(page);
   await page.evaluate(() =>
-    window.__gearSim?.loadScene({ shafts: {}, gears: {}, motors: {}, anchors: {}, carriers: {} }),
+    window.__gearSim?.loadScene({
+      shafts: {},
+      gears: {},
+      motors: {},
+      anchors: {},
+      carriers: {},
+      racks: {},
+    }),
   );
   await setCamera(page, AWAY);
   await page.keyboard.press('Home');

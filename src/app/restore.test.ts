@@ -4,7 +4,7 @@ import type { Scene } from '../core/scene/types';
 import { demoScene } from './demo-scene';
 import { restoreScene } from './restore';
 
-const empty: Scene = { shafts: {}, gears: {}, motors: {}, anchors: {}, carriers: {} };
+const empty: Scene = { shafts: {}, gears: {}, motors: {}, anchors: {}, carriers: {}, racks: {} };
 
 describe('restoreScene', () => {
   afterEach(() => {

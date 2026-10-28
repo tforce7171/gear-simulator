@@ -515,7 +515,11 @@ export function createInteractions(deps: InteractionsDeps): Interactions {
         // 回す基準は押した位置と、押したときのシャフトの角度
         session: startHandRotate({
           ...target,
-          startAngle: motion.angles[target.shaftId] ?? 0,
+          // ラック（S3-04）は押したときの変位 s
+          startAngle:
+            (target.linear === true
+              ? motion.rackPositions[target.shaftId]
+              : motion.angles[target.shaftId]) ?? 0,
           startRay: ray,
           startInput: dragInput(e),
         }),

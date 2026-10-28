@@ -57,3 +57,15 @@ export const CARRIER_THICKNESS = { S: 4, M: 4, L: 8 } as const;
 export const CARRIER_GAP = 4;
 // キャリアの腕の半径 = 公転半径 + この余白（遊星のシャフトの太さの分）
 export const CARRIER_RADIUS_MARGIN = 4;
+
+// ラック＆ピニオン（S3-04）。ラックの長さ L = 歯数 × π·m。断面は歯幅 × (歯先から背まで 4.25m)
+// （歯先はピッチ線から m、歯底はピッチ線から 1.25m、背は歯底から 2m）
+export const RACK_TEETH = { min: 10, max: 60 } as const; // ラックの歯数の範囲
+export const RACK_DEFAULT_TEETH = 30; // 候補から作るラックの歯数
+export const RACK_ADDENDUM = 1; // 歯先の高さ（m の倍数）
+export const RACK_DEDENDUM = 1.25; // 歯底の深さ（m の倍数）
+export const RACK_BACK = 2; // 歯底から背までの厚み（m の倍数）
+// 端の余白 = RACK_END_MARGIN_PITCHES·π·m（1 ピッチ）。ピニオンの接点がラックの端からこの距離に来たら端とする
+export const RACK_END_MARGIN_PITCHES = 1;
+// ラックの変位 s が端にいるとみなす許容（mm）
+export const RACK_END_EPS = 1e-6;

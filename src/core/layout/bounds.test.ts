@@ -3,7 +3,7 @@ import type { Scene } from '../scene/types';
 import { boundsOf } from './bounds';
 import { resolveLayout } from './resolve';
 
-const EMPTY: Scene = { shafts: {}, gears: {}, motors: {}, anchors: {}, carriers: {} };
+const EMPTY: Scene = { shafts: {}, gears: {}, motors: {}, anchors: {}, carriers: {}, racks: {} };
 
 // 原点の縦軸の起点に中・20 歯の歯車（offset を指定）
 function oneGear(offset: number): Scene {
@@ -13,6 +13,7 @@ function oneGear(offset: number): Scene {
     motors: {},
     anchors: {},
     carriers: {},
+    racks: {},
   };
 }
 
@@ -32,6 +33,7 @@ const TWO: Scene = {
   motors: {},
   anchors: {},
   carriers: {},
+  racks: {},
 };
 
 function expectBox(
@@ -96,6 +98,7 @@ describe('boundsOf', () => {
       motors: {},
       anchors: {},
       carriers: {},
+      racks: {},
     };
     // S・12 歯: 歯先円半径 7、歯幅 4。中心 [12, 30, 0]
     expectBox(boundsOf(scene, resolveLayout(scene)), [10, 23, -7], [14, 37, 7]);
