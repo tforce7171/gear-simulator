@@ -1,7 +1,7 @@
 ---
 id: S1-30
 title: 設定画面
-status: todo
+status: doing
 depends: [S1-14, S1-24, S1-25]
 ---
 
