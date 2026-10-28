@@ -69,21 +69,32 @@ async function rightClick(page: Page, p: { x: number; y: number }): Promise<void
   await expect(menu(page)).toBeVisible();
 }
 
+// カメラの移動が終わるのを待つ。時間ではなく描画のフレームで数え、3 フレーム続けて
+// 位置も注視点も動かなかったら止まったとみなす（負荷で rAF が止まっても途中で抜けない）
 async function settledCamera(page: Page): Promise<CameraPose> {
-  let last = await getCamera(page);
-  await expect
-    .poll(
-      async () => {
-        await page.waitForTimeout(100);
-        const now = await getCamera(page);
-        const moved = dist(now.position, last.position) + dist(now.target, last.target);
-        last = now;
-        return moved;
-      },
-      { timeout: 5000 },
-    )
-    .toBeLessThan(1e-3);
-  return last;
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        const sim = window.__gearSim;
+        if (sim === undefined) {
+          reject(new Error('__gearSim が無い'));
+          return;
+        }
+        const flat = (c: CameraPose) => [...c.position, ...c.target];
+        let last = flat(sim.getCamera());
+        let still = 0;
+        const tick = () => {
+          const now = flat(sim.getCamera());
+          const moved = now.reduce((sum, v, i) => sum + Math.abs(v - (last[i] ?? 0)), 0);
+          last = now;
+          still = moved < 1e-6 ? still + 1 : 0;
+          if (still >= 3) resolve();
+          else requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }),
+  );
+  return getCamera(page);
 }
 
 test('g2 で右クリック → メニューに 3 項目、2 つ目が attachMotor、g2 が選ばれる', async ({
@@ -140,6 +151,9 @@ test('g2 で右クリック → ここに寄る → 注視点が右クリック�
   if (hit === null || hit === undefined) throw new Error('g2 に当たらない');
   await rightClick(page, at);
   await menuItem(page, 'focusHere').click();
+  await expect
+    .poll(async () => dist((await getCamera(page)).target, hit.point), { timeout: 15000 })
+    .toBeLessThan(1);
   const pose = await settledCamera(page);
   expect(dist(pose.target, hit.point)).toBeLessThan(1);
 });
@@ -185,6 +199,11 @@ test('全体表示 → Home キーと同じ注視点（各成分の差 < 1 mm）
   await page.evaluate((pose) => window.__gearSim?.setCamera(pose), VIEW);
   await rightClick(page, await emptyPoint(page));
   await menuItem(page, 'frameAll').click();
+  const maxDiff = (t: Vec3) =>
+    Math.max(...[0, 1, 2].map((i) => Math.abs((t[i] ?? 0) - (home.target[i] ?? 0))));
+  await expect
+    .poll(async () => maxDiff((await getCamera(page)).target), { timeout: 15000 })
+    .toBeLessThan(1);
   const pose = await settledCamera(page);
   for (let i = 0; i < 3; i++) {
     expect(Math.abs((pose.target[i] ?? 0) - (home.target[i] ?? 0))).toBeLessThan(1);
