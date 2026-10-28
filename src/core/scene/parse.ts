@@ -1,6 +1,16 @@
 import type { Vec3 } from '../math/vec3';
 import { assertNever, isGearKind } from './gear-shape';
-import type { Axis, Gear, Hand, Motor, Scene, Shaft, ShaftPlacement, SizeKey } from './types';
+import type {
+  Anchor,
+  Axis,
+  Gear,
+  Hand,
+  Motor,
+  Scene,
+  Shaft,
+  ShaftPlacement,
+  SizeKey,
+} from './types';
 import { type SceneError, validateScene } from './validate';
 
 // 生の値（JSON から読んだ unknown）の形を確かめて Scene を作り、続けて validateScene で意味を確かめる
@@ -20,7 +30,7 @@ function isPlainObject(x: unknown): x is Raw {
 const AXES: readonly unknown[] = ['x', 'y', 'z'];
 const SIZES: readonly unknown[] = ['S', 'M', 'L'];
 
-const PREFIX = { shafts: 'shaft_', gears: 'gear_', motors: 'motor_' } as const;
+const PREFIX = { shafts: 'shaft_', gears: 'gear_', motors: 'motor_', anchors: 'anchor_' } as const;
 type Collection = keyof typeof PREFIX;
 
 export function parseScene(raw: unknown): SceneParseResult {
@@ -38,12 +48,18 @@ export function parseScene(raw: unknown): SceneParseResult {
   for (const collection of ['shafts', 'gears', 'motors'] as const) {
     if (!isPlainObject(raw[collection])) shape(collection, `${collection} must be an object`);
   }
+  // 固定具（S3-01）。無いシーン（S3-01 より前に保存したもの）は空として読む（暫定。S3-05 で version 3 の移行に置き換える）
+  if (raw.anchors !== undefined && !isPlainObject(raw.anchors)) {
+    shape('anchors', 'anchors must be an object');
+  }
   if (errors.length > 0) return { ok: false, errors };
+  const rawAnchors: Raw = isPlainObject(raw.anchors) ? raw.anchors : {};
 
   // 部品の共通の形: 通常のオブジェクトで、キーと id が種類の接頭辞を持つ文字列
   const items = (collection: Collection): Array<[string, Raw, string]> => {
     const out: Array<[string, Raw, string]> = [];
-    for (const [key, item] of Object.entries(raw[collection] as Raw)) {
+    const source = collection === 'anchors' ? rawAnchors : (raw[collection] as Raw);
+    for (const [key, item] of Object.entries(source)) {
       const base = `${collection}.${key}`;
       if (!key.startsWith(PREFIX[collection])) {
         shape(base, `key "${key}" must start with "${PREFIX[collection]}"`, key);
@@ -183,6 +199,27 @@ export function parseScene(raw: unknown): SceneParseResult {
     motors.push([key, { id, shaftId, size: motorSize, rpm, direction: direction as 1 | -1, on }]);
   }
 
+  const anchors: Array<[string, Anchor]> = [];
+  for (const [key, item, id] of items('anchors')) {
+    const base = `anchors.${key}.target`;
+    const target = item.target;
+    if (!isPlainObject(target)) {
+      shape(base, 'target must be an object', key);
+      continue;
+    }
+    // 対象の種類が 'shaft' か、シャフトがあるかは validateScene が確かめる
+    anchors.push([
+      key,
+      {
+        id,
+        target: {
+          kind: str(target, 'kind', base, key) as 'shaft',
+          id: str(target, 'id', base, key),
+        },
+      },
+    ]);
+  }
+
   if (errors.length > 0) return { ok: false, errors };
 
   // Object.fromEntries は自分のプロパティとして定義するので、"__proto__" のようなキーでも安全
@@ -190,6 +227,7 @@ export function parseScene(raw: unknown): SceneParseResult {
     shafts: Object.fromEntries(shafts),
     gears: Object.fromEntries(gears),
     motors: Object.fromEntries(motors),
+    anchors: Object.fromEntries(anchors),
   };
   const validated = validateScene(scene);
   return validated.ok ? { ok: true, scene } : { ok: false, errors: validated.errors };

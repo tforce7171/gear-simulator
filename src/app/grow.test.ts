@@ -24,6 +24,7 @@ const oneRoot: Scene = {
   },
   gears: { gear_a: gear({ teeth: 20 }) },
   motors: {},
+  anchors: {},
 };
 
 describe('growSpec', () => {

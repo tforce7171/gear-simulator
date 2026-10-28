@@ -19,6 +19,7 @@ const demoScene: Scene = {
   motors: {
     motor_1: { id: 'motor_1', shaftId: 'shaft_1', size: 'M', rpm: 30, direction: 1, on: true },
   },
+  anchors: {},
 };
 
 // demoScene を生データにして、点区切りの場所の値を書き換えたものを返す

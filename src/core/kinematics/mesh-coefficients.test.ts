@@ -34,6 +34,7 @@ function bevelScene(parentAxis: Axis, apex: 1 | -1, axisStep: 1 | 2, side: 1 | -
     },
     gears: { gear_a: a, gear_b: b },
     motors: {},
+    anchors: {},
   };
 }
 
@@ -51,6 +52,7 @@ describe('meshCoefficients', () => {
       shafts: {},
       gears: { gear_a: spur('gear_a', 20), gear_b: spur('gear_b', 40) },
       motors: {},
+      anchors: {},
     };
     const mesh: Mesh = { a: 'gear_a', b: 'gear_b', source: 'tree', kind: 'spur' };
     expect(meshCoefficients(mesh, scene)).toEqual({ a: 20, b: 40 });

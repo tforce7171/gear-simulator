@@ -67,6 +67,7 @@ function sceneA(motorOn = true): Scene {
         on: motorOn,
       },
     },
+    anchors: {},
   };
 }
 
@@ -88,7 +89,7 @@ function plainScene(
   }
   const motorMap: Record<string, Motor> = {};
   for (const m of motors) motorMap[m.id] = m;
-  return { shafts, gears: gearMap, motors: motorMap };
+  return { shafts, gears: gearMap, motors: motorMap, anchors: {} };
 }
 
 function layoutOf(meshes: readonly Mesh[]): Layout {

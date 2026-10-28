@@ -21,6 +21,7 @@ function scene(shafts: Shaft[], gears: Gear[]): Scene {
     shafts: Object.fromEntries(shafts.map((s) => [s.id, s])),
     gears: Object.fromEntries(gears.map((g) => [g.id, g])),
     motors: {},
+    anchors: {},
   };
 }
 
@@ -266,6 +267,7 @@ describe('並び・決定性・不変', () => {
       shafts: Object.freeze({ shaft_a: Object.freeze(shaftA) }),
       gears: Object.freeze({ gear_a: Object.freeze(gearA) }),
       motors: Object.freeze({}),
+      anchors: {},
     });
     expect(listGrowCandidates(frozen, 'gear_a', SPEC)).toHaveLength(10);
     expect(Object.keys(frozen.gears)).toEqual(['gear_a']);

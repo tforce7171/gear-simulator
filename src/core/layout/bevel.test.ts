@@ -252,6 +252,7 @@ function triangle(withMotor: boolean): Scene {
     shafts: { ...bevelPair.shafts, shaft_c: c },
     gears: { ...bevelPair.gears, gear_c: gearC },
     motors: withMotor ? bevelPair.motors : {},
+    anchors: {},
   };
 }
 
@@ -364,6 +365,7 @@ function pair(size: 'S' | 'M', teeth: number): Scene {
     },
     gears: { gear_a: a, gear_b: { ...a, id: 'gear_b', shaftId: 'shaft_b' } },
     motors: {},
+    anchors: {},
   };
 }
 
@@ -449,6 +451,7 @@ describe('偶然のかみ合い（contact）', () => {
         },
       },
       motors: {},
+      anchors: {},
     };
   }
 
@@ -482,6 +485,7 @@ describe('候補', () => {
       shafts: { shaft_a: bevelPair.shafts.shaft_a as Shaft },
       gears: { gear_a: bevelPair.gears.gear_a as Gear },
       motors: {},
+      anchors: {},
     };
     const list = listGrowCandidates(scene, 'gear_a', spec);
     const bevels = list.filter((c) => c.kind === 'bevel');

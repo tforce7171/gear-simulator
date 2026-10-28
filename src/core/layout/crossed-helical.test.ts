@@ -60,6 +60,7 @@ const aOnly: Scene = {
   shafts: { shaft_a: crossedPair.shafts.shaft_a as Shaft },
   gears: { gear_a: crossedPair.gears.gear_a as Gear },
   motors: crossedPair.motors,
+  anchors: {},
 };
 const gearA = crossedPair.gears.gear_a as Gear;
 const gearB = crossedPair.gears.gear_b as Gear;

@@ -9,7 +9,7 @@ import { expect, test } from './fixtures/test';
 
 const fixture = (name: string): string => new URL(`./fixtures/${name}`, import.meta.url).pathname;
 const sceneA = JSON.parse(readFileSync(fixture('scene-a.json'), 'utf8')) as Scene;
-const EMPTY: Scene = { shafts: {}, gears: {}, motors: {} };
+const EMPTY: Scene = { shafts: {}, gears: {}, motors: {}, anchors: {} };
 
 async function open(page: Page): Promise<void> {
   await page.goto('/');

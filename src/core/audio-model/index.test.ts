@@ -75,6 +75,7 @@ function sceneA(motor: { on?: boolean; rpm?: number } = {}): Scene {
         on: motor.on ?? true,
       },
     },
+    anchors: {},
   };
 }
 

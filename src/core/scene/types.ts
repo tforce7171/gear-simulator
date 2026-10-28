@@ -5,6 +5,7 @@ import type { Vec3 } from '../math/vec3';
 export type ShaftId = string; // "shaft_xxx"
 export type GearId = string; // "gear_xxx"
 export type MotorId = string; // "motor_xxx"
+export type AnchorId = string; // "anchor_xxx"（S3-01）
 export type Axis = 'x' | 'y' | 'z';
 export type SizeKey = 'S' | 'M' | 'L';
 
@@ -12,6 +13,7 @@ export interface Scene {
   readonly shafts: Readonly<Record<ShaftId, Shaft>>;
   readonly gears: Readonly<Record<GearId, Gear>>;
   readonly motors: Readonly<Record<MotorId, Motor>>;
+  readonly anchors: Readonly<Record<AnchorId, Anchor>>; // 固定具（S3-01）
 }
 
 export interface Shaft {
@@ -120,4 +122,16 @@ export interface Motor {
   readonly rpm: number; // 無負荷回転数（1〜120）
   readonly direction: 1 | -1; // 回転の正の向きに対する向き
   readonly on: boolean;
+}
+
+// 固定具（S3-01）。対象のシャフトを地面に固定して回らなくする（拘束 ω = 0）。1 つの対象に最大 1 つ。
+// 歯車を固定するときは、その歯車のシャフトを固定する（剛体の単位がシャフトのため）。S3-04 で対象にラックを足す
+export interface AnchorTarget {
+  readonly kind: 'shaft';
+  readonly id: ShaftId;
+}
+
+export interface Anchor {
+  readonly id: AnchorId;
+  readonly target: AnchorTarget;
 }

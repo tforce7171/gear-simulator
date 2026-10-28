@@ -12,8 +12,11 @@ import {
   skewPartnerShape,
 } from '../scene/gear-shape';
 import type { IdGenerator } from '../scene/ids';
+import { anchorOfShaft } from '../scene/scene';
 import { shaftAxis } from '../scene/shaft-axis';
 import {
+  type Anchor,
+  type AnchorId,
   type Axis,
   type FreePlacement,
   type Gear,
@@ -88,6 +91,10 @@ export type Command =
       motorId: MotorId;
       patch: Partial<Pick<Motor, 'size' | 'rpm' | 'direction' | 'on'>>;
     }
+  // シャフトを固定する（S3-01）。歯車を固定するときは、その歯車のシャフトを渡す。
+  // 既に固定されていれば何もしない（同じシーンを返す）
+  | { type: 'addAnchor'; shaftId: ShaftId }
+  | { type: 'removeAnchor'; anchorId: AnchorId }
   | { type: 'moveShaft'; shaftId: ShaftId; origin: Vec3 }
   | { type: 'setShaftAxis'; shaftId: ShaftId; axis: Axis }
   | {
@@ -217,6 +224,10 @@ export function applyCommand(scene: Scene, command: Command, ctx: CommandContext
       return deleteParts(scene, [command.motorId]);
     case 'updateMotor':
       return updateMotor(scene, command);
+    case 'addAnchor':
+      return addAnchor(scene, command, ctx);
+    case 'removeAnchor':
+      return removeAnchor(scene, command);
     case 'moveShaft':
       return moveShaft(scene, command);
     case 'setShaftAxis':
@@ -258,6 +269,7 @@ function addRootShaft(
       shafts: withEntry(scene.shafts, shaftId, shaft),
       gears: withEntry(scene.gears, gearId, gear),
       motors: scene.motors,
+      anchors: scene.anchors,
     },
     [shaftId, gearId],
   );
@@ -298,6 +310,7 @@ function growPerimeter(
       shafts: withEntry(scene.shafts, shaftId, shaft),
       gears: withEntry(scene.gears, gearId, gear),
       motors: scene.motors,
+      anchors: scene.anchors,
     },
     [shaftId, gearId],
   );
@@ -339,6 +352,7 @@ function growBevel(
       shafts: withEntry(scene.shafts, shaftId, shaft),
       gears: withEntry(scene.gears, gearId, gear),
       motors: scene.motors,
+      anchors: scene.anchors,
     },
     [shaftId, gearId],
   );
@@ -383,6 +397,7 @@ function growSkew(
       shafts: withEntry(scene.shafts, shaftId, shaft),
       gears: withEntry(scene.gears, gearId, gear),
       motors: scene.motors,
+      anchors: scene.anchors,
     },
     [shaftId, gearId],
   );
@@ -429,9 +444,11 @@ function deleteParts(scene: Scene, ids: readonly string[]): CommandResult {
   const shafts: Record<ShaftId, Shaft> = { ...scene.shafts };
   const gears: Record<GearId, Gear> = { ...scene.gears };
   const motors: Record<MotorId, Motor> = { ...scene.motors };
+  const anchors: Record<AnchorId, Anchor> = { ...scene.anchors };
   let shaftsChanged = false;
   let gearsChanged = false;
   let motorsChanged = false;
+  let anchorsChanged = false;
   let layout: Layout | null = null;
 
   const detach = (shaft: Shaft): void => {
@@ -471,6 +488,12 @@ function deleteParts(scene: Scene, ids: readonly string[]): CommandResult {
       if (gear.shaftId === shaftId) removeGear(gear.id);
     }
     removeMotorsOn(shaftId);
+    // シャフトの固定具も消す（S3-01。歯車を消してもシャフトが残る限り固定具は残る）
+    for (const anchor of Object.values(anchors)) {
+      if (anchor.target.kind !== 'shaft' || anchor.target.id !== shaftId) continue;
+      delete anchors[anchor.id];
+      anchorsChanged = true;
+    }
     delete shafts[shaftId];
     shaftsChanged = true;
   };
@@ -490,11 +513,12 @@ function deleteParts(scene: Scene, ids: readonly string[]): CommandResult {
     }
   }
 
-  if (!shaftsChanged && !gearsChanged && !motorsChanged) return done(scene);
+  if (!shaftsChanged && !gearsChanged && !motorsChanged && !anchorsChanged) return done(scene);
   return done({
     shafts: shaftsChanged ? shafts : scene.shafts,
     gears: gearsChanged ? gears : scene.gears,
     motors: motorsChanged ? motors : scene.motors,
+    anchors: anchorsChanged ? anchors : scene.anchors,
   });
 }
 
@@ -620,6 +644,30 @@ function addMotor(
     on: true,
   };
   return done({ ...scene, motors: withEntry(scene.motors, motorId, motor) }, [motorId]);
+}
+
+function addAnchor(
+  scene: Scene,
+  c: Extract<Command, { type: 'addAnchor' }>,
+  ctx: CommandContext,
+): CommandResult {
+  if (scene.shafts[c.shaftId] === undefined) {
+    return fail('notFound', `shaft ${c.shaftId} not found`);
+  }
+  // 1 つの対象に固定具は最大 1 つ。2 回目は何もしない（履歴にも積まない）
+  if (anchorOfShaft(scene, c.shaftId) !== null) return done(scene);
+  const anchorId = ctx.ids('anchor');
+  const anchor: Anchor = { id: anchorId, target: { kind: 'shaft', id: c.shaftId } };
+  return done({ ...scene, anchors: withEntry(scene.anchors, anchorId, anchor) }, [anchorId]);
+}
+
+function removeAnchor(scene: Scene, c: Extract<Command, { type: 'removeAnchor' }>): CommandResult {
+  if (!Object.hasOwn(scene.anchors, c.anchorId)) {
+    return fail('notFound', `anchor ${c.anchorId} not found`);
+  }
+  const anchors: Record<AnchorId, Anchor> = { ...scene.anchors };
+  delete anchors[c.anchorId];
+  return done({ ...scene, anchors });
 }
 
 // size を変えても rpm は変えない
@@ -765,6 +813,7 @@ function reattachShaft(
     shafts: withEntry(scene.shafts, shaft.id, { ...shaft, placement }),
     gears,
     motors: scene.motors,
+    anchors: scene.anchors,
   });
 }
 

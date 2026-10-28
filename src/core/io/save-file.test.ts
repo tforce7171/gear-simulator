@@ -28,6 +28,7 @@ const sceneA: Scene = {
   motors: {
     motor_1: { id: 'motor_1', shaftId: 'shaft_1', size: 'S', rpm: 60, direction: 1, on: true },
   },
+  anchors: {},
 };
 
 describe('toSaveFile', () => {
@@ -46,7 +47,9 @@ describe('parseSaveFileObject', () => {
   });
 
   it('空のシーンも ok', () => {
-    expect(parseSaveFileObject(toSaveFile({ shafts: {}, gears: {}, motors: {} })).ok).toBe(true);
+    expect(
+      parseSaveFileObject(toSaveFile({ shafts: {}, gears: {}, motors: {}, anchors: {} })).ok,
+    ).toBe(true);
   });
 
   const gear1 = sceneA.gears.gear_1;
@@ -99,6 +102,7 @@ const scene3: Scene = {
   motors: {
     motor_1: { id: 'motor_1', shaftId: 'shaft_1', size: 'S', rpm: 60, direction: -1, on: false },
   },
+  anchors: {},
 };
 
 // sceneA を JSON の生データにして、点区切りの場所の値を書き換えたものを返す（JSON の文字列）
@@ -131,7 +135,7 @@ describe('serializeSaveFile と parseSaveFile の往復', () => {
   });
 
   it('空のシーン', () => {
-    const empty: Scene = { shafts: {}, gears: {}, motors: {} };
+    const empty: Scene = { shafts: {}, gears: {}, motors: {}, anchors: {} };
     const result = parseSaveFile(serializeSaveFile(toSaveFile(empty)));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -365,13 +369,14 @@ describe('version 1 → 2 の移行（S2-05）', () => {
     expect(Object.keys(v1.scene.motors)).toHaveLength(1);
   });
 
-  it('parseSaveFile → ok、migratedFrom === 1、file.version === 2、scene は元のまま', () => {
+  // 固定具（S3-01）の無いシーンには anchors: {} を補う（暫定。S3-05 で version 3 の移行に置き換える）
+  it('parseSaveFile → ok、migratedFrom === 1、file.version === 2、scene は元のまま（anchors: {} を補う）', () => {
     const result = parseSaveFile(v1Text);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.migratedFrom).toBe(1);
     expect(result.file.version).toBe(2);
-    expect(result.file.scene).toEqual(v1.scene);
+    expect(result.file.scene).toEqual({ ...v1.scene, anchors: {} });
   });
 
   it('IndexedDB から読んだ値（parseSaveFileObject）も同じ', () => {
@@ -380,7 +385,7 @@ describe('version 1 → 2 の移行（S2-05）', () => {
     if (!result.ok) return;
     expect(result.migratedFrom).toBe(1);
     expect(result.file.version).toBe(2);
-    expect(result.file.scene).toEqual(v1.scene);
+    expect(result.file.scene).toEqual({ ...v1.scene, anchors: {} });
   });
 });
 
