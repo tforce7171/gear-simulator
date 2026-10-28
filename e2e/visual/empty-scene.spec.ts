@@ -1,5 +1,7 @@
 import { test } from '../fixtures/test';
-import { captureScene } from '../fixtures/visual';
+import { captureScene, prepareCapture, VISUAL_VIEWPORT } from '../fixtures/visual';
+
+test.use({ viewport: VISUAL_VIEWPORT });
 
 test('空のシーン（床のグリッドだけ）', async ({ page }) => {
   await page.goto('/');
@@ -12,5 +14,6 @@ test('空のシーン（床のグリッドだけ）', async ({ page }) => {
         requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
       ),
   );
+  await prepareCapture(page);
   await captureScene(page, 'empty-scene');
 });

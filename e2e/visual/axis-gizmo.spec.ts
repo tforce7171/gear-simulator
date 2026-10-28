@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs';
 import type { Scene } from '../../src/core/scene/types';
 import { test } from '../fixtures/test';
-import { captureScene } from '../fixtures/visual';
+import { captureScene, prepareCapture, VISUAL_VIEWPORT } from '../fixtures/visual';
+
+test.use({ viewport: VISUAL_VIEWPORT });
 
 const twoGears = JSON.parse(
   readFileSync(new URL('../fixtures/two-gears.json', import.meta.url), 'utf8'),
@@ -16,9 +18,11 @@ test('軸の目印と平行投影', async ({ page }) => {
     window.__gearSim?.setCamera({ position: [120, 160, 200], target: [0, 0, 20] }),
   );
   await page.waitForTimeout(200);
+  await prepareCapture(page);
   await captureScene(page, 'axis-gizmo-perspective');
   await page.keyboard.press('Numpad7');
   await page.keyboard.press('Numpad5');
   await page.waitForTimeout(1500);
+  await prepareCapture(page);
   await captureScene(page, 'axis-gizmo-ortho-top');
 });

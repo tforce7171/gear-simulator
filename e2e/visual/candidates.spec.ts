@@ -2,7 +2,9 @@ import { readFileSync } from 'node:fs';
 import type { Vec3 } from '../../src/core/math/vec3';
 import type { Scene } from '../../src/core/scene/types';
 import { test } from '../fixtures/test';
-import { captureScene } from '../fixtures/visual';
+import { captureScene, prepareCapture, VISUAL_VIEWPORT } from '../fixtures/visual';
+
+test.use({ viewport: VISUAL_VIEWPORT });
 
 const oneRoot = JSON.parse(
   readFileSync(new URL('../fixtures/one-root.json', import.meta.url), 'utf8'),
@@ -26,5 +28,6 @@ test('生やす候補', async ({ page }) => {
   if (hover === undefined) throw new Error('候補が無い');
   await page.mouse.move(hover.x, hover.y);
   await page.waitForTimeout(200);
+  await prepareCapture(page);
   await captureScene(page, 'candidates');
 });

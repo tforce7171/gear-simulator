@@ -1,24 +1,21 @@
-import { readFileSync } from 'node:fs';
-import type { Scene } from '../../src/core/scene/types';
+import { fixtureScene, openApp } from '../fixtures/sim';
 import { expect, test } from '../fixtures/test';
-import { captureScene } from '../fixtures/visual';
+import { captureScene, prepareCapture, VISUAL_VIEWPORT } from '../fixtures/visual';
 
 // S1-23: シーン A を情報表示 ON で撮る（ラベルの重なりと矢印の向きを人が画像で確かめる）
 
-const sceneA = JSON.parse(
-  readFileSync(new URL('../fixtures/scene-a.json', import.meta.url), 'utf8'),
-) as Scene;
+test.use({ viewport: VISUAL_VIEWPORT });
 
-test('情報表示 ON（scene-a）', async ({ page }) => {
-  await page.goto('/');
-  await page.waitForFunction(() => window.__gearSim?.isReady() === true);
-  await page.evaluate((s) => window.__gearSim?.loadScene(s), sceneA);
+test('info-overlay-on: 情報表示 ON（scene-a）', async ({ page }) => {
   // 3 枚の中心は [0, 22, 0]・[0, 22, 24]・[0, 22, 54]
-  await page.evaluate(() =>
-    window.__gearSim?.setCamera({ position: [70, 110, 45], target: [0, 20, 28] }),
-  );
+  await openApp(page, {
+    scene: fixtureScene('scene-a'),
+    camera: { position: [70, 110, 45], target: [0, 20, 28] },
+  });
   await page.getByTestId('toolbar-info').click();
   await expect(page.getByTestId('info-label')).toHaveCount(3);
-  await page.waitForTimeout(200);
+  // 一時停止すると rpm が 0 になり回転方向の矢印も消える（止まっている歯車には出さない）ので、
+  // lock-red と同じく止めずに撮る（implementation-log の S1-31）
+  await prepareCapture(page, { pause: false });
   await captureScene(page, 'info-overlay-on');
 });
