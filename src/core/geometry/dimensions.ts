@@ -7,13 +7,14 @@ import { wormLength, wormOutsideRadius, wormPitchRadius, wormSectionWidth } from
 // 歯車の種類ごとの寸法（S2-03。design.md §4・§5）
 
 // 軸方向に占める区画の幅。offset は区画の負側の面、中心は区画の中央。
-// 平歯車・ハスバ歯車・かさ歯車・ホイールは大きさの歯幅、ウォームは長さを AXIAL_SNAP の倍数に切り上げた値
+// 平歯車・ハスバ歯車・かさ歯車・ホイール・ねじ歯車（S2-04）は大きさの歯幅、ウォームは長さを AXIAL_SNAP の倍数に切り上げた値
 export function sectionWidth(gear: { readonly kind: GearKind; readonly size: SizeKey }): number {
   switch (gear.kind) {
     case 'spur':
     case 'helical':
     case 'bevel':
     case 'wormWheel':
+    case 'crossedHelical':
       return GEAR_SIZES[gear.size].faceWidth;
     case 'worm':
       return wormSectionWidth(gear.size);
@@ -33,6 +34,7 @@ export function gearPitchRadius(gear: {
     case 'helical':
     case 'bevel':
     case 'wormWheel':
+    case 'crossedHelical':
       return pitchRadius(gear.size, gear.teeth);
     case 'worm':
       return wormPitchRadius(gear.size);
@@ -53,6 +55,7 @@ export function gearEnvelope(gear: {
     case 'helical':
     case 'bevel':
     case 'wormWheel':
+    case 'crossedHelical':
       return {
         radius: outsideRadius(gear.size, gear.teeth),
         halfWidth: GEAR_SIZES[gear.size].faceWidth / 2,

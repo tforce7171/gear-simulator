@@ -35,3 +35,5 @@ export const BEVEL_APEX_CLEARANCE = 2; // mm。かさ歯車が載るシャフト
 export const WORM_THREADS = 1;
 export const WORM_DIAMETER_FACTOR = 10;
 export const WORM_LENGTH_PITCHES = 5;
+// ねじ歯車（S2-04）のねじれ角。向きは右（固定）。同じねじれ角・同じ向きの 2 枚が、軸の角度 90°（45° + 45°）でかみ合う
+export const CROSSED_HELIX_ANGLE = Math.PI / 4;

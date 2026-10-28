@@ -91,3 +91,25 @@ export function wormPhaseFromWheel(
   const fraction = (wheelTeeth * (wheel.phase - alphaC)) / (2 * Math.PI) + 0.5;
   return wrap(thetaC - 2 * Math.PI * s * fraction, 2 * Math.PI);
 }
+
+// ねじ歯車の組（S2-04）の位相の関係（接点で親の歯の中心と子の歯溝の中心が重なる）。ウォームとホイールの式の、
+// ウォームの条数 1 を親の歯数 z_P に置き換えたもの。P = 親（歯数 z_P、位相 φ_P）、C = 子（歯数 z_C）、
+// n = P の中心から C の中心への単位ベクトル、θ_c = n の P の軸まわりの角度、α_c = −n の C の軸まわりの角度、
+// s = (e_P × n)·e_C とすると
+//   z_C·(φ_C − α_c)/2π + 1/2 ≡ s·z_P·(θ_c − φ_P)/2π  (mod 1)
+// （右ねじれ 45° 同士は接点で歯すじが平行にそろい、P の歯 1 つぶんの回転で C が歯 1 つぶん s の向きに進む）。
+// 時間で微分すると z_C·ω_C + s·z_P·ω_P = 0 で、拘束の式と一致する。P と C を入れ替えても同じ関係になる
+export function crossedHelicalPhase(
+  parent: Placed & { readonly phase: number },
+  parentTeeth: number,
+  child: Placed,
+  childTeeth: number,
+): number {
+  const d = sub(child.center, parent.center);
+  const thetaC = angleAround(parent.axis, d);
+  const alphaC = angleAround(child.axis, scale(d, -1));
+  const s = skewSign(parent.axis, parent.center, child.axis, child.center);
+  const pitch = toothPitchAngle(childTeeth);
+  const fraction = (s * parentTeeth * (thetaC - parent.phase)) / (2 * Math.PI) - 0.5;
+  return wrap(alphaC + pitch * fraction, pitch);
+}

@@ -6,7 +6,7 @@ import {
   ShapeUtils,
   Vector2,
 } from 'three';
-import { GEAR_SIZES, HELIX_ANGLE } from '../core/constants';
+import { CROSSED_HELIX_ANGLE, GEAR_SIZES, HELIX_ANGLE } from '../core/constants';
 import { BEVEL_COS, bevelConeDistance, bevelToothWidth } from '../core/geometry/bevel';
 import { helicalSliceCount, helicalTwistAt, rotateOutline } from '../core/geometry/helical';
 import { spurOutline, type Vec2 } from '../core/geometry/involute';
@@ -230,6 +230,9 @@ function buildGeometry(shape: GearShape, size: SizeKey, teeth: number): BufferGe
     case 'wormWheel':
       // 進み角と同じねじれ角の右ねじれのハスバ歯車（のどの凹みは省く。S2-03）
       return buildHelicalGeometry(size, teeth, 'right', WORM_LEAD_ANGLE);
+    case 'crossedHelical':
+      // ねじれ角 45° の右ねじれ（S2-04）。歯幅 b でのねじれの角度は b / r
+      return buildHelicalGeometry(size, teeth, 'right', CROSSED_HELIX_ANGLE);
     default:
       return assertNever(shape);
   }

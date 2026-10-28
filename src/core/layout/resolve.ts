@@ -17,7 +17,12 @@ import {
 import { canMesh, meshGeometryOf, meshKindOf } from '../geometry/can-mesh';
 import { gearEnvelope, gearPitchRadius, sectionWidth } from '../geometry/dimensions';
 import { centerDistance, meshPhase, pitchRadius } from '../geometry/mesh';
-import { skewChildFrame, wheelPhaseFromWorm, wormPhaseFromWheel } from '../geometry/skew';
+import {
+  crossedHelicalPhase,
+  skewChildFrame,
+  wheelPhaseFromWorm,
+  wormPhaseFromWheel,
+} from '../geometry/skew';
 import { axisVector, radialDirection } from '../math/axis';
 import { add, dot, length, scale, sub, type Vec3 } from '../math/vec3';
 import { gearCenter } from '../scene/gear-center';
@@ -226,7 +231,7 @@ function placeChild(
 }
 
 // skew の子の basePhase（S2-03）。ウォームとホイールは、接点でウォームのねじ山の中心とホイールの歯溝の中心が重なる
-// ように決める（core/geometry/skew.ts）。S2-04 でねじ歯車の組を足す
+// ように決める（core/geometry/skew.ts）。ねじ歯車の組（S2-04）は、接点で親の歯の中心と子の歯溝の中心が重なるように決める
 function skewPhase(
   parent: Gear,
   parentLayout: GearLayout,
@@ -245,6 +250,13 @@ function skewPhase(
         { center: parentLayout.center, axis: parentLayout.axis, phase: parentLayout.basePhase },
         parent.teeth,
         childPlaced,
+      );
+    case 'crossedHelical':
+      return crossedHelicalPhase(
+        { center: parentLayout.center, axis: parentLayout.axis, phase: parentLayout.basePhase },
+        parent.teeth,
+        childPlaced,
+        child.teeth,
       );
     case 'spur':
     case 'helical':
@@ -314,7 +326,7 @@ function meshesOf(
 // 軸方向の区間の重なりが COLLISION_EPS より大きく、軸に垂直な方向の中心間の距離がピッチ円半径の和と
 // MESH_DISTANCE_EPS 以内で一致する。安い数値の判定を先に、canMesh を最後にする。
 // かさ歯車（S2-02）は、どちらもかさ歯車、同じ大きさ・同じ歯数、軸が直交、頂点の距離が MESH_DISTANCE_EPS 以内。
-// ねじれた位置の組（S2-03。ウォームとホイール）は、かみ合える組、軸が直交、中心を結ぶ線が両方の軸に直交し
+// ねじれた位置の組（S2-03 のウォームとホイール、S2-04 のねじ歯車）は、かみ合える組、軸が直交、中心を結ぶ線が両方の軸に直交し
 // （軸方向の成分が MESH_DISTANCE_EPS 以内）、その長さがピッチ円半径の和と MESH_DISTANCE_EPS 以内で一致する
 function inContact(a: Gear, la: GearLayout, b: Gear, lb: GearLayout): boolean {
   if (a.size !== b.size || a.shaftId === b.shaftId) return false;
@@ -374,7 +386,7 @@ function collidersOf(
 }
 
 // 歯車の円柱。かさ歯車（S2-02）は、歯のある円すい台に外接する円柱（大端の中心から頂点の側へ b·cos45°、
-// 半径は大端の歯先）。ウォーム（S2-03）は半径 5m + m、長さ 5πm の円柱、ホイールは歯先円の円柱（gearEnvelope）
+// 半径は大端の歯先）。ウォーム（S2-03）は半径 5m + m、長さ 5πm の円柱、ホイール・ねじ歯車（S2-04）は歯先円の円柱（gearEnvelope）
 function gearColliderOf(gear: Gear, layout: GearLayout): Collider {
   if (gear.kind === 'bevel') {
     const c = bevelCollisionCylinder(layout.center, layout.axis, gear);

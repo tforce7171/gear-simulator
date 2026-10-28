@@ -11,7 +11,7 @@ import type { Gear, Scene } from '../scene/types';
 // - ねじれた位置の組（S2-03 のウォームとホイール。S2-04 のねじ歯車も同じ式）: s·z_a, z_b。
 //   s = (e_a × u_ab)·e_b（e は各シャフトの軸の単位ベクトル、u_ab は a の中心から b の中心への単位ベクトル。
 //   a と b を入れ替えても変わらない）。ウォームの z は条数（1）。中心は resolveLayout(scene) から取る
-// 後続（S2-04 のねじ歯車、S3-02 の内歯車など）は、ここに種類を足す
+// 後続（S3-02 の内歯車など）は、ここに種類を足す
 export function meshCoefficients(mesh: Mesh, scene: Scene): { a: number; b: number } {
   const a = scene.gears[mesh.a];
   const b = scene.gears[mesh.b];
@@ -25,6 +25,7 @@ export function meshCoefficients(mesh: Mesh, scene: Scene): { a: number; b: numb
     case 'bevel':
       return { a: apexOf(a) * a.teeth, b: apexOf(b) * b.teeth };
     case 'worm':
+    case 'crossedHelical':
       return { a: skewSignOf(mesh, scene) * a.teeth, b: b.teeth };
     default:
       return assertNever(mesh.kind);
