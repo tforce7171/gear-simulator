@@ -1,9 +1,10 @@
-import { LOCK_OMEGA_EPS } from '../constants';
+import { LOCK_OMEGA_EPS, MOTOR_SIZES } from '../constants';
 import type { Layout } from '../layout/types';
 import type { Motor, MotorId, Scene, ShaftId } from '../scene/types';
-import { solveVelocities } from './balance';
+import { type ShaftDrive, solveVelocities } from './balance';
 import { buildMeshGraph, type KinematicComponent, type MeshGraph } from './graph';
 import { multiplyVector } from './linalg';
+import { rpmToRadPerSec } from './motor';
 import {
   emptyMotion,
   type HandConstraint,
@@ -11,6 +12,7 @@ import {
   type LockReason,
   type MotionState,
 } from './types';
+import { solveWormSections, type WormSections, wormSections } from './worm-solve';
 
 // 運動の状態を 1 フレーム進める（design.md §6）。かみ合いのグラフ（S1-05）と力のつり合い（S1-06）から、
 // ロック・負けたモーター・角度（θ = N q）を求める
@@ -22,6 +24,17 @@ export interface MotionOptions {
 
 export function initialMotionState(): MotionState {
   return emptyMotion();
+}
+
+// ウォームの区画（S2-03）。グラフと同じく、グラフの参照ごとに覚える
+const wormCache = new WeakMap<MeshGraph, Array<WormSections | null>>();
+
+function wormSectionsOf(scene: Scene, graph: MeshGraph): Array<WormSections | null> {
+  const cached = wormCache.get(graph);
+  if (cached !== undefined) return cached;
+  const sections = graph.components.map((c) => wormSections(scene, c));
+  wormCache.set(graph, sections);
+  return sections;
 }
 
 // グラフは Layout の参照ごとに覚え、シーンの参照が変わったときだけ作り直す。
@@ -84,6 +97,20 @@ export function stepMotion(
       : undefined;
   const handComponent = hand === undefined ? undefined : graph.componentOfShaft[hand.shaftId];
 
+  // ウォームを含む成分の区画（S2-03）と、シャフトごとの ON のモーターの和（区画ごとのつり合いに使う）
+  const worms = wormSectionsOf(scene, graph);
+  const drives = new Map<ShaftId, ShaftDrive>();
+  for (const [shaftId, motors] of motorsOfShaft) {
+    let damping = 0;
+    let bias = 0;
+    for (const motor of motors) {
+      const stall = MOTOR_SIZES[motor.size].stallTorque;
+      damping += stall / rpmToRadPerSec(motor.rpm);
+      bias += stall * motor.direction;
+    }
+    drives.set(shaftId, { damping, bias });
+  }
+
   const angles: Record<ShaftId, number> = {};
   const omegas: Record<ShaftId, number> = {};
   const locks: LockInfo[] = [];
@@ -108,7 +135,20 @@ export function stepMotion(
     const qPrev = component.referenceShaftIds.map((id) => prev.angles[id] ?? 0);
     let qNext: number[];
     let qDot: number[];
-    if (grabbed && hand !== undefined) {
+    const worm = worms[index] ?? null;
+    const wormSection =
+      worm === null || hand === undefined ? undefined : worm.sectionOfShaft.get(hand.shaftId);
+    if (
+      grabbed &&
+      worm !== null &&
+      wormSection !== undefined &&
+      worm.sections[wormSection]?.incoming
+    ) {
+      // ウォームから規定値を受ける区画をつかんだ（手と上流のウォームの両方が規定値になる）: 常にロック（S2-03）
+      locks.push(lockOf('wormBackDrive', component));
+      qDot = qPrev.map(() => 0);
+      qNext = qPrev;
+    } else if (grabbed && hand !== undefined) {
       if (dof !== 1) {
         throw new Error(`自由度 ${dof} の成分を手で回すのは未対応（S3-03）: ${hand.shaftId}`);
       }
@@ -116,6 +156,16 @@ export function stepMotion(
       if (n === 0) throw new Error(`つかんだシャフトが成分の自由度に乗っていない: ${hand.shaftId}`);
       qNext = [hand.angle / n];
       qDot = qNext.map((v, k) => (dt > 0 ? (v - (qPrev[k] as number)) / dt : 0));
+    } else if (worm !== null) {
+      // ウォームを含む成分（S2-03）: 区画ごとにトポロジカル順に解き、ω から q（基準シャフトの ω）を求めて積分する
+      const solution = solveWormSections(worm, drives);
+      if (solution.ok) {
+        qDot = component.referenceShaftIds.map((id) => solution.omegas.get(id) ?? 0);
+      } else {
+        locks.push(lockOf(solution.reason, component));
+        qDot = qPrev.map(() => 0);
+      }
+      qNext = qPrev.map((v, k) => v + (qDot[k] as number) * dt);
     } else {
       const solved = balance.componentQ[index] ?? [];
       const stalemate =

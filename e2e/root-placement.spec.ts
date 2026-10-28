@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import type { Page } from '@playwright/test';
 import type { Layout } from '../src/core/layout/types';
 import type { Vec3 } from '../src/core/math/vec3';
-import type { Scene, ShaftPlacement } from '../src/core/scene/types';
+import { isChildPlacement, type Scene, type ShaftPlacement } from '../src/core/scene/types';
 import { expect, test } from './fixtures/test';
 
 // S1-17: パレットから起点のシャフトを置く、R で向きを変える、位置と高さのハンドル
@@ -66,7 +66,7 @@ function placementOf(scene: Scene, shaftId: string): ShaftPlacement {
 
 function originOf(scene: Scene, shaftId: string): Vec3 {
   const p = placementOf(scene, shaftId);
-  if (p.kind === 'mesh' || p.kind === 'bevel') throw new Error(`${shaftId} は ${p.kind}`);
+  if (isChildPlacement(p)) throw new Error(`${shaftId} は ${p.kind}`);
   return p.origin;
 }
 

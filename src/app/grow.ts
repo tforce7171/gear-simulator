@@ -1,12 +1,14 @@
 import { DEFAULT_TEETH } from '../core/constants';
 import type { Command } from '../core/edit/commands';
+import { skewSign } from '../core/geometry/skew';
 import { type GrowCandidate, listGrowCandidates } from '../core/layout/candidates';
+import { resolveLayout } from '../core/layout/resolve';
 import type { Gear, GearKind, Scene, SizeKey } from '../core/scene/types';
 import type { CandidateSpec } from '../render/candidates';
 
 // 歯車を生やす（S1-18）。純粋関数のみ。選んだ歯車の候補を列挙し、候補を編集コマンドに変換する
 
-export type CandidateKind = GrowCandidate['kind']; // 'perimeter' | 'bevel' | 'coaxial'（S1-10、S2-02）
+export type CandidateKind = GrowCandidate['kind']; // 'perimeter' | 'bevel' | 'skew' | 'coaxial'（S1-10、S2-02、S2-03）
 
 // 生やす歯車の大きさと歯数。外周は親と同じ大きさ（同じ大きさ同士しかかみ合わない）、
 // 同じ軸はパレットで選んでいる大きさ。歯数はどちらも DEFAULT_TEETH[大きさ]
@@ -59,6 +61,16 @@ export function growCommand(candidate: GrowCandidate): Command {
       side: candidate.side,
     };
   }
+  if (candidate.kind === 'skew') {
+    return {
+      type: 'growGear',
+      mode: 'skew',
+      parentGearId: candidate.parentGearId,
+      axisStep: candidate.axisStep,
+      side: candidate.side,
+      teeth: candidate.teeth,
+    };
+  }
   return {
     type: 'growGear',
     mode: 'coaxial',
@@ -90,11 +102,19 @@ export function candidateSpec(scene: Scene, candidate: GrowCandidate): Candidate
   }
   const parent = scene.gears[candidate.parentGearId];
   if (parent === undefined) throw new Error(`candidateSpec: no gear ${candidate.parentGearId}`);
-  // 外周は −(親の歯数 / 子の歯数)。かさ歯車（S2-02）は apex_親·z·ω_親 + apex_子·z·ω_子 = 0、apex_子 = −side から 親の apex × side
+  // 外周は −(親の歯数 / 子の歯数)。かさ歯車（S2-02）は apex_親·z·ω_親 + apex_子·z·ω_子 = 0、apex_子 = −side から 親の apex × side。
+  // ねじれた位置の組（S2-03）は z_子·ω_子 + s·z_親·ω_親 = 0（s = (e_親 × u)·e_子）から −s·z_親 / z_子
+  const parentLayout = resolveLayout(scene).gears[parent.id];
   const followRatio =
     candidate.kind === 'bevel'
       ? (parent.kind === 'bevel' ? parent.apex : 1) * candidate.side
-      : -parent.teeth / candidate.teeth;
+      : candidate.kind === 'skew'
+        ? (-(parentLayout === undefined
+            ? 0
+            : skewSign(parentLayout.axis, parentLayout.center, candidate.axis, candidate.center)) *
+            parent.teeth) /
+          candidate.teeth
+        : -parent.teeth / candidate.teeth;
   return {
     ...common,
     phase: candidate.basePhase,

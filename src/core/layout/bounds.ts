@@ -1,5 +1,4 @@
-import { GEAR_SIZES } from '../constants';
-import { outsideRadius } from '../geometry/mesh';
+import { gearEnvelope } from '../geometry/dimensions';
 import { axisVector } from '../math/axis';
 import { add, scale, type Vec3 } from '../math/vec3';
 import type { Axis, Scene } from '../scene/types';
@@ -59,8 +58,8 @@ export function boundsOf(scene: Scene, layout: Layout, ids?: readonly string[]):
     const gear = scene.gears[id];
     const placed = layout.gears[id];
     if (gear === undefined || placed === undefined) return;
-    const radius = outsideRadius(gear.size, gear.teeth);
-    acc.addCylinder(placed.center, placed.axis, radius, GEAR_SIZES[gear.size].faceWidth / 2);
+    const { radius, halfWidth } = gearEnvelope(gear);
+    acc.addCylinder(placed.center, placed.axis, radius, halfWidth);
   };
   const addShaft = (id: string): void => {
     const shaft = layout.shafts[id];

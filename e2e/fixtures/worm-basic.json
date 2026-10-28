@@ -1,0 +1,50 @@
+{
+  "shafts": {
+    "shaft_w": {
+      "id": "shaft_w",
+      "placement": {
+        "kind": "root",
+        "origin": [0, 80, 0],
+        "axis": "x"
+      }
+    },
+    "shaft_h": {
+      "id": "shaft_h",
+      "placement": {
+        "kind": "skew",
+        "parentGearId": "gear_w",
+        "childGearId": "gear_h",
+        "axisStep": 2,
+        "side": -1
+      }
+    }
+  },
+  "gears": {
+    "gear_w": {
+      "id": "gear_w",
+      "kind": "worm",
+      "shaftId": "shaft_w",
+      "size": "M",
+      "teeth": 1,
+      "offset": 0
+    },
+    "gear_h": {
+      "id": "gear_h",
+      "kind": "wormWheel",
+      "shaftId": "shaft_h",
+      "size": "M",
+      "teeth": 30,
+      "offset": 0
+    }
+  },
+  "motors": {
+    "motor_m": {
+      "id": "motor_m",
+      "shaftId": "shaft_w",
+      "size": "M",
+      "rpm": 60,
+      "direction": 1,
+      "on": true
+    }
+  }
+}

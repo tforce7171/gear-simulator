@@ -28,34 +28,49 @@ export function solveBalance(
   basis: Matrix,
   drives: readonly ShaftDrive[],
 ): { q: number[]; omegas: number[] } {
+  return solveBalanceAffine(basis, null, drives);
+}
+
+// ω = ω0 + N q（ω0 は決まった分。S2-03 のウォームの規定値を満たす特解）として、つり合いを解く。
+// シャフトに働くトルクは b − D ω なので (Nᵀ D N) q = Nᵀ (b − D ω0)。解が一意でないときは |ω0 + N q|² が最小のもの。
+// offset が null なら ω0 = 0（solveBalance と同じ）
+export function solveBalanceAffine(
+  basis: Matrix,
+  offset: readonly number[] | null,
+  drives: readonly ShaftDrive[],
+): { q: number[]; omegas: number[] } {
   if (drives.length !== basis.length) throw new RangeError('drives の長さが basis の行数と違う');
+  if (offset !== null && offset.length !== basis.length) {
+    throw new RangeError('offset の長さが basis の行数と違う');
+  }
+  const base = offset ?? basis.map(() => 0);
   const dof = basis[0]?.length ?? 0;
-  if (dof === 0) return { q: [], omegas: basis.map(() => 0) };
+  if (dof === 0) return { q: [], omegas: [...base] };
 
   const nT = transpose(basis, dof);
   const dN = basis.map((row, s) => row.map((v) => v * (drives[s] as ShaftDrive).damping));
   const a = multiply(nT, dN, dof); // Nᵀ D N
   const r = multiplyVector(
     nT,
-    drives.map((d) => d.bias),
-  ); // Nᵀ b
+    drives.map((d, s) => d.bias - d.damping * (base[s] as number)),
+  ); // Nᵀ (b − D ω0)
 
-  // 一般解 q = q_p + Z z。|N (q_p + Z z)|² を z について最小にする:
-  // (Zᵀ G Z) z = −Zᵀ G q_p（G = Nᵀ N。N の列は独立なので Zᵀ G Z は正則）
+  // 一般解 q = q_p + Z z。|ω0 + N (q_p + Z z)|² を z について最小にする:
+  // (Zᵀ G Z) z = −Zᵀ Nᵀ (ω0 + N q_p)（G = Nᵀ N。N の列は独立なので Zᵀ G Z は正則）
   let q = solveParticular(a, r, dof);
   const z = nullSpace(a, dof);
   const free = z[0]?.length ?? 0;
   if (free > 0) {
     const g = multiply(nT, basis, dof);
     const zT = transpose(z, free);
-    const zTg = multiply(zT, g, dof);
-    const m = multiply(zTg, z, free);
-    const rhs = multiplyVector(zTg, q).map((v) => -v);
+    const m = multiply(multiply(zT, g, dof), z, free);
+    const current = multiplyVector(basis, q).map((v, s) => v + (base[s] as number));
+    const rhs = multiplyVector(zT, multiplyVector(nT, current)).map((v) => -v);
     const y = solveParticular(m, rhs, free);
     const shift = multiplyVector(z, y);
     q = q.map((v, i) => v + (shift[i] as number));
   }
-  return { q, omegas: multiplyVector(basis, q) };
+  return { q, omegas: multiplyVector(basis, q).map((v, s) => v + (base[s] as number)) };
 }
 
 export interface BalanceResult {

@@ -12,9 +12,9 @@ describe('emptyScene', () => {
 
 describe('gearCenter', () => {
   it('シャフトの原点 + (offset + 歯幅/2) × 軸', () => {
-    expect(gearCenter([0, 10, 0], 'y', { size: 'S', offset: 4 })).toEqual([0, 16, 0]);
-    expect(gearCenter([30, 0, 0], 'z', { size: 'S', offset: 0 })).toEqual([30, 0, 2]);
-    expect(gearCenter([0, 0, 0], 'x', { size: 'L', offset: -8 })).toEqual([-2, 0, 0]);
+    expect(gearCenter([0, 10, 0], 'y', { kind: 'spur', size: 'S', offset: 4 })).toEqual([0, 16, 0]);
+    expect(gearCenter([30, 0, 0], 'z', { kind: 'spur', size: 'S', offset: 0 })).toEqual([30, 0, 2]);
+    expect(gearCenter([0, 0, 0], 'x', { kind: 'spur', size: 'L', offset: -8 })).toEqual([-2, 0, 0]);
   });
 });
 

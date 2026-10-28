@@ -6,11 +6,19 @@ import {
   ShapeUtils,
   Vector2,
 } from 'three';
-import { GEAR_SIZES } from '../core/constants';
+import { GEAR_SIZES, HELIX_ANGLE } from '../core/constants';
 import { BEVEL_COS, bevelConeDistance, bevelToothWidth } from '../core/geometry/bevel';
 import { helicalSliceCount, helicalTwistAt, rotateOutline } from '../core/geometry/helical';
 import { spurOutline, type Vec2 } from '../core/geometry/involute';
 import { gearShapeKey } from '../core/geometry/shape-key';
+import {
+  WORM_LEAD_ANGLE,
+  wormAxialPitch,
+  wormLength,
+  wormRootRadius,
+  wormThreadOffset,
+  wormThreadRadius,
+} from '../core/geometry/worm';
 import { assertNever } from '../core/scene/gear-shape';
 import type { GearShape, Hand, SizeKey } from '../core/scene/types';
 
@@ -110,17 +118,90 @@ export function buildBevelGeometry(size: SizeKey, teeth: number): BufferGeometry
 // ハスバ歯車（S2-01）。軸直角断面（平歯車と同じ 2D 輪郭）を、歯幅の方向に押し出しながらねじる
 // （core/geometry/helical.ts の helicalTwistAt。歯幅の中央の断面が平歯車の歯形と一致する）。
 // 両端の面は平歯車と同じ輪郭を三角形に分け、その断面のねじれの分だけ回す
-export function buildHelicalGeometry(size: SizeKey, teeth: number, hand: Hand): BufferGeometry {
+// helixAngle は省くと HELIX_ANGLE（ウォームホイールは進み角 WORM_LEAD_ANGLE・右。S2-03）
+export function buildHelicalGeometry(
+  size: SizeKey,
+  teeth: number,
+  hand: Hand,
+  helixAngle: number = HELIX_ANGLE,
+): BufferGeometry {
   const { module, faceWidth } = GEAR_SIZES[size];
   const outline = spurOutline(module, teeth);
-  const slices = helicalSliceCount(size, teeth);
+  const slices = helicalSliceCount(size, teeth, helixAngle);
   const zAt = (k: number) => -faceWidth / 2 + (faceWidth * k) / slices;
   const sections = Array.from({ length: slices + 1 }, (_, k) => ({
-    points: rotateOutline(outline, helicalTwistAt(size, teeth, hand, zAt(k))),
+    points: rotateOutline(outline, helicalTwistAt(size, teeth, hand, zAt(k), helixAngle)),
     z: zAt(k),
   }));
   return loftGeometry(outline, sections);
 }
+
+// ウォーム（S2-03）。ローカルの原点はねじ山の中央（区画の中央）、軸はローカルの z。
+// 軸方向断面がラックの歯形（圧力角 20° の台形。wormThreadRadius）のねじ山を、右ねじのらせんに沿って掃いた形:
+// 軸まわりの角度 θ・軸方向の位置 z の点の半径は wormThreadRadius(z − wormThreadOffset(θ))（位相 0 で、角度 θ の
+// ねじ山の中心は z = π·m·θ/2π）。両端は 45° で歯底円まで面取りし、歯底円の円板で閉じる
+export function buildWormGeometry(size: SizeKey): BufferGeometry {
+  const half = wormLength(size) / 2;
+  const root = wormRootRadius(size);
+  const pitch = wormAxialPitch(size);
+  const angular = WORM_ANGULAR_SEGMENTS;
+  // 丸め誤差で 1 つ増えないように、わずかに引いてから切り上げる（中で 240 分割）
+  const axial = Math.ceil((2 * half) / (pitch / WORM_AXIAL_SEGMENTS_PER_PITCH) - 1e-9);
+  const positions: number[] = [];
+  const indices: number[] = [];
+  const radiusAt = (theta: number, z: number) =>
+    Math.min(
+      wormThreadRadius(size, z - wormThreadOffset(size, theta)),
+      root + (half - Math.abs(z)), // 両端の面取り
+    );
+  // 側面: (axial + 1) 行 × (angular + 1) 列（列の最後は θ = 2π で最初と同じ位置）
+  for (let i = 0; i <= axial; i++) {
+    const z = -half + (2 * half * i) / axial;
+    for (let j = 0; j <= angular; j++) {
+      const theta = (2 * Math.PI * j) / angular;
+      const r = radiusAt(theta, z);
+      positions.push(r * Math.cos(theta), r * Math.sin(theta), z);
+    }
+  }
+  const row = angular + 1;
+  for (let i = 0; i < axial; i++) {
+    for (let j = 0; j < angular; j++) {
+      const a = i * row + j;
+      const b = a + 1;
+      const c = a + row + 1;
+      const d = a + row;
+      // 外向き（θ が増える向き × z が増える向き = 外向き）
+      indices.push(a, b, c, a, c, d);
+    }
+  }
+  // 両端の円板（半径は歯底円。面取りで端の輪は歯底円になる）。側面と法線を分けるため頂点は別に持つ
+  for (const [z, up] of [
+    [-half, false],
+    [half, true],
+  ] as const) {
+    const center = positions.length / 3;
+    positions.push(0, 0, z);
+    for (let j = 0; j <= angular; j++) {
+      const theta = (2 * Math.PI * j) / angular;
+      positions.push(root * Math.cos(theta), root * Math.sin(theta), z);
+    }
+    for (let j = 1; j <= angular; j++) {
+      if (up) indices.push(center, center + j, center + j + 1);
+      else indices.push(center, center + j + 1, center + j);
+    }
+  }
+  const geometry = new BufferGeometry();
+  geometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+// ウォームの形の分割数（軸まわり、軸方向ピッチ 1 つあたり）
+export const WORM_ANGULAR_SEGMENTS = 64;
+export const WORM_AXIAL_SEGMENTS_PER_PITCH = 48;
 
 function signedArea(outline: readonly Vec2[], [a, b, c]: readonly number[]): number {
   const [ax, ay] = outline[a as number] as Vec2;
@@ -144,6 +225,11 @@ function buildGeometry(shape: GearShape, size: SizeKey, teeth: number): BufferGe
       return buildHelicalGeometry(size, teeth, shape.hand);
     case 'bevel':
       return buildBevelGeometry(size, teeth);
+    case 'worm':
+      return buildWormGeometry(size);
+    case 'wormWheel':
+      // 進み角と同じねじれ角の右ねじれのハスバ歯車（のどの凹みは省く。S2-03）
+      return buildHelicalGeometry(size, teeth, 'right', WORM_LEAD_ANGLE);
     default:
       return assertNever(shape);
   }

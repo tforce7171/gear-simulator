@@ -1,5 +1,5 @@
-import { AXIAL_SNAP, GEAR_SIZES, MOTOR_RPM_RANGE } from '../constants';
-import { canMesh, meshKindOf } from '../geometry/can-mesh';
+import { AXIAL_SNAP, GEAR_SIZES, MOTOR_RPM_RANGE, WORM_THREADS } from '../constants';
+import { canMesh, meshGeometryOf, placementKindOf } from '../geometry/can-mesh';
 import { isApex, isGearKind, isHand } from './gear-shape';
 import { isChildPlacement, type Scene, type ShaftId, type ShaftPlacement } from './types';
 
@@ -35,8 +35,8 @@ export type SceneErrorCode =
   | 'meshKindMismatch' // 親と子の種類・形がかみ合わない（S2-01）
   | 'invalidHand' // ハスバ歯車の hand が 'left' でも 'right' でもない（S2-01）
   | 'invalidApex' // かさ歯車の apex が 1 でも -1 でもない（S2-02）
-  | 'invalidAxisStep' // bevel の配置の axisStep が 1 でも 2 でもない（S2-02）
-  | 'invalidSide' // bevel の配置の side が 1 でも -1 でもない（S2-02）
+  | 'invalidAxisStep' // bevel・skew の配置の axisStep が 1 でも 2 でもない（S2-02、S2-03）
+  | 'invalidSide' // bevel・skew の配置の side が 1 でも -1 でもない（S2-02、S2-03）
   | 'bevelApexMismatch' // bevel の配置の子の apex が −side でない（S2-02）
   | 'meshCycle';
 
@@ -84,12 +84,12 @@ export function validateScene(scene: Scene): { ok: true } | { ok: false; errors:
       if (origin.length !== 3 || !origin.every(isFiniteNumber)) {
         push('notFinite', key, `${base}.origin`, 'origin must be 3 finite numbers');
       }
-    } else if (p.kind === 'mesh' || p.kind === 'bevel') {
+    } else if (p.kind === 'mesh' || p.kind === 'bevel' || p.kind === 'skew') {
       if (p.kind === 'mesh' && !isFiniteNumber(p.angle)) {
         push('notFinite', key, `${base}.angle`, 'angle must be finite');
       }
-      if (p.kind === 'bevel') {
-        // 軸は親の軸を 1 回か 2 回進めたもの（0 回＝親と同じ軸は、かさ歯車ではかみ合わない）
+      if (p.kind === 'bevel' || p.kind === 'skew') {
+        // 軸は親の軸を 1 回か 2 回進めたもの（0 回＝親と同じ軸は、かさ歯車・ねじれた位置の組ではかみ合わない）
         if (p.axisStep !== 1 && p.axisStep !== 2) {
           push(
             'invalidAxisStep',
@@ -146,9 +146,10 @@ export function validateScene(scene: Scene): { ok: true } | { ok: false; errors:
         parent !== undefined &&
         isGearKind(child.kind) &&
         isGearKind(parent.kind) &&
-        (!canMesh(child, parent) || (meshKindOf(parent) === 'bevel') !== (p.kind === 'bevel'))
+        (!canMesh(child, parent) || placementKindOf(meshGeometryOf(parent)) !== p.kind)
       ) {
-        // かみ合えない組か、配置の種類がかみ合いの種類に合わない（かさ歯車は bevel、それ以外は mesh。S2-02）
+        // かみ合えない組か、配置の種類がかみ合いの位置関係に合わない
+        // （平行は mesh、かさ歯車は bevel（S2-02）、ウォームとホイールは skew（S2-03））
         push(
           'meshKindMismatch',
           p.childGearId,
@@ -197,6 +198,16 @@ export function validateScene(scene: Scene): { ok: true } | { ok: false; errors:
       push('invalidSize', key, `${base}.size`, `invalid size "${String(gear.size)}"`);
     } else if (!Number.isInteger(gear.teeth)) {
       push('teethNotInteger', key, `${base}.teeth`, `teeth must be an integer: ${gear.teeth}`);
+    } else if (gear.kind === 'worm') {
+      // ウォームの teeth は条数で、常に WORM_THREADS（S2-03）
+      if (gear.teeth !== WORM_THREADS) {
+        push(
+          'teethOutOfRange',
+          key,
+          `${base}.teeth`,
+          `worm teeth (threads) must be ${WORM_THREADS}: ${gear.teeth}`,
+        );
+      }
     } else {
       const { minTeeth, maxTeeth } = GEAR_SIZES[gear.size];
       if (gear.teeth < minTeeth || gear.teeth > maxTeeth) {
@@ -266,7 +277,7 @@ export function validateScene(scene: Scene): { ok: true } | { ok: false; errors:
     }
   }
 
-  // mesh・bevel の親子をたどると root か detached に行き着く（循環しない）
+  // mesh・bevel・skew の親子をたどると root か detached に行き着く（循環しない）
   for (const key of Object.keys(scene.shafts)) {
     const start = scene.shafts[key]?.placement;
     if (start === undefined || !isChildPlacement(start)) continue;

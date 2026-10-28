@@ -8,11 +8,12 @@ import {
   TorusGeometry,
 } from 'three';
 import { GEAR_SIZES } from '../core/constants';
+import { gearEnvelope } from '../core/geometry/dimensions';
 import { spurDimensions } from '../core/geometry/involute';
 import type { GearLayout } from '../core/layout/types';
 import { axisVector } from '../core/math/axis';
 import { add, scale, type Vec3 } from '../core/math/vec3';
-import type { Axis, Gear, GearId } from '../core/scene/types';
+import type { Axis, Gear, GearId, GearKind } from '../core/scene/types';
 import { placeOnAxis } from './frame';
 
 // 情報表示の回転方向の矢印（S1-23、要件 §7.3）。歯車の軸の正の側の面の少し外に、歯先円の 1.15 倍の
@@ -38,13 +39,18 @@ export interface InfoArrowSpec {
 
 // 歯車の形と配置から、矢印の置き方を決める
 export function infoArrowSpec(
-  gear: Pick<Gear, 'id' | 'size' | 'teeth'>,
+  gear: Pick<Gear, 'id' | 'size' | 'teeth'> & { readonly kind?: GearKind },
   layout: Pick<GearLayout, 'center' | 'axis'>,
   direction: 1 | -1,
 ): InfoArrowSpec {
   const { module, faceWidth } = GEAR_SIZES[gear.size];
-  const { addendumRadius } = spurDimensions(module, gear.teeth);
-  const lift = faceWidth / 2 + FACE_GAP_PER_MODULE * module;
+  // 種類が分かれば、歯車を囲む円柱（ウォームは長さ 5πm・半径 6m。S2-03）の外に出す
+  const envelope =
+    gear.kind === undefined
+      ? { radius: spurDimensions(module, gear.teeth).addendumRadius, halfWidth: faceWidth / 2 }
+      : gearEnvelope({ kind: gear.kind, size: gear.size, teeth: gear.teeth });
+  const addendumRadius = envelope.radius;
+  const lift = envelope.halfWidth + FACE_GAP_PER_MODULE * module;
   return {
     gearId: gear.id,
     position: add(layout.center, scale(axisVector(layout.axis), lift)),
