@@ -311,7 +311,7 @@ describe('ハスバ歯車（S2-01）', () => {
   });
 
   it('知らない種類 → invalidKind', () => {
-    const bad = { ...rootGear, kind: 'worm' } as unknown as Gear;
+    const bad = { ...rootGear, kind: 'gearbox' } as unknown as Gear;
     expect(errorsOf(withGear(base, bad)).map((e) => e.code)).toEqual(['invalidKind']);
   });
 });

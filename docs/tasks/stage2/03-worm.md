@@ -1,7 +1,7 @@
 ---
 id: S2-03
 title: ウォームギア
-status: todo
+status: done
 depends: [S1-31]
 ---
 
@@ -103,32 +103,32 @@ depends: [S1-31]
 
 ## テストケース
 ### Vitest
-- [ ] `resolveLayout(worm-basic)`: W の中心 `[16, 80, 0]`。H のシャフトの軸 `'z'`、H の中心 `[16, 40, 0]`（80 − (10 + 30)）、H のシャフトの原点 `[16, 40, -4]`。`meshes` に `kind: 'worm'`。`interferences` が空
-- [ ] 運動: `worm-basic`（W 60 rpm = 2π rad/s）→ H は `2π/30` rad/s（= 2 rpm、同じ符号）
-- [ ] 運動: `side: 1`（H の中心 `[16, 120, 0]`）→ H は `-2π/30` rad/s
-- [ ] 区画の幅: 小・中・大のウォームで 16・32・48。`offset` 4 のウォームの中心は原点から 20（中）
-- [ ] `s` の対称性: a と b を入れ替えても係数から求まる比が同じ
-- [ ] 逆駆動: `worm-backdrive` → ロック（理由 `'wormBackDrive'`）、全シャフトの ω = 0
-- [ ] 逆駆動（どの強さでも）: H 側のモーターを 大・120 rpm にしてもロック
-- [ ] 両側にモーター: W に 小 60 rpm、H に 大 15 rpm（W が回すホイールの向きと逆向き）→ ロックしない。W は 2π rad/s（無負荷のまま。ホイール側の影響を受けない）、H は `2π/30`、H のモーターが `backDriven` に入る
-- [ ] 両側に同じ向き: H のモーターが、W が回す向きと同じ向き → H は `2π/30` のまま、`backDriven` に入らない
-- [ ] ホイールの先に平歯車: H のシャフトに中・20 歯の平歯車 P、P の外周に中・40 歯 Q → Q の ω = `-(2π/30)·20/40`
-- [ ] 手で回す: H のシャフトをつかむ（規定値を与える）→ ロック。W のシャフトをつかんで 1 rad/s → H は `1/30` rad/s
-- [ ] 閉路: 2 つのウォームで区画 A → B、B → A と閉じた機構 → まとめて 1 区画として解き、ギア比が合わなければ段階 1 の矛盾でロック
-- [ ] 角度の積分: `worm-basic` を dt = 1/60 で 60 回積分 → W の角度 2π、H の角度 `2π/30`（ずれが 1e-9 未満）
-- [ ] 形状: ウォームのねじ山が 1 回転で軸方向に `π·m` 進む（中で 2π mm）
+- [x] `resolveLayout(worm-basic)`: W の中心 `[16, 80, 0]`。H のシャフトの軸 `'z'`、H の中心 `[16, 40, 0]`（80 − (10 + 30)）、H のシャフトの原点 `[16, 40, -4]`。`meshes` に `kind: 'worm'`。`interferences` が空
+- [x] 運動: `worm-basic`（W 60 rpm = 2π rad/s）→ H は `2π/30` rad/s（= 2 rpm、同じ符号）
+- [x] 運動: `side: 1`（H の中心 `[16, 120, 0]`）→ H は `-2π/30` rad/s
+- [x] 区画の幅: 小・中・大のウォームで 16・32・48。`offset` 4 のウォームの中心は原点から 20（中）
+- [x] `s` の対称性: a と b を入れ替えても係数から求まる比が同じ
+- [x] 逆駆動: `worm-backdrive` → ロック（理由 `'wormBackDrive'`）、全シャフトの ω = 0
+- [x] 逆駆動（どの強さでも）: H 側のモーターを 大・120 rpm にしてもロック
+- [x] 両側にモーター: W に 小 60 rpm、H に 大 15 rpm（W が回すホイールの向きと逆向き）→ ロックしない。W は 2π rad/s（無負荷のまま。ホイール側の影響を受けない）、H は `2π/30`、H のモーターが `backDriven` に入る
+- [x] 両側に同じ向き: H のモーターが、W が回す向きと同じ向き → H は `2π/30` のまま、`backDriven` に入らない
+- [x] ホイールの先に平歯車: H のシャフトに中・20 歯の平歯車 P、P の外周に中・40 歯 Q → Q の ω = `-(2π/30)·20/40`
+- [x] 手で回す: H のシャフトをつかむ（規定値を与える）→ ロック。W のシャフトをつかんで 1 rad/s → H は `1/30` rad/s
+- [x] 閉路: 2 つのウォームで区画 A → B、B → A と閉じた機構 → まとめて 1 区画として解き、ギア比が合わなければ段階 1 の矛盾でロック
+- [x] 角度の積分: `worm-basic` を dt = 1/60 で 60 回積分 → W の角度 2π、H の角度 `2π/30`（ずれが 1e-9 未満）
+- [x] 形状: ウォームのねじ山が 1 回転で軸方向に `π·m` 進む（中で 2π mm）
 ### Playwright
-- [ ] `worm-basic.json` → H のシャフトの ω が `2 * Math.PI / 30`（`toBeCloseTo`）、`getMotion().locks` が空
-- [ ] `worm-backdrive.json` → `getMotion().locks` に `'wormBackDrive'` の項目がある
-- [ ] `worm-basic.json` で H の歯車の上を左ドラッグ（手で回す）→ ドラッグ中は `locks` に `'wormBackDrive'`。離すと元の速度に戻る
+- [x] `worm-basic.json` → H のシャフトの ω が `2 * Math.PI / 30`（`toBeCloseTo`）、`getMotion().locks` が空
+- [x] `worm-backdrive.json` → `getMotion().locks` に `'wormBackDrive'` の項目がある
+- [x] `worm-basic.json` で H の歯車の上を左ドラッグ（手で回す）→ ドラッグ中は `locks` に `'wormBackDrive'`。離すと元の速度に戻る
 ### Playwright（見た目）
-- [ ] `worm-basic.json` の拡大を `screenshots/worm-closeup.png`、`worm-backdrive.json`（ロック中）を `screenshots/worm-locked.png` に保存する
+- [x] `worm-basic.json` の拡大を `screenshots/worm-closeup.png`、`worm-backdrive.json`（ロック中）を `screenshots/worm-locked.png` に保存する
 
 ## 人が手で確かめる項目
 - ねじ山がホイールの歯を押して進めているように見える（向きが逆に見えない）
 - ホイール側からの駆動で、ロックの赤い震えが分かりやすい
 
 ## 完了の条件
-- [ ] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
-- [ ] design.md と後続のタスク資料に、必要な変更を反映した（§3、§4、§5、§6）
-- [ ] `status: done` にしてコミットした
+- [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
+- [x] design.md と後続のタスク資料に、必要な変更を反映した（§3、§4、§5、§6）
+- [x] `status: done` にしてコミットした

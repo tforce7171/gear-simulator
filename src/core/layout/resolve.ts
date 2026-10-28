@@ -14,11 +14,14 @@ import {
   bevelCollisionCylinder,
   bevelPhase,
 } from '../geometry/bevel';
-import { canMesh, meshKindOf } from '../geometry/can-mesh';
+import { canMesh, meshGeometryOf, meshKindOf } from '../geometry/can-mesh';
+import { gearEnvelope, gearPitchRadius, sectionWidth } from '../geometry/dimensions';
 import { centerDistance, meshPhase, pitchRadius } from '../geometry/mesh';
+import { skewChildFrame, wheelPhaseFromWorm, wormPhaseFromWheel } from '../geometry/skew';
 import { axisVector, radialDirection } from '../math/axis';
 import { add, dot, length, scale, sub, type Vec3 } from '../math/vec3';
 import { gearCenter } from '../scene/gear-center';
+import { assertNever } from '../scene/gear-shape';
 import {
   type Axis,
   type ChildPlacement,
@@ -122,7 +125,7 @@ function compute(scene: Scene): Layout {
       gears[gear.id] = {
         center: gearCenter(origin, axis, gear),
         axis,
-        pitchRadius: pitchRadius(gear.size, gear.teeth),
+        pitchRadius: gearPitchRadius(gear),
         basePhase: item.child?.gearId === gear.id ? item.child.phase : 0,
       };
     }
@@ -155,6 +158,8 @@ function compute(scene: Scene): Layout {
 // mesh: 親の歯車の負側の面 + 外周の向き × 中心距離、向きは親と同じ。
 // bevel（S2-02）: 子の大端の中心 = 親の大端の中心 + R·side·(子の軸) + R·親の apex·(親の軸)、
 // 子の軸 = 親の軸を axisStep 回進めたもの、原点 = 子の大端の中心 − (歯幅/2)·(1 + side)·(子の軸)。
+// skew（S2-03）: 子の軸 = 親の軸を axisStep 回進めたもの、子の中心 = 親の中心 + (r_親 + r_子)·side·u
+// （u は 2 本の軸のどちらとも直交する座標軸）、原点 = 子の中心 − (区画の幅/2)·(子の軸)。
 // 親子の種類が配置に合わなければ null（検証済みのシーンでは起きない）
 function placeChild(
   parent: Gear,
@@ -201,6 +206,52 @@ function placeChild(
         ),
       };
     }
+    case 'skew': {
+      if (meshGeometryOf(parent) !== 'skew' || meshGeometryOf(child) !== 'skew') return null;
+      const frame = skewChildFrame(
+        parentLayout.center,
+        axis,
+        parentLayout.pitchRadius,
+        gearPitchRadius(child),
+        p.axisStep,
+        p.side,
+      );
+      return {
+        origin: sub(frame.center, scale(axisVector(frame.axis), sectionWidth(child) / 2)),
+        axis: frame.axis,
+        phase: skewPhase(parent, parentLayout, child, frame),
+      };
+    }
+  }
+}
+
+// skew の子の basePhase（S2-03）。ウォームとホイールは、接点でウォームのねじ山の中心とホイールの歯溝の中心が重なる
+// ように決める（core/geometry/skew.ts）。S2-04 でねじ歯車の組を足す
+function skewPhase(
+  parent: Gear,
+  parentLayout: GearLayout,
+  child: Gear,
+  childPlaced: { readonly center: Vec3; readonly axis: Axis },
+): number {
+  switch (child.kind) {
+    case 'wormWheel':
+      return wheelPhaseFromWorm(
+        { center: parentLayout.center, axis: parentLayout.axis, phase: parentLayout.basePhase },
+        childPlaced,
+        child.teeth,
+      );
+    case 'worm':
+      return wormPhaseFromWheel(
+        { center: parentLayout.center, axis: parentLayout.axis, phase: parentLayout.basePhase },
+        parent.teeth,
+        childPlaced,
+      );
+    case 'spur':
+    case 'helical':
+    case 'bevel':
+      return 0; // skew の配置の子にはならない（検証で弾く）
+    default:
+      return assertNever(child);
   }
 }
 
@@ -238,7 +289,7 @@ function meshesOf(
   for (const [id, layout] of Object.entries(gears)) {
     const gear = scene.gears[id];
     if (gear === undefined) continue;
-    const reach = layout.pitchRadius + GEAR_SIZES[gear.size].faceWidth;
+    const reach = layout.pitchRadius + sectionWidth(gear);
     maxReach = Math.max(maxReach, reach);
     placed.push({ gear, layout, reach });
   }
@@ -262,14 +313,26 @@ function meshesOf(
 // かみ合える組（canMesh。同じ大きさで、平歯車同士かねじれの向きが逆のハスバ歯車同士）、軸が同じ、別のシャフト、
 // 軸方向の区間の重なりが COLLISION_EPS より大きく、軸に垂直な方向の中心間の距離がピッチ円半径の和と
 // MESH_DISTANCE_EPS 以内で一致する。安い数値の判定を先に、canMesh を最後にする。
-// かさ歯車（S2-02）は、どちらもかさ歯車、同じ大きさ・同じ歯数、軸が直交、頂点の距離が MESH_DISTANCE_EPS 以内
+// かさ歯車（S2-02）は、どちらもかさ歯車、同じ大きさ・同じ歯数、軸が直交、頂点の距離が MESH_DISTANCE_EPS 以内。
+// ねじれた位置の組（S2-03。ウォームとホイール）は、かみ合える組、軸が直交、中心を結ぶ線が両方の軸に直交し
+// （軸方向の成分が MESH_DISTANCE_EPS 以内）、その長さがピッチ円半径の和と MESH_DISTANCE_EPS 以内で一致する
 function inContact(a: Gear, la: GearLayout, b: Gear, lb: GearLayout): boolean {
   if (a.size !== b.size || a.shaftId === b.shaftId) return false;
-  if (a.kind === 'bevel' || b.kind === 'bevel') {
+  const geometry = meshGeometryOf(a);
+  if (geometry !== meshGeometryOf(b)) return false;
+  if (geometry === 'bevel') {
     if (a.kind !== 'bevel' || b.kind !== 'bevel') return false;
     if (a.teeth !== b.teeth || la.axis === lb.axis) return false;
     const d = sub(bevelApexOf(la.center, la.axis, a), bevelApexOf(lb.center, lb.axis, b));
     return length(d) <= MESH_DISTANCE_EPS;
+  }
+  if (geometry === 'skew') {
+    if (la.axis === lb.axis) return false;
+    const d = sub(lb.center, la.center);
+    if (Math.abs(dot(d, axisVector(la.axis))) > MESH_DISTANCE_EPS) return false;
+    if (Math.abs(dot(d, axisVector(lb.axis))) > MESH_DISTANCE_EPS) return false;
+    if (Math.abs(length(d) - (la.pitchRadius + lb.pitchRadius)) > MESH_DISTANCE_EPS) return false;
+    return canMesh(a, b);
   }
   if (la.axis !== lb.axis) return false;
   const w = axisVector(la.axis);
@@ -311,11 +374,21 @@ function collidersOf(
 }
 
 // 歯車の円柱。かさ歯車（S2-02）は、歯のある円すい台に外接する円柱（大端の中心から頂点の側へ b·cos45°、
-// 半径は大端の歯先）
+// 半径は大端の歯先）。ウォーム（S2-03）は半径 5m + m、長さ 5πm の円柱、ホイールは歯先円の円柱（gearEnvelope）
 function gearColliderOf(gear: Gear, layout: GearLayout): Collider {
   if (gear.kind === 'bevel') {
     const c = bevelCollisionCylinder(layout.center, layout.axis, gear);
     return { kind: 'cylinder', id: gear.id, shaftId: gear.shaftId, axis: layout.axis, ...c };
+  }
+  if (gear.kind === 'worm') {
+    return {
+      kind: 'cylinder',
+      id: gear.id,
+      shaftId: gear.shaftId,
+      center: layout.center,
+      axis: layout.axis,
+      ...gearEnvelope(gear),
+    };
   }
   return gearCollider(gear.id, gear.shaftId, layout.center, layout.axis, gear.size, gear.teeth);
 }
@@ -393,7 +466,7 @@ function placeAddition(
   const make = (origin: Vec3, axis: Axis, basePhase: number): GearLayout => ({
     center: gearCenter(origin, axis, gear),
     axis,
-    pitchRadius: pitchRadius(gear.size, gear.teeth),
+    pitchRadius: gearPitchRadius(gear),
     basePhase,
   });
 
@@ -436,7 +509,7 @@ function placeAddition(
 }
 
 // 載っている歯車ごとに、両面（offset と offset + 歯幅）から SHAFT_END_MARGIN ずつ伸ばした区間を求め、
-// その最小〜最大をとる。かさ歯車（S2-02）は、頂点側の端を「頂点 − BEVEL_APEX_CLEARANCE」より先へ伸ばさない
+// その最小〜最大をとる。面は区画の両端（ウォームは長さを 4 の倍数に切り上げた区画。S2-03）。かさ歯車（S2-02）は、頂点側の端を「頂点 − BEVEL_APEX_CLEARANCE」より先へ伸ばさない
 // （頂点の先は相手のシャフトとぶつかるため）。同じシャフトの頂点側にほかの部品があれば、その部品の区間で伸びる。
 // 歯車が無ければ [−EMPTY_SHAFT_HALF_LENGTH, +EMPTY_SHAFT_HALF_LENGTH]
 export function spanOf(gears: readonly Gear[]): [number, number] {
@@ -444,7 +517,7 @@ export function spanOf(gears: readonly Gear[]): [number, number] {
   let lo = Number.POSITIVE_INFINITY;
   let hi = Number.NEGATIVE_INFINITY;
   for (const gear of gears) {
-    const faceWidth = GEAR_SIZES[gear.size].faceWidth;
+    const faceWidth = sectionWidth(gear);
     let gearLo = gear.offset - SHAFT_END_MARGIN;
     let gearHi = gear.offset + faceWidth + SHAFT_END_MARGIN;
     if (gear.kind === 'bevel') {

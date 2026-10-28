@@ -2,7 +2,8 @@ import type { GearId, MotorId, ShaftId } from '../scene/types';
 
 // 運動の状態（design.md §6）。シーンとは別に持ち、Undo の対象にも保存の対象にもならない
 
-export type LockReason = 'contradiction' | 'stalemate'; // 段階 2・3 で理由を足す
+// 'wormBackDrive' はウォームの逆駆動（S2-03）。段階 3 で 'anchor' | 'rackEnd' を足す
+export type LockReason = 'contradiction' | 'stalemate' | 'wormBackDrive';
 
 export interface LockInfo {
   readonly reason: LockReason;

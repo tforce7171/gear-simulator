@@ -1,5 +1,5 @@
-import { AXIAL_SNAP, GEAR_SIZES, MOTOR_RPM_RANGE, MOTOR_SIZES } from '../constants';
-import { canMesh, meshKindOf } from '../geometry/can-mesh';
+import { AXIAL_SNAP, GEAR_SIZES, MOTOR_RPM_RANGE, MOTOR_SIZES, WORM_THREADS } from '../constants';
+import { canMesh, meshGeometryOf } from '../geometry/can-mesh';
 import { descendantShafts, resolveLayout } from '../layout/resolve';
 import type { Layout } from '../layout/types';
 import type { Vec3 } from '../math/vec3';
@@ -9,6 +9,7 @@ import {
   makeGear,
   meshPartnerShape,
   newGearShape,
+  skewPartnerShape,
 } from '../scene/gear-shape';
 import type { IdGenerator } from '../scene/ids';
 import { shaftAxis } from '../scene/shaft-axis';
@@ -35,7 +36,7 @@ import { validateScene } from '../scene/validate';
 // 干渉を理由には失敗しない（干渉は resolveLayout の interferences が赤い警告として出す）
 
 export type Command =
-  // gear.kind は省くと 'spur'。ハスバ歯車は hand 'right'（S2-01）
+  // gear.kind は省くと 'spur'。ハスバ歯車は hand 'right'（S2-01）。ウォームは teeth によらず 1 条（S2-03）
   | {
       type: 'addRootShaft';
       axis: Axis;
@@ -52,7 +53,17 @@ export type Command =
       axisStep: 1 | 2;
       side: 1 | -1;
     }
-  // kind は省くと 'spur'。ハスバ歯車は hand 'right'（S2-01）
+  // ウォーム・ホイールの親とかみ合う、ねじれた位置の 90° の相手（ウォームにはホイール、ホイールにはウォーム。
+  // 同じ大きさ、offset 0）と skew のシャフト（S2-03）。teeth はホイールを作るときの歯数（ウォームを作るときは使わない）
+  | {
+      type: 'growGear';
+      mode: 'skew';
+      parentGearId: GearId;
+      axisStep: 1 | 2;
+      side: 1 | -1;
+      teeth: number;
+    }
+  // kind は省くと 'spur'。ハスバ歯車は hand 'right'（S2-01）。ウォームは teeth によらず 1 条（S2-03）
   | {
       type: 'growGear';
       mode: 'coaxial';
@@ -63,7 +74,8 @@ export type Command =
       kind?: GearKind;
     }
   | { type: 'deleteParts'; ids: string[] }
-  // かさ歯車では、木の親子（bevel の配置）でつながったかさ歯車すべての歯数を同じ値にする（S2-02）
+  // かさ歯車では、木の親子（bevel の配置）でつながったかさ歯車すべての歯数を同じ値にする（S2-02）。
+  // ウォームの歯数（条数）は変えられない（notAllowed。S2-03）
   | { type: 'setGearTeeth'; gearId: GearId; teeth: number }
   // かさ歯車の apex を反転する（S2-02）。bevel の配置の子（apex は −side で決まる）は notAllowed
   | { type: 'flipBevelApex'; gearId: GearId }
@@ -181,6 +193,8 @@ export function applyCommand(scene: Scene, command: Command, ctx: CommandContext
           return growPerimeter(scene, command, ctx);
         case 'bevel':
           return growBevel(scene, command, ctx);
+        case 'skew':
+          return growSkew(scene, command, ctx);
         default:
           return growCoaxial(scene, command, ctx);
       }
@@ -224,10 +238,11 @@ function addRootShaft(
   if (!isAxis(c.axis)) return fail('invalidValue', `invalid axis ${String(c.axis)}`);
   if (!isFiniteVec3(c.origin)) return fail('invalidValue', 'origin must be 3 finite numbers');
   if (!isSizeKey(c.gear.size)) return fail('invalidValue', `invalid size ${String(c.gear.size)}`);
-  const bad = teethError(c.gear.size, c.gear.teeth);
-  if (bad) return bad;
   const kind = c.gear.kind ?? 'spur';
   if (!isGearKind(kind)) return fail('invalidValue', `invalid gear kind ${String(kind)}`);
+  const bad = kind === 'worm' ? null : teethError(c.gear.size, c.gear.teeth);
+  if (bad) return bad;
+  const teeth = kind === 'worm' ? WORM_THREADS : c.gear.teeth;
   const shaftId = ctx.ids('shaft');
   const gearId = ctx.ids('gear');
   const shaft: Shaft = {
@@ -235,7 +250,7 @@ function addRootShaft(
     placement: { kind: 'root', origin: copyVec3(c.origin), axis: c.axis },
   };
   const gear = makeGear(
-    { id: gearId, shaftId, size: c.gear.size, teeth: c.gear.teeth, offset: 0 },
+    { id: gearId, shaftId, size: c.gear.size, teeth, offset: 0 },
     newGearShape(kind),
   );
   return done(
@@ -329,6 +344,50 @@ function growBevel(
   );
 }
 
+// ウォーム・ホイールの親に、ねじれた位置の 90° の相手（同じ大きさ、offset 0）と skew のシャフトを作る（S2-03）
+function growSkew(
+  scene: Scene,
+  c: Extract<Command, { type: 'growGear'; mode: 'skew' }>,
+  ctx: CommandContext,
+): CommandResult {
+  const parent = scene.gears[c.parentGearId];
+  if (parent === undefined) return fail('notFound', `gear ${c.parentGearId} not found`);
+  const shape = skewPartnerShape(gearShape(parent));
+  if (shape === null) {
+    return fail('notAllowed', `gear ${parent.id} (${parent.kind}) cannot grow a skew gear`);
+  }
+  if (c.axisStep !== 1 && c.axisStep !== 2) {
+    return fail('invalidValue', `axisStep must be 1 or 2: ${String(c.axisStep)}`);
+  }
+  if (c.side !== 1 && c.side !== -1) {
+    return fail('invalidValue', `side must be 1 or -1: ${String(c.side)}`);
+  }
+  const bad = shape.kind === 'worm' ? null : teethError(parent.size, c.teeth);
+  if (bad) return bad;
+  const shaftId = ctx.ids('shaft');
+  const gearId = ctx.ids('gear');
+  const shaft: Shaft = {
+    id: shaftId,
+    placement: {
+      kind: 'skew',
+      parentGearId: parent.id,
+      childGearId: gearId,
+      axisStep: c.axisStep,
+      side: c.side,
+    },
+  };
+  const teeth = shape.kind === 'worm' ? WORM_THREADS : c.teeth;
+  const gear = makeGear({ id: gearId, shaftId, size: parent.size, teeth, offset: 0 }, shape);
+  return done(
+    {
+      shafts: withEntry(scene.shafts, shaftId, shaft),
+      gears: withEntry(scene.gears, gearId, gear),
+      motors: scene.motors,
+    },
+    [shaftId, gearId],
+  );
+}
+
 function growCoaxial(
   scene: Scene,
   c: Extract<Command, { type: 'growGear'; mode: 'coaxial' }>,
@@ -338,14 +397,15 @@ function growCoaxial(
     return fail('notFound', `shaft ${c.shaftId} not found`);
   }
   if (!isSizeKey(c.size)) return fail('invalidValue', `invalid size ${String(c.size)}`);
-  const bad = teethError(c.size, c.teeth);
-  if (bad) return bad;
-  if (!isSnapped(c.offset)) return snapError(c.offset);
   const kind = c.kind ?? 'spur';
   if (!isGearKind(kind)) return fail('invalidValue', `invalid gear kind ${String(kind)}`);
+  const bad = kind === 'worm' ? null : teethError(c.size, c.teeth);
+  if (bad) return bad;
+  if (!isSnapped(c.offset)) return snapError(c.offset);
+  const teeth = kind === 'worm' ? WORM_THREADS : c.teeth;
   const gearId = ctx.ids('gear');
   const gear = makeGear(
-    { id: gearId, shaftId: c.shaftId, size: c.size, teeth: c.teeth, offset: clean(c.offset) },
+    { id: gearId, shaftId: c.shaftId, size: c.size, teeth, offset: clean(c.offset) },
     newGearShape(kind),
   );
   return done({ ...scene, gears: withEntry(scene.gears, gearId, gear) }, [gearId]);
@@ -441,6 +501,12 @@ function deleteParts(scene: Scene, ids: readonly string[]): CommandResult {
 function setGearTeeth(scene: Scene, c: Extract<Command, { type: 'setGearTeeth' }>): CommandResult {
   const gear = scene.gears[c.gearId];
   if (gear === undefined) return fail('notFound', `gear ${c.gearId} not found`);
+  if (gear.kind === 'worm') {
+    return fail(
+      'notAllowed',
+      `worm ${gear.id} has ${WORM_THREADS} thread and its teeth cannot change`,
+    );
+  }
   const bad = teethError(gear.size, c.teeth);
   if (bad) return bad;
   if (gear.teeth === c.teeth) return done(scene);
@@ -668,9 +734,10 @@ function reattachShaft(
   if (!canMesh(child, parent)) {
     return fail('notAllowed', `gear ${child.id} cannot mesh with ${parent.id}`);
   }
-  // 付け直しは外周（mesh）だけ。かさ歯車の組は bevel の配置なので付け直せない（S2-02）
-  if (meshKindOf(parent) === 'bevel') {
-    return fail('notAllowed', `bevel gear ${parent.id} cannot be a reattach parent`);
+  // 付け直しは外周（mesh）だけ。かさ歯車の組は bevel の配置（S2-02）、ウォームとホイールは skew の配置（S2-03）
+  // なので付け直せない
+  if (meshGeometryOf(parent) !== 'parallel') {
+    return fail('notAllowed', `${parent.kind} gear ${parent.id} cannot be a reattach parent`);
   }
   if (descendantShafts(scene, shaft.id).includes(parent.shaftId)) {
     return fail('notAllowed', `gear ${parent.id} is on shaft ${shaft.id} or beyond it (cycle)`);

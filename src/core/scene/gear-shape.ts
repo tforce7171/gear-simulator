@@ -16,6 +16,10 @@ export function gearShape(gear: Gear): GearShape {
       return { kind: 'helical', hand: gear.hand };
     case 'bevel':
       return { kind: 'bevel', apex: gear.apex };
+    case 'worm':
+      return { kind: 'worm' };
+    case 'wormWheel':
+      return { kind: 'wormWheel' };
     default:
       return assertNever(gear);
   }
@@ -30,6 +34,10 @@ export function newGearShape(kind: GearKind): GearShape {
       return { kind: 'helical', hand: 'right' };
     case 'bevel':
       return { kind: 'bevel', apex: 1 };
+    case 'worm':
+      return { kind: 'worm' };
+    case 'wormWheel':
+      return { kind: 'wormWheel' };
     default:
       return assertNever(kind);
   }
@@ -40,13 +48,33 @@ export function oppositeHand(hand: Hand): Hand {
 }
 
 // 外周に生やす子の形。親とかみ合う形（平歯車は平歯車、ハスバ歯車は逆のねじれの向き）。
-// かさ歯車は外周（mesh）には生やさない（bevel の配置。子の apex は −side で決まる）ので null
+// かさ歯車は外周（mesh）には生やさない（bevel の配置。子の apex は −side で決まる）ので null。
+// ウォームとホイールも外周には生やさない（skew の配置。S2-03）ので null
 export function meshPartnerShape(shape: GearShape): GearShape | null {
   switch (shape.kind) {
     case 'spur':
       return { kind: 'spur' };
     case 'helical':
       return { kind: 'helical', hand: oppositeHand(shape.hand) };
+    case 'bevel':
+    case 'worm':
+    case 'wormWheel':
+      return null;
+    default:
+      return assertNever(shape);
+  }
+}
+
+// ねじれた位置の 90°（skew の配置）に生やす子の形（S2-03）。ウォームにはホイール、ホイールにはウォーム。
+// skew に生やさない種類は null（S2-04 でねじ歯車 → ねじ歯車を足す）
+export function skewPartnerShape(shape: GearShape): GearShape | null {
+  switch (shape.kind) {
+    case 'worm':
+      return { kind: 'wormWheel' };
+    case 'wormWheel':
+      return { kind: 'worm' };
+    case 'spur':
+    case 'helical':
     case 'bevel':
       return null;
     default:
@@ -60,7 +88,13 @@ export function makeGear(base: GearBase, shape: GearShape): Gear {
 }
 
 // 種類の一覧。Record にして、種類を足したときの書き忘れを型で検出する
-const GEAR_KINDS: Readonly<Record<GearKind, true>> = { spur: true, helical: true, bevel: true };
+const GEAR_KINDS: Readonly<Record<GearKind, true>> = {
+  spur: true,
+  helical: true,
+  bevel: true,
+  worm: true,
+  wormWheel: true,
+};
 
 export function isGearKind(value: unknown): value is GearKind {
   return typeof value === 'string' && Object.hasOwn(GEAR_KINDS, value);

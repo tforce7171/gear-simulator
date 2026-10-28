@@ -734,7 +734,7 @@ describe('ハスバ歯車（S2-01）', () => {
     });
     const spur = ok(apply(scene, coaxial()));
     expect(spur.scene.gears[spur.created[0] as string]?.kind).toBe('spur');
-    expect(errorCode(apply(scene, coaxial('worm')))).toBe('invalidValue');
+    expect(errorCode(apply(scene, coaxial('gearbox')))).toBe('invalidValue');
   });
 
   it('reattachShaft: かみ合えない組（平歯車とハスバ歯車、同じ hand）は notAllowed', () => {

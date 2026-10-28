@@ -1,10 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { GEAR_SIZES, HELIX_ANGLE } from '../core/constants';
+import { GEAR_SIZES, HELIX_ANGLE, PRESSURE_ANGLE } from '../core/constants';
+import { helicalTotalTwist } from '../core/geometry/helical';
 import { spurOutline } from '../core/geometry/involute';
+import {
+  WORM_LEAD_ANGLE,
+  wormAxialPitch,
+  wormOutsideRadius,
+  wormRootRadius,
+} from '../core/geometry/worm';
 import {
   buildBevelGeometry,
   buildHelicalGeometry,
   buildSpurGeometry,
+  buildWormGeometry,
   createGeometryCache,
   gearBodyScaleZ,
 } from './gear-geometry';
@@ -239,5 +247,94 @@ describe('buildBevelGeometry（S2-02）', () => {
     expect(gearBodyScaleZ({ kind: 'bevel', apex: 1 })).toBe(1);
     expect(gearBodyScaleZ({ kind: 'bevel', apex: -1 })).toBe(-1);
     expect(gearBodyScaleZ(SPUR)).toBe(1);
+  });
+});
+
+describe('buildWormGeometry（S2-03）', () => {
+  it('中: z は [−5π, 5π]（長さ 5πm）、半径は歯先 12 以下、側面は歯底 7.5 以上', () => {
+    const geometry = buildWormGeometry('M');
+    geometry.computeBoundingBox();
+    const box = geometry.boundingBox;
+    if (box === null) throw new Error('boundingBox がない');
+    expect(box.min.z).toBeCloseTo(-5 * Math.PI, 6);
+    expect(box.max.z).toBeCloseTo(5 * Math.PI, 6);
+    const pos = geometry.getAttribute('position');
+    let maxR = 0;
+    for (let i = 0; i < pos.count; i++) {
+      const r = Math.hypot(pos.getX(i), pos.getY(i));
+      maxR = Math.max(maxR, r);
+      expect(r).toBeLessThanOrEqual(wormOutsideRadius('M') + 1e-5);
+    }
+    expect(maxR).toBeGreaterThan(wormOutsideRadius('M') - 1e-3);
+    geometry.dispose();
+  });
+
+  it('右ねじ: 角度 θ の方向で歯先になる z は π·m·θ/2π（π·m を法として）', () => {
+    const geometry = buildWormGeometry('M');
+    const pos = geometry.getAttribute('position');
+    const p = wormAxialPitch('M');
+    for (const theta of [0, Math.PI / 2, Math.PI]) {
+      // この方向の頂点のうち、端の面取りから遠く、歯先の半径にある頂点の z
+      const tips: number[] = [];
+      for (let i = 0; i < pos.count; i++) {
+        const x = pos.getX(i);
+        const y = pos.getY(i);
+        const r = Math.hypot(x, y);
+        if (r < 1) continue;
+        const a = Math.atan2(y, x);
+        const d = Math.abs(Math.atan2(Math.sin(a - theta), Math.cos(a - theta)));
+        if (d > 1e-6 || Math.abs(pos.getZ(i)) > (3 * p) / 2) continue;
+        if (r > wormOutsideRadius('M') - 1e-6) tips.push(pos.getZ(i));
+      }
+      expect(tips.length).toBeGreaterThan(0);
+      const expected = (p * theta) / (2 * Math.PI);
+      for (const z of tips) {
+        const k = (z - expected) / p;
+        // 歯先の平らな部分は、ねじ山の中心から ±(p/4 − m·tan20°) ≈ ±0.843 の範囲
+        expect(Math.abs(k - Math.round(k)) * p).toBeLessThan(
+          p / 4 - 2 * Math.tan(PRESSURE_ANGLE) + 1e-6,
+        );
+      }
+    }
+    // 歯底は角度 0 で z = p/2 の近く
+    let rootSeen = false;
+    for (let i = 0; i < pos.count; i++) {
+      if (Math.abs(pos.getY(i)) > 1e-9 || pos.getX(i) <= 0) continue;
+      if (Math.abs(pos.getZ(i) - p / 2) < 0.05) {
+        expect(Math.hypot(pos.getX(i), pos.getY(i))).toBeCloseTo(wormRootRadius('M'), 6);
+        rootSeen = true;
+      }
+    }
+    expect(rootSeen).toBe(true);
+    geometry.dispose();
+  });
+
+  it('面は外を向く: 両端の面の法線は ±z', () => {
+    const geometry = buildWormGeometry('S');
+    const pos = geometry.getAttribute('position');
+    const normal = geometry.getAttribute('normal');
+    for (let i = 0; i < pos.count; i++) {
+      const nz = normal.getZ(i);
+      if (Math.abs(nz) > 0.999 && Math.hypot(pos.getX(i), pos.getY(i)) < 1e-9) {
+        expect(Math.sign(nz)).toBe(Math.sign(pos.getZ(i)));
+      }
+      // 側面の頂点は内向きでない
+      const r = Math.hypot(pos.getX(i), pos.getY(i));
+      if (r > 1e-9 && Math.abs(nz) < 0.999) {
+        const radial = (pos.getX(i) * normal.getX(i) + pos.getY(i) * normal.getY(i)) / r;
+        expect(radial).toBeGreaterThan(-1e-6);
+      }
+    }
+    geometry.dispose();
+  });
+
+  it('ホイールは進み角と同じねじれ角の右ねじれ。形状のキーはウォームが (種類, 大きさ)、ホイールが (種類, 大きさ, 歯数)', () => {
+    expect(helicalTotalTwist('M', 30, 'right', WORM_LEAD_ANGLE)).toBeCloseTo((8 * 0.1) / 30, 12);
+    const cache = createGeometryCache();
+    const worm = cache.acquire({ kind: 'worm' }, 'M', 1);
+    expect(cache.acquire({ kind: 'worm' }, 'M', 1)).toBe(worm);
+    const wheel30 = cache.acquire({ kind: 'wormWheel' }, 'M', 30);
+    expect(cache.acquire({ kind: 'wormWheel' }, 'M', 40)).not.toBe(wheel30);
+    expect(cache.size()).toBe(3);
   });
 });

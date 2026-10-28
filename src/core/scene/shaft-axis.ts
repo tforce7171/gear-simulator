@@ -2,7 +2,7 @@ import { stepAxis } from '../math/axis';
 import type { Axis, Scene, ShaftId } from './types';
 
 // シャフトの向き。root / detached は placement.axis、mesh は親の歯車のシャフトの向き（平歯車では親と同じ）、
-// bevel は親の歯車のシャフトの向きを axisStep 回進めたもの（S2-02）。親をたどって求める。
+// bevel・skew は親の歯車のシャフトの向きを axisStep 回進めたもの（S2-02、S2-03）。親をたどって求める。
 // 循環していたり参照先が無かったりすれば null
 export function shaftAxis(scene: Scene, shaftId: ShaftId): Axis | null {
   const visited = new Set<ShaftId>();
@@ -17,7 +17,7 @@ export function shaftAxis(scene: Scene, shaftId: ShaftId): Axis | null {
     if (placement.kind === 'root' || placement.kind === 'detached') {
       return stepAxis(placement.axis, steps);
     }
-    if (placement.kind === 'bevel') steps += placement.axisStep;
+    if (placement.kind === 'bevel' || placement.kind === 'skew') steps += placement.axisStep;
     const parent = scene.gears[placement.parentGearId];
     if (parent === undefined) return null;
     current = parent.shaftId;

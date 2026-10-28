@@ -1,5 +1,6 @@
 import { CylinderGeometry, Group, Mesh, MeshStandardMaterial } from 'three';
-import { GEAR_SIZES, SHAFT_END_MARGIN } from '../core/constants';
+import { SHAFT_END_MARGIN } from '../core/constants';
+import { sectionWidth } from '../core/geometry/dimensions';
 import type { MotionState } from '../core/kinematics/types';
 import type { Vec3 } from '../core/math/vec3';
 import type { Axis, GearShape, ShaftId, SizeKey } from '../core/scene/types';
@@ -92,7 +93,8 @@ export function createCandidateView(cache: GeometryCache): CandidateView {
     let shaft: Mesh | null = null;
     if (spec.withShaft) {
       // mesh のシャフトの子は offset 0 なので、シャフトの区間は歯車の中心について対称
-      const length = GEAR_SIZES[spec.size].faceWidth + 2 * SHAFT_END_MARGIN;
+      const length =
+        sectionWidth({ kind: spec.shape.kind, size: spec.size }) + 2 * SHAFT_END_MARGIN;
       const geometry = new CylinderGeometry(SHAFT_RADIUS, SHAFT_RADIUS, length, 12);
       geometry.rotateX(Math.PI / 2); // 円柱の向きをローカルの z（= 軸 w）にする
       shaft = new Mesh(geometry, normal);

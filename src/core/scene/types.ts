@@ -38,15 +38,25 @@ export type ShaftPlacement =
       readonly axisStep: 1 | 2; // このシャフトの軸 = 親の軸を x → y → z → x の順に axisStep 回進めた軸
       readonly side: 1 | -1; // 子が、親の大端の中心から見てこのシャフトの軸の正・負どちら側にあるか
     }
+  // ねじれた位置の 90° でかみ合う歯車（ウォームとホイール。S2-03。S2-04 のねじ歯車も使う）を載せたシャフト。
+  // 軸の向きは親の軸を axisStep 回進めたもの。u を 2 本の軸のどちらとも直交する座標軸として、
+  // 子の中心 = 親の中心 + (r_親 + r_子)·side·u（r はピッチ円半径）
+  | {
+      readonly kind: 'skew';
+      readonly parentGearId: GearId;
+      readonly childGearId: GearId;
+      readonly axisStep: 1 | 2; // このシャフトの軸 = 親の軸を x → y → z → x の順に axisStep 回進めた軸
+      readonly side: 1 | -1;
+    }
   // 親が削除されてその場に残ったシャフト。削除時点のワールド座標と向きを持つ
   | { readonly kind: 'detached'; readonly origin: Vec3; readonly axis: Axis };
 
-// 親の歯車から位置と向きを導く配置（mesh・bevel）。root・detached は自分で位置と向きを持つ
+// 親の歯車から位置と向きを導く配置（mesh・bevel・skew）。root・detached は自分で位置と向きを持つ
 export type ChildPlacement = Extract<ShaftPlacement, { readonly parentGearId: GearId }>;
 export type FreePlacement = Exclude<ShaftPlacement, ChildPlacement>;
 
 export function isChildPlacement(p: ShaftPlacement): p is ChildPlacement {
-  return p.kind === 'mesh' || p.kind === 'bevel';
+  return p.kind === 'mesh' || p.kind === 'bevel' || p.kind === 'skew';
 }
 
 export type Hand = 'left' | 'right'; // ハスバ歯車のねじれの向き（S2-01）
@@ -77,8 +87,19 @@ export interface BevelGear extends GearBase {
   readonly apex: 1 | -1;
 }
 
+// ウォーム（S2-03）。1 条・右ねじ。teeth は条数で常に WORM_THREADS（1）。ピッチ円半径は 5m、
+// 歯のある部分の長さは 5πm で、軸方向には長さを AXIAL_SNAP の倍数に切り上げた区画を占める（offset は区画の負側の面）
+export interface WormGear extends GearBase {
+  readonly kind: 'worm';
+}
+
+// ウォームホイール（S2-03）。進み角と同じねじれ角の右ねじれ。歯数の範囲と歯幅は平歯車と同じ
+export interface WormWheel extends GearBase {
+  readonly kind: 'wormWheel';
+}
+
 // 種類ごとの判別共用体。種類ごとに分ける箇所は switch (gear.kind) で網羅性を型で確かめる（assertNever）
-export type Gear = SpurGear | HelicalGear | BevelGear; // S2-03 以降で種類を足す
+export type Gear = SpurGear | HelicalGear | BevelGear | WormGear | WormWheel; // S2-04 以降で種類を足す
 export type GearKind = Gear['kind'];
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;

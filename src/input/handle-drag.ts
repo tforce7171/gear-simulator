@@ -1,6 +1,6 @@
-import { GEAR_SIZES, GRID_SNAP, PERIMETER_CANDIDATE_COUNT } from '../core/constants';
+import { GRID_SNAP, PERIMETER_CANDIDATE_COUNT } from '../core/constants';
 import { applyCommand, type Command } from '../core/edit/commands';
-import { outsideRadius } from '../core/geometry/mesh';
+import { gearEnvelope } from '../core/geometry/dimensions';
 import { newInterferences } from '../core/layout/interference-diff';
 import { meshSnapTargets } from '../core/layout/mesh-snap';
 import { descendantShafts, resolveLayout } from '../core/layout/resolve';
@@ -103,10 +103,8 @@ function lowestY(scene: Scene, layout: Layout, shaftId: ShaftId): number | null 
     if (gear.shaftId !== shaftId) continue;
     const placed = layout.gears[gear.id];
     if (placed === undefined) continue;
-    const extent =
-      placed.axis === 'y'
-        ? GEAR_SIZES[gear.size].faceWidth / 2
-        : outsideRadius(gear.size, gear.teeth);
+    const envelope = gearEnvelope(gear);
+    const extent = placed.axis === 'y' ? envelope.halfWidth : envelope.radius;
     lowest = Math.min(lowest, placed.center[1] - extent);
   }
   return lowest;
@@ -166,7 +164,7 @@ export function listHandles(scene: Scene, layout: Layout, selection: string | nu
       { kind: 'height', targetId: shaftId, position: [x, heightY, z] },
     );
   } else if (p.kind === 'mesh') {
-    // bevel のシャフト（S2-02）は 4 か所の離散なので、円弧のハンドルを出さない
+    // bevel のシャフト（S2-02）と skew のシャフト（S2-03）は 4 か所の離散なので、円弧のハンドルを出さない
     const parent = layout.gears[p.parentGearId];
     const child = scene.gears[p.childGearId];
     const childLayout = layout.gears[p.childGearId];
@@ -176,7 +174,7 @@ export function listHandles(scene: Scene, layout: Layout, selection: string | nu
         framed('arc', shaftId, {
           center: parent.center,
           axis: parent.axis,
-          radius: distance + outsideRadius(child.size, child.teeth) + ARC_HANDLE_GAP,
+          radius: distance + gearEnvelope(child).radius + ARC_HANDLE_GAP,
           angle: p.angle,
         }),
       );
@@ -190,7 +188,7 @@ export function listHandles(scene: Scene, layout: Layout, selection: string | nu
       framed('axial', gear.id, {
         center: gearLayout.center,
         axis: gearLayout.axis,
-        radius: outsideRadius(gear.size, gear.teeth) + AXIAL_HANDLE_GAP,
+        radius: gearEnvelope(gear).radius + AXIAL_HANDLE_GAP,
         angle: axialHandleAngle(scene, gear.id),
       }),
     );

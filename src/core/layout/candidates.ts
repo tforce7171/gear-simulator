@@ -1,6 +1,13 @@
-import { GEAR_SIZES, PERIMETER_CANDIDATE_COUNT } from '../constants';
+import { GEAR_SIZES, PERIMETER_CANDIDATE_COUNT, WORM_THREADS } from '../constants';
+import { sectionWidth } from '../geometry/dimensions';
 import type { Vec3 } from '../math/vec3';
-import { gearShape, makeGear, meshPartnerShape, newGearShape } from '../scene/gear-shape';
+import {
+  gearShape,
+  makeGear,
+  meshPartnerShape,
+  newGearShape,
+  skewPartnerShape,
+} from '../scene/gear-shape';
 import type {
   Axis,
   Gear,
@@ -19,13 +26,15 @@ import { resolveAddition, resolveLayout } from './resolve';
 // 同じ軸の候補（選んだ歯車のシャフトに通す。歯車の並びの両端の外側）を返す。
 // 外周の子は親とかみ合う形（ハスバ歯車なら逆の hand）、同じ軸は spec.coaxialKind の歯車（S2-01）。
 // かさ歯車の親（S2-02）は外周の代わりに、直交する 2 軸 × 2 方向の 4 か所のかさ歯車（新しい bevel のシャフト）を返す。
+// ウォーム・ホイールの親（S2-03）は外周の代わりに、ねじれた位置の 2 軸 × 2 方向の 4 か所に相手（skewPartnerShape。
+// ウォームにはホイール、ホイールにはウォーム）を載せた新しい skew のシャフトを返す。
 // 候補を足した仮のシーン（resolveAddition で、全体を解き直さずに求める）で新しく増えた干渉の組があるものは除く
 
 export interface GrowSpec {
   perimeterTeeth: number; // 外周の新しい歯車の歯数（大きさは親と同じ）
   coaxialSize: SizeKey; // 同じ軸の新しい歯車の大きさ
   coaxialTeeth: number; // 同じ軸の新しい歯車の歯数
-  coaxialKind: GearKind; // 同じ軸の新しい歯車の種類（S2-01。ハスバ歯車は hand 'right'）
+  coaxialKind: GearKind; // 同じ軸の新しい歯車の種類（S2-01。ハスバ歯車は hand 'right'。ウォームは歯数によらず 1 条）
 }
 
 export type GrowCandidate =
@@ -48,6 +57,18 @@ export type GrowCandidate =
       size: SizeKey; // 親と同じ
       teeth: number; // 親と同じ（歯数比 1:1）
       shape: GearShape; // { kind: 'bevel', apex: −side }
+      center: Vec3;
+      axis: Axis;
+      basePhase: number;
+    }
+  | {
+      kind: 'skew'; // ねじれた位置の 90° でかみ合う相手（S2-03。ウォームにはホイール、ホイールにはウォーム）
+      parentGearId: GearId;
+      axisStep: 1 | 2; // 新しいシャフトの軸 = 親の軸を axisStep 回進めた軸
+      side: 1 | -1;
+      size: SizeKey; // 親と同じ
+      teeth: number; // ホイールは spec.perimeterTeeth、ウォームは WORM_THREADS
+      shape: GearShape; // skewPartnerShape(親の形)
       center: Vec3;
       axis: Axis;
       basePhase: number;
@@ -166,22 +187,61 @@ export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec)
     }
   }
 
-  // 選んだ歯車のシャフトに載った歯車の並びの、最小と最大の面
+  // ウォーム・ホイールの親: axisStep 1 → 2、それぞれ side −1 → 1 の 4 か所
+  const skewShape = skewPartnerShape(gearShape(parent));
+  if (skewShape !== null) {
+    const teeth = skewShape.kind === 'worm' ? WORM_THREADS : spec.perimeterTeeth;
+    for (const axisStep of [1, 2] as const) {
+      for (const side of [-1, 1] as const) {
+        const shaft: Shaft = {
+          id: tempShaftId,
+          placement: {
+            kind: 'skew',
+            parentGearId: gearId,
+            childGearId: tempGearId,
+            axisStep,
+            side,
+          },
+        };
+        const child = makeGear(
+          { id: tempGearId, shaftId: tempShaftId, size: parent.size, teeth, offset: 0 },
+          skewShape,
+        );
+        const placed = tryPlace(shaft, child);
+        if (placed === null) continue;
+        candidates.push({
+          kind: 'skew',
+          parentGearId: gearId,
+          axisStep,
+          side,
+          size: parent.size,
+          teeth,
+          shape: skewShape,
+          center: placed.center,
+          axis: placed.axis,
+          basePhase: placed.basePhase,
+        });
+      }
+    }
+  }
+
+  // 選んだ歯車のシャフトに載った歯車の並びの、最小と最大の面（区画の両端。ウォームは区画の幅。S2-03）
   let minFace = Number.POSITIVE_INFINITY;
   let maxFace = Number.NEGATIVE_INFINITY;
   for (const g of Object.values(scene.gears)) {
     if (g.shaftId !== parent.shaftId) continue;
     minFace = Math.min(minFace, g.offset);
-    maxFace = Math.max(maxFace, g.offset + GEAR_SIZES[g.size].faceWidth);
+    maxFace = Math.max(maxFace, g.offset + sectionWidth(g));
   }
-  const width = GEAR_SIZES[spec.coaxialSize].faceWidth;
+  const width = sectionWidth({ kind: spec.coaxialKind, size: spec.coaxialSize });
+  const coaxialTeeth = spec.coaxialKind === 'worm' ? WORM_THREADS : spec.coaxialTeeth;
   for (const offset of [minFace - width, maxFace]) {
     const child = makeGear(
       {
         id: tempGearId,
         shaftId: parent.shaftId,
         size: spec.coaxialSize,
-        teeth: spec.coaxialTeeth,
+        teeth: coaxialTeeth,
         offset,
       },
       coaxialShape,
@@ -193,7 +253,7 @@ export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec)
       shaftId: parent.shaftId,
       offset,
       size: spec.coaxialSize,
-      teeth: spec.coaxialTeeth,
+      teeth: coaxialTeeth,
       shape: coaxialShape,
       center: placed.center,
       axis: placed.axis,

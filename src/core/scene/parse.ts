@@ -114,10 +114,11 @@ export function parseScene(raw: unknown): SceneParseResult {
         childGearId: str(p, 'childGearId', base, key),
         angle: num(p, 'angle', base, key),
       };
-    } else if (p.kind === 'bevel') {
-      // bevel も軸を持たない（親の軸から axisStep で導く。S2-02）。axisStep が 1・2、side が ±1 かは validateScene が確かめる
+    } else if (p.kind === 'bevel' || p.kind === 'skew') {
+      // bevel・skew も軸を持たない（親の軸から axisStep で導く。S2-02、S2-03）。
+      // axisStep が 1・2、side が ±1 かは validateScene が確かめる
       placement = {
-        kind: 'bevel',
+        kind: p.kind,
         parentGearId: str(p, 'parentGearId', base, key),
         childGearId: str(p, 'childGearId', base, key),
         axisStep: num(p, 'axisStep', base, key) as 1 | 2,
@@ -156,6 +157,11 @@ export function parseScene(raw: unknown): SceneParseResult {
       case 'bevel':
         // apex が ±1 かは validateScene が確かめる（S2-02）
         gears.push([key, { ...common, kind, apex: num(item, 'apex', base, key) as 1 | -1 }]);
+        break;
+      case 'worm':
+      case 'wormWheel':
+        // ウォームの teeth が 1（条数）かは validateScene が確かめる（S2-03）
+        gears.push([key, { ...common, kind }]);
         break;
       default:
         assertNever(kind);
