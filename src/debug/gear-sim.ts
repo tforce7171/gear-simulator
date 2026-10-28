@@ -46,6 +46,8 @@ export interface GearSimDebug {
   getInputDevice(): InputDevice;
   /** 設定の一部を書き換える（S1-14。S1-30 で設定画面からも同じ経路を使う） */
   updateSettings(patch: Partial<Settings>): void;
+  /** 今の設定（AppState.settings。S1-30）。localStorage に保存している値と同じ */
+  getSettings(): Settings;
   /** 眺めるモードの ON/OFF（S1-14） */
   setWatchMode(on: boolean): void;
   /** 表示の状態（S1-29）。情報表示を全歯車に出すか（ツールバー・メニュー）と、眺めるモードか */

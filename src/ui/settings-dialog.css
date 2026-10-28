@@ -1,0 +1,49 @@
+/* 設定画面（S1-30）。見た目の土台は dialog.css の gs-dialog */
+.gs-settings {
+  width: min(460px, calc(100vw - 32px));
+}
+
+.gs-settings__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.gs-settings__row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gs-settings__label {
+  color: var(--gs-text-muted, #9aa1ab);
+}
+
+.gs-settings__choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.gs-settings__choice {
+  min-width: 72px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--gs-button-border, #4a505b);
+  border-radius: 4px;
+  background: var(--gs-button-bg, #353a43);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.gs-settings__choice[aria-checked="true"] {
+  border-color: #6f9bd1;
+  background: #3b5a80;
+}
+
+.gs-settings__choice:focus-visible {
+  outline: 2px solid #6f9bd1;
+  outline-offset: 1px;
+}

@@ -14,7 +14,8 @@ import { AUTOSAVE_DEBOUNCE_MS, THUMBNAIL_SIZE } from './core/constants';
 import { toSaveFile } from './core/io/save-file';
 import { boundsOf } from './core/layout/bounds';
 import { resolveLayout } from './core/layout/resolve';
-import { nextTheme } from './core/theme';
+import { defaultSettings } from './core/settings';
+import { nextTheme, THEME_AUDIO_MATERIAL } from './core/theme';
 import { installGearSim } from './debug/gear-sim';
 import { type ContextRequest, createCameraInput } from './input/camera';
 import { createKeyboard, isTypingTarget } from './input/keyboard';
@@ -32,6 +33,7 @@ import { motorCenter } from './render/sync';
 import { warningParts } from './render/warning-effects';
 import { createAutosaver } from './storage/autosave';
 import * as db from './storage/db';
+import { browserStorage, loadSettings, saveSettings } from './storage/settings-storage';
 import { createContextMenu } from './ui/context-menu/controller';
 import { createFilePicker, downloadText } from './ui/file-io';
 import { createInfoLabels } from './ui/info-labels';
@@ -39,12 +41,19 @@ import { createPalette } from './ui/palette';
 import { createPauseIndicator } from './ui/pause-indicator';
 import { createProperties } from './ui/properties';
 import { openSaveDialog } from './ui/save-dialog';
+import { createSettingsDialog } from './ui/settings-dialog';
 import { createUiShell } from './ui/shell';
 import { showToast } from './ui/toast';
 import { openWorksDialog } from './ui/works-dialog';
 
 const root = document.querySelector<HTMLElement>('#root');
 if (!root) throw new Error('#root が見つからない');
+
+// 設定（S1-30）: 最初の描画の前に localStorage から読む。使えない・壊れていれば初期値（言語はブラウザの言語）。
+// 言語は画面を作る前に合わせる
+const settingsStorage = browserStorage();
+const initialSettings = loadSettings(settingsStorage, defaultSettings(navigator.language));
+setLanguage(initialSettings.language);
 
 // 画面の骨組み（S1-15）。canvas は中央の描画領域に入れる
 const shell = createUiShell(root);
@@ -65,7 +74,23 @@ onLanguageChange(applyLanguage);
 const restored = await restoreScene(db.loadAutosave);
 if (restored.status === 'failed') showToast('storage.restoreFailed', 'error');
 const storageAvailable = restored.status !== 'unavailable';
-const store = createStore(restored.scene);
+const store = createStore(restored.scene, { settings: initialSettings });
+// 設定の参照が変わったら localStorage に書く（S1-30）。書けなければトーストで 1 回だけ知らせる（起動中に
+// 何度失敗しても 1 回）
+let savedSettings = store.getState().settings;
+let settingsSaveFailedShown = false;
+store.subscribe(({ settings }) => {
+  if (settings === savedSettings) return;
+  savedSettings = settings;
+  if (!saveSettings(settingsStorage, settings) && !settingsSaveFailedShown) {
+    settingsSaveFailedShown = true;
+    showToast('settings.saveFailed', 'error');
+  }
+});
+// 言語（S1-30）: settings.language と i18n の言語をいつも一致させる。設定画面などで設定が変わったら
+// i18n に、ほかの経路で i18n の言語が変わったら設定に映す
+store.subscribe(({ settings }) => setLanguage(settings.language));
+onLanguageChange((language) => store.dispatch({ type: 'updateSettings', patch: { language } }));
 const layoutOf = createLayoutMemo();
 const renderer = createRenderer(canvas, {
   theme: store.getState().settings.theme,
@@ -286,7 +311,12 @@ const properties = createProperties({
 store.subscribe(() => properties.refresh());
 // 音（S1-25）。AudioContext は最初のユーザー操作（pointerdown・keydown）で作って resume する。
 // 描画領域に限らずどこを操作しても始めるので、window で capture する。ミュート中でも作る（主音量 0）
-const audio = createAudioEngine({ muted: store.getState().settings.muted });
+// 音の材質はテーマに結び付ける（S1-30。真鍮 → 金属、木製 → 木）
+const audio = createAudioEngine({
+  muted: store.getState().settings.muted,
+  material: THEME_AUDIO_MATERIAL[store.getState().settings.theme],
+});
+store.subscribe(({ settings }) => audio.setMaterial(THEME_AUDIO_MATERIAL[settings.theme]));
 const startAudio = (): void => audio.start();
 window.addEventListener('pointerdown', startAudio, { capture: true });
 window.addEventListener('keydown', startAudio, { capture: true });
@@ -371,6 +401,15 @@ const importPicker = createFilePicker(document.body, '.json,application/json', (
 const importButton = shell.toolbar.button('import');
 importButton.disabled = false;
 importButton.addEventListener('click', () => importPicker.open());
+// 設定画面（S1-30）。選ぶとすぐ updateSettings で反映する
+const settingsDialog = createSettingsDialog({
+  getSettings: () => store.getState().settings,
+  update: (patch) => store.dispatch({ type: 'updateSettings', patch }),
+  subscribe: (listener) => store.subscribe(listener),
+});
+const settingsButton = shell.toolbar.button('settings');
+settingsButton.disabled = false;
+settingsButton.addEventListener('click', () => settingsDialog.open());
 // 右下の軸の目印（S1-14）。球をクリックすると、その軸の側から見る
 const gizmo = createAxisGizmo(shell.gizmoSlot, (v) => cameraInput.setView(v));
 // 右クリック（ドラッグなし）の要求でコンテキストメニューを開く（S1-29）。最後の要求はテスト用に覚えておく
@@ -414,7 +453,9 @@ installGearSim({
   redo: () => store.dispatch({ type: 'redo' }),
   projectToScreen: (world) => view.projectToScreen(world),
   getLanguage,
-  setLanguage,
+  // 設定画面と同じ経路（settings.language を変え、購読で i18n の言語も変わる。S1-30）
+  setLanguage: (language) => store.dispatch({ type: 'updateSettings', patch: { language } }),
+  getSettings: () => store.getState().settings,
   getCamera: () => cameraInput.getPose(),
   setCamera: (pose) => cameraInput.setPose(pose, false),
   getLastContextRequest: () => lastContextRequest,
