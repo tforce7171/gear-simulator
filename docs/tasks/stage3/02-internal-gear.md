@@ -1,7 +1,7 @@
 ---
 id: S3-02
 title: 内歯車
-status: todo
+status: doing
 depends: [S2-05]
 ---
 
