@@ -48,6 +48,8 @@ export interface GearSimDebug {
   updateSettings(patch: Partial<Settings>): void;
   /** 眺めるモードの ON/OFF（S1-14） */
   setWatchMode(on: boolean): void;
+  /** 表示の状態（S1-29）。情報表示を全歯車に出すか（ツールバー・メニュー）と、眺めるモードか */
+  getView(): { infoOverlay: boolean; watchMode: boolean };
   /** 軸の目印の球の中心のページ座標（S1-14） */
   getGizmoTargets(): Array<{ view: ViewName; x: number; y: number }>;
   /** 選択中の部品の ID。無ければ []、あれば [id]（選択は 1 つだけ。S1-16） */

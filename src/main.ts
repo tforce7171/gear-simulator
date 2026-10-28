@@ -32,6 +32,7 @@ import { motorCenter } from './render/sync';
 import { warningParts } from './render/warning-effects';
 import { createAutosaver } from './storage/autosave';
 import * as db from './storage/db';
+import { createContextMenu } from './ui/context-menu/controller';
 import { createFilePicker, downloadText } from './ui/file-io';
 import { createInfoLabels } from './ui/info-labels';
 import { createPalette } from './ui/palette';
@@ -175,9 +176,23 @@ createSelectionInput({
     hoverPoint = point;
   },
 });
-// Esc: ドラッグ中ならやめて元に戻す（S1-17）。手で回している最中なら回すのを終える（S1-21）。
-// それ以外は選択を外す
+// コンテキストメニュー（S1-29）。右クリック（ドラッグなし）の位置で部品の本体を当て、部品の上なら選択を
+// 置き換えて部品のメニュー、何もない所なら何もない所のメニューを開く
+const contextMenu = createContextMenu({
+  host: document.body,
+  getState: () => store.getState(),
+  dispatch: (action) => store.dispatch(action),
+  pickBody: bodyAt,
+  dollyToPoint: (world) => cameraInput.dollyToPoint(world),
+  fitAll: () => cameraInput.fitAll(),
+});
+// Esc: メニューを開いていれば閉じるだけ（S1-29。ふつうはメニューが先に受け取る）。ドラッグ中ならやめて
+// 元に戻す（S1-17）。手で回している最中なら回すのを終える（S1-21）。それ以外は選択を外す
 const unselect = (): void => {
+  if (contextMenu.isOpen()) {
+    contextMenu.close();
+    return;
+  }
   if (interactions.cancel()) return;
   store.dispatch({ type: 'select', id: null });
 };
@@ -358,10 +373,11 @@ importButton.disabled = false;
 importButton.addEventListener('click', () => importPicker.open());
 // 右下の軸の目印（S1-14）。球をクリックすると、その軸の側から見る
 const gizmo = createAxisGizmo(shell.gizmoSlot, (v) => cameraInput.setView(v));
-// コンテキストメニューの中身は S1-29。それまではテスト用に最後の要求だけ覚えておく
+// 右クリック（ドラッグなし）の要求でコンテキストメニューを開く（S1-29）。最後の要求はテスト用に覚えておく
 let lastContextRequest: ContextRequest | null = null;
 cameraInput.onContextRequest((request) => {
   lastContextRequest = request;
+  contextMenu.openAt(request.x, request.y);
 });
 // 描く前にカメラを進める
 const view = {
@@ -405,6 +421,10 @@ installGearSim({
   getInputDevice: () => cameraInput.getInputDevice(),
   updateSettings: (patch) => store.dispatch({ type: 'updateSettings', patch }),
   setWatchMode: (on) => store.dispatch({ type: 'setWatchMode', on }),
+  getView: () => {
+    const { infoOverlay, watchMode } = store.getState().view;
+    return { infoOverlay, watchMode };
+  },
   getGizmoTargets: () => gizmo.targets(),
   getSelection: () => {
     const { selection } = store.getState();

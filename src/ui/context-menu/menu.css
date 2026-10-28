@@ -1,0 +1,49 @@
+/* コンテキストメニュー（S1-29）。位置は menu.ts が画面（ビューポート）の座標で決める */
+.gs-context-menu {
+  position: fixed;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  padding: 4px;
+  border: 1px solid var(--gs-button-border, #4a505b);
+  border-radius: 6px;
+  background: var(--gs-panel-bg, #2a2e35);
+  color: var(--gs-text, #d8dce2);
+  font-family: var(--gs-font, system-ui, sans-serif);
+  font-size: 13px;
+  box-shadow: 0 6px 16px rgb(0 0 0 / 40%);
+  user-select: none;
+}
+
+.gs-context-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 12px 6px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.gs-context-menu__item:focus {
+  outline: none;
+  background: var(--gs-button-bg, #353a43);
+}
+
+.gs-context-menu__item:focus-visible {
+  outline: 2px solid #6f9bd1;
+  outline-offset: -2px;
+}
+
+.gs-context-menu__check {
+  display: inline-block;
+  width: 1em;
+  text-align: center;
+}

@@ -127,6 +127,15 @@ export const ja = {
     '歯車の歯数が、大きさごとの範囲を外れているか整数でない（場所: {path}）',
   'import.error.invalidScene.rpm':
     'モーターの回転数が範囲（1〜120 rpm）を外れている（場所: {path}）',
+  // コンテキストメニュー（S1-29）。`contextMenu.<action>` が項目の表示名
+  'contextMenu.label': '操作のメニュー',
+  'contextMenu.delete': '削除',
+  'contextMenu.attachMotor': 'モーターを付ける',
+  'contextMenu.detachMotor': 'モーターを外す',
+  'contextMenu.focusHere': 'ここに寄る',
+  'contextMenu.frameAll': '全体表示',
+  'contextMenu.toggleWatch': '眺めるモード',
+  'contextMenu.toggleInfo': '情報表示',
 } as const;
 
 export type MessageKey = keyof typeof ja;
