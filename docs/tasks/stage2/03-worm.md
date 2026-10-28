@@ -1,7 +1,7 @@
 ---
 id: S2-03
 title: ウォームギア
-status: todo
+status: doing
 depends: [S1-31]
 ---
 
