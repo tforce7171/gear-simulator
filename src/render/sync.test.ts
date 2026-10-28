@@ -1,9 +1,23 @@
+import { readFileSync } from 'node:fs';
 import { type Mesh, MeshStandardMaterial, type Object3D } from 'three';
 import { describe, expect, it } from 'vitest';
 import { demoScene } from '../app/demo-scene';
 import { initialMotionState } from '../core/kinematics/motion';
 import { resolveLayout } from '../core/layout/resolve';
+import { GEAR_KIND_LIST } from '../core/scene/gear-shape';
+import type { GearKind, Scene } from '../core/scene/types';
 import { createSceneSync } from './sync';
+
+// すべての種類に同じ材質（S2-05 で歯車の材質は種類ごとになった）
+function allKinds(
+  material: MeshStandardMaterial,
+  overrides: Partial<Record<GearKind, MeshStandardMaterial>> = {},
+): Record<GearKind, MeshStandardMaterial> {
+  return Object.fromEntries(
+    GEAR_KIND_LIST.map((kind) => [kind, overrides[kind] ?? material]),
+  ) as Record<GearKind, MeshStandardMaterial>;
+}
+
 import { LOCK_SHAKE_AMPLITUDE } from './warning-effects';
 
 // userData の pickKind・pickId を持つ物を探す
@@ -210,7 +224,7 @@ describe('テーマの材質の差し替え（S1-24）', () => {
     });
     const gear = new MeshStandardMaterial({ color: 0xc9a24a, metalness: 1, roughness: 0.32 });
     sync.setBaseMaterials({
-      gear,
+      gear: allKinds(gear),
       shaft: new MeshStandardMaterial(),
       motor: new MeshStandardMaterial(),
     });
@@ -222,6 +236,40 @@ describe('テーマの材質の差し替え（S1-24）', () => {
     expect(selected).not.toBe(gear);
     expect(selected.color.getHex()).toBe(0xc9a24a);
     expect(selected.metalness).toBe(1);
+  });
+
+  it('歯車の基の材質は種類ごと（S2-05）: ウォームとホイールは平歯車と別の材質', () => {
+    const worm = JSON.parse(
+      readFileSync(new URL('../../e2e/fixtures/worm-basic.json', import.meta.url), 'utf8'),
+    ) as Scene;
+    const sync = createSceneSync();
+    sync.sync(worm, resolveLayout(worm));
+    const brass = new MeshStandardMaterial({ color: 0xc9a24a });
+    const steel = new MeshStandardMaterial({ color: 0xb9bec4 });
+    const bronze = new MeshStandardMaterial({ color: 0xc07840 });
+    let disposed = 0;
+    for (const m of [steel, bronze, brass]) {
+      m.addEventListener('dispose', () => {
+        disposed++;
+      });
+    }
+    sync.setBaseMaterials({
+      gear: allKinds(brass, { worm: steel, wormWheel: bronze }),
+      shaft: new MeshStandardMaterial(),
+      motor: new MeshStandardMaterial(),
+    });
+    expect(materialOf(sync.root, 'gear_w')).toBe(steel);
+    expect(materialOf(sync.root, 'gear_h')).toBe(bronze);
+    // 選択の材質も種類ごとの基から作る
+    sync.setHighlight({ selected: 'gear_w', hovered: null });
+    expect(materialOf(sync.root, 'gear_w').color.getHex()).toBe(0xb9bec4);
+    // 差し替えると、共有している基の材質も 1 回ずつ dispose される
+    sync.setBaseMaterials({
+      gear: allKinds(new MeshStandardMaterial()),
+      shaft: new MeshStandardMaterial(),
+      motor: new MeshStandardMaterial(),
+    });
+    expect(disposed).toBe(3);
   });
 
   it('歯車とシャフトは影を落とす', () => {

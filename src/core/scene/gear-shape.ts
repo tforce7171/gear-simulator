@@ -104,6 +104,9 @@ const GEAR_KINDS: Readonly<Record<GearKind, true>> = {
   crossedHelical: true,
 };
 
+// 種類の一覧（上の順。パレットの並び・テーマの材質の表の確かめに使う。S2-05）
+export const GEAR_KIND_LIST = Object.keys(GEAR_KINDS) as readonly GearKind[];
+
 export function isGearKind(value: unknown): value is GearKind {
   return typeof value === 'string' && Object.hasOwn(GEAR_KINDS, value);
 }
