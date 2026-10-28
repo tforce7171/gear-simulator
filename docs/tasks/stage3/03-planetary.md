@@ -1,7 +1,7 @@
 ---
 id: S3-03
 title: 遊星歯車とキャリア
-status: doing
+status: done
 depends: [S3-01, S3-02]
 ---
 
@@ -176,4 +176,4 @@ depends: [S3-01, S3-02]
 ## 完了の条件
 - [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
 - [x] design.md と後続のタスク資料に、必要な変更を反映した（§4、§5、§6、§10）
-- [ ] `status: done` にしてコミットした
+- [x] `status: done` にしてコミットした
