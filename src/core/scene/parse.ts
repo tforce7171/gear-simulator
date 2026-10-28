@@ -1,4 +1,5 @@
 import type { Vec3 } from '../math/vec3';
+import { assertNever, isGearKind } from './gear-shape';
 import type { Axis, Gear, Hand, Motor, Scene, Shaft, ShaftPlacement, SizeKey } from './types';
 import { type SceneError, validateScene } from './validate';
 
@@ -131,12 +132,20 @@ export function parseScene(raw: unknown): SceneParseResult {
       offset: num(item, 'offset', base, key),
     };
     // 種類ごとのフィールド（S2-01）。値が許された範囲か（hand が left・right か）は validateScene が確かめる
-    if (item.kind === 'spur') {
-      gears.push([key, { ...common, kind: 'spur' }]);
-    } else if (item.kind === 'helical') {
-      gears.push([key, { ...common, kind: 'helical', hand: str(item, 'hand', base, key) as Hand }]);
-    } else {
-      shape(`${base}.kind`, `invalid gear kind "${String(item.kind)}"`, key);
+    const kind: unknown = item.kind;
+    if (!isGearKind(kind)) {
+      shape(`${base}.kind`, `invalid gear kind "${String(kind)}"`, key);
+      continue;
+    }
+    switch (kind) {
+      case 'spur':
+        gears.push([key, { ...common, kind }]);
+        break;
+      case 'helical':
+        gears.push([key, { ...common, kind, hand: str(item, 'hand', base, key) as Hand }]);
+        break;
+      default:
+        assertNever(kind);
     }
   }
 

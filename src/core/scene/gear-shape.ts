@@ -52,8 +52,11 @@ export function makeGear(base: GearBase, shape: GearShape): Gear {
   return { ...base, ...shape };
 }
 
+// 種類の一覧。Record にして、種類を足したときの書き忘れを型で検出する
+const GEAR_KINDS: Readonly<Record<GearKind, true>> = { spur: true, helical: true };
+
 export function isGearKind(value: unknown): value is GearKind {
-  return value === 'spur' || value === 'helical';
+  return typeof value === 'string' && Object.hasOwn(GEAR_KINDS, value);
 }
 
 export function isHand(value: unknown): value is Hand {
