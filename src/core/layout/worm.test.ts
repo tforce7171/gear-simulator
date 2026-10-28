@@ -32,6 +32,7 @@ const wormOnly: Scene = {
   gears: { gear_w: wormBasic.gears.gear_w as Gear },
   motors: wormBasic.motors,
   anchors: {},
+  carriers: {},
 };
 const TWO_PI = 2 * Math.PI;
 
@@ -326,6 +327,7 @@ describe('セルフロック', () => {
       },
       motors: { motor_a: motor('motor_a', 'shaft_a') },
       anchors: {},
+      carriers: {},
     };
     // A（W1）→ B（H1）、B（P1）— C（P2）、C（W2）→ D（H2）、D（P3）— A（P4）の機構（かみ合いだけを与える）
     const meshes: Mesh[] = [
@@ -404,6 +406,7 @@ describe('位相', () => {
       },
       motors: {},
       anchors: {},
+      carriers: {},
     };
     expect(validateScene(scene)).toEqual({ ok: true });
     const layout = resolveLayout(scene);
@@ -518,6 +521,7 @@ describe('contact と干渉', () => {
       },
       motors: { motor_m: motor('motor_m', 'shaft_w') },
       anchors: {},
+      carriers: {},
     };
     const layout = resolveLayout(scene);
     expect(layout.meshes).toEqual([{ a: 'gear_h', b: 'gear_w', source: 'contact', kind: 'worm' }]);

@@ -44,7 +44,7 @@ function arcLoop(patch: { t?: Partial<SpurGear>; tAxis?: 'x' | 'y' | 'z'; withB2
       offset: 0,
     };
   }
-  const scene: Scene = { shafts, gears, motors: {}, anchors: {} };
+  const scene: Scene = { shafts, gears, motors: {}, anchors: {}, carriers: {} };
   return scene;
 }
 

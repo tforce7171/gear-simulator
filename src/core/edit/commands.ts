@@ -1,6 +1,15 @@
-import { AXIAL_SNAP, GEAR_SIZES, MOTOR_RPM_RANGE, MOTOR_SIZES, WORM_THREADS } from '../constants';
+import {
+  AXIAL_SNAP,
+  DEFAULT_PLANET_COUNT,
+  GEAR_SIZES,
+  MOTOR_RPM_RANGE,
+  MOTOR_SIZES,
+  PLANET_COUNT_RANGE,
+  WORM_THREADS,
+} from '../constants';
 import { canMesh, meshGeometryOf } from '../geometry/can-mesh';
-import { teethRange } from '../geometry/dimensions';
+import { teethInRange, teethRange } from '../geometry/dimensions';
+import { defaultPlanetTeeth, planetaryOk, planetCountInRange } from '../geometry/planetary';
 import { descendantShafts, resolveLayout } from '../layout/resolve';
 import type { Layout } from '../layout/types';
 import type { Vec3 } from '../math/vec3';
@@ -15,18 +24,22 @@ import {
   skewPartnerShape,
 } from '../scene/gear-shape';
 import type { IdGenerator } from '../scene/ids';
-import { anchorOfShaft } from '../scene/scene';
+import { withPlanetary } from '../scene/planetary';
+import { anchorOfShaft, planetShaftsOf } from '../scene/scene';
 import { shaftAxis } from '../scene/shaft-axis';
 import {
   type Anchor,
   type AnchorId,
   type Axis,
+  type Carrier,
+  type CarrierId,
   type FreePlacement,
   type Gear,
   type GearId,
   type GearKind,
   type GearShape,
   isChildPlacement,
+  isFreePlacement,
   type Motor,
   type MotorId,
   type Scene,
@@ -74,6 +87,10 @@ export type Command =
       side: 1 | -1;
       teeth: number;
     }
+  // 平歯車の親を太陽とする遊星歯車機構（S3-03）。キャリアのシャフト（concentric）とキャリア、遊星のシャフト（planet）と
+  // 遊星歯車 DEFAULT_PLANET_COUNT 個（太陽と同じ大きさ）、リングのシャフト（concentric）と内歯車（webSide −1、offset は太陽と同じ）。
+  // 歯数は defaultPlanetTeeth。作れなければ（平歯車でない・遊星のシャフトの歯車・歯数の組が無い）notAllowed
+  | { type: 'growGear'; mode: 'planetary'; parentGearId: GearId }
   // kind は省くと 'spur'。ハスバ歯車は hand 'right'（S2-01）。ウォームは teeth によらず 1 条（S2-03）
   | {
       type: 'growGear';
@@ -85,6 +102,9 @@ export type Command =
       kind?: GearKind;
     }
   | { type: 'deleteParts'; ids: string[] }
+  // キャリアの遊星の数を変える（S3-03）。遊星のシャフトを作り直して等配にする（1 本目の遊星のシャフトの歯車の並びを写す）。
+  // 範囲外・配置の条件（planetaryConditions）を満たさない数は notAllowed
+  | { type: 'setPlanetCount'; carrierId: CarrierId; count: number }
   // かさ歯車では、木の親子（bevel の配置）でつながったかさ歯車すべての歯数を同じ値にする（S2-02）。
   // ウォームの歯数（条数）は変えられない（notAllowed。S2-03）
   | { type: 'setGearTeeth'; gearId: GearId; teeth: number }
@@ -212,11 +232,15 @@ export function applyCommand(scene: Scene, command: Command, ctx: CommandContext
           return growSkew(scene, command, ctx);
         case 'enclose':
           return growEnclose(scene, command, ctx);
+        case 'planetary':
+          return growPlanetary(scene, command, ctx);
         default:
           return growCoaxial(scene, command, ctx);
       }
     case 'deleteParts':
       return deleteParts(scene, command.ids);
+    case 'setPlanetCount':
+      return setPlanetCount(scene, command, ctx);
     case 'setGearTeeth':
       return setGearTeeth(scene, command);
     case 'flipBevelApex':
@@ -282,12 +306,19 @@ function addRootShaft(
       gears: withEntry(scene.gears, gearId, gear),
       motors: scene.motors,
       anchors: scene.anchors,
+      carriers: scene.carriers,
     },
     [shaftId, gearId],
   );
 }
 
 // 親と同じ大きさの歯車（offset 0）と、それを子に持つ mesh のシャフトを作る
+// 遊星のシャフトの歯車からは外へ生やさない（同じ軸の段付きの遊星だけ。S3-03）
+function orbitingParentError(scene: Scene, parent: Gear): Failure | null {
+  if (scene.shafts[parent.shaftId]?.placement.kind !== 'planet') return null;
+  return fail('notAllowed', `gear ${parent.id} is on a planet shaft`);
+}
+
 function growPerimeter(
   scene: Scene,
   c: Extract<Command, { type: 'growGear'; mode: 'perimeter' }>,
@@ -295,6 +326,8 @@ function growPerimeter(
 ): CommandResult {
   const parent = scene.gears[c.parentGearId];
   if (parent === undefined) return fail('notFound', `gear ${c.parentGearId} not found`);
+  const orbiting = orbitingParentError(scene, parent);
+  if (orbiting) return orbiting;
   if (!Number.isFinite(c.angle)) return fail('invalidValue', 'angle must be finite');
   const bad = teethError(parent.size, c.teeth);
   if (bad) return bad;
@@ -313,6 +346,8 @@ function growEnclose(
 ): CommandResult {
   const parent = scene.gears[c.parentGearId];
   if (parent === undefined) return fail('notFound', `gear ${c.parentGearId} not found`);
+  const orbiting = orbitingParentError(scene, parent);
+  if (orbiting) return orbiting;
   if (!Number.isFinite(c.angle)) return fail('invalidValue', 'angle must be finite');
   const shape = internalEncloseShape(gearShape(parent));
   if (shape === null) {
@@ -360,6 +395,7 @@ function growMeshChild(
       gears: withEntry(scene.gears, gearId, gear),
       motors: scene.motors,
       anchors: scene.anchors,
+      carriers: scene.carriers,
     },
     [shaftId, gearId],
   );
@@ -373,6 +409,8 @@ function growBevel(
 ): CommandResult {
   const parent = scene.gears[c.parentGearId];
   if (parent === undefined) return fail('notFound', `gear ${c.parentGearId} not found`);
+  const orbiting = orbitingParentError(scene, parent);
+  if (orbiting) return orbiting;
   if (parent.kind !== 'bevel') return fail('notAllowed', `gear ${parent.id} is not a bevel gear`);
   if (c.axisStep !== 1 && c.axisStep !== 2) {
     return fail('invalidValue', `axisStep must be 1 or 2: ${String(c.axisStep)}`);
@@ -402,6 +440,7 @@ function growBevel(
       gears: withEntry(scene.gears, gearId, gear),
       motors: scene.motors,
       anchors: scene.anchors,
+      carriers: scene.carriers,
     },
     [shaftId, gearId],
   );
@@ -415,6 +454,8 @@ function growSkew(
 ): CommandResult {
   const parent = scene.gears[c.parentGearId];
   if (parent === undefined) return fail('notFound', `gear ${c.parentGearId} not found`);
+  const orbiting = orbitingParentError(scene, parent);
+  if (orbiting) return orbiting;
   const shape = skewPartnerShape(gearShape(parent));
   if (shape === null) {
     return fail('notAllowed', `gear ${parent.id} (${parent.kind}) cannot grow a skew gear`);
@@ -447,9 +488,175 @@ function growSkew(
       gears: withEntry(scene.gears, gearId, gear),
       motors: scene.motors,
       anchors: scene.anchors,
+      carriers: scene.carriers,
     },
     [shaftId, gearId],
   );
+}
+
+// 平歯車の親を太陽とする遊星歯車機構を作る（S3-03）。created は [キャリアのシャフト, キャリア,
+// （遊星のシャフト, 遊星歯車）× n, リングのシャフト, リング]
+function growPlanetary(
+  scene: Scene,
+  c: Extract<Command, { type: 'growGear'; mode: 'planetary' }>,
+  ctx: CommandContext,
+): CommandResult {
+  const sun = scene.gears[c.parentGearId];
+  if (sun === undefined) return fail('notFound', `gear ${c.parentGearId} not found`);
+  if (sun.kind !== 'spur') return fail('notAllowed', `gear ${sun.id} is not a spur gear`);
+  const orbiting = orbitingParentError(scene, sun);
+  if (orbiting) return orbiting;
+  const n = DEFAULT_PLANET_COUNT;
+  const teeth = defaultPlanetTeeth(sun, n);
+  if (teeth === null) {
+    return fail('notAllowed', `no planet teeth fit sun ${sun.id} (${sun.size}, ${sun.teeth})`);
+  }
+  const carrierShaftId = ctx.ids('shaft');
+  const carrierId = ctx.ids('carrier');
+  const planets = Array.from({ length: n }, () => ({
+    shaftId: ctx.ids('shaft'),
+    gearId: ctx.ids('gear'),
+  }));
+  const ringShaftId = ctx.ids('shaft');
+  const ringId = ctx.ids('gear');
+  const next = withPlanetary(
+    scene,
+    sun,
+    { carrierShaftId, carrierId, planets, ringShaftId, ringId },
+    teeth,
+  );
+  return done(next, [
+    carrierShaftId,
+    carrierId,
+    ...planets.flatMap((p) => [p.shaftId, p.gearId]),
+    ringShaftId,
+    ringId,
+  ]);
+}
+
+// 遊星歯車機構の部品（S3-03）。sun は遊星の親の歯車（外歯車）、planets は遊星のシャフトの親とかみ合う歯車、
+// ring は遊星と contact でかみ合う、キャリアと同じ線上の内歯車（無ければ null）
+interface Planetary {
+  readonly carrier: Carrier;
+  readonly planetShafts: readonly Shaft[];
+  readonly sun: Gear;
+  readonly planets: readonly Gear[];
+  readonly ring: Gear | null;
+}
+
+function planetaryOfCarrier(scene: Scene, carrierId: CarrierId): Planetary | null {
+  const carrier = scene.carriers[carrierId];
+  if (carrier === undefined) return null;
+  const planetShafts = planetShaftsOf(scene, carrierId);
+  const first = planetShafts[0]?.placement;
+  if (first?.kind !== 'planet') return null;
+  const sun = scene.gears[first.parentGearId];
+  if (sun === undefined) return null;
+  const planets: Gear[] = [];
+  for (const shaft of planetShafts) {
+    const p = shaft.placement;
+    const g = p.kind === 'planet' ? scene.gears[p.childGearId] : undefined;
+    if (g !== undefined) planets.push(g);
+  }
+  const planetIds = new Set(planets.map((g) => g.id));
+  let ring: Gear | null = null;
+  for (const m of resolveLayout(scene).meshes) {
+    if (m.carrierShaftId !== carrier.shaftId) continue;
+    const other = planetIds.has(m.a) ? m.b : planetIds.has(m.b) ? m.a : null;
+    const gear = other === null ? undefined : scene.gears[other];
+    if (gear?.kind === 'internal' && gear.id !== sun.id) {
+      ring = gear;
+      break;
+    }
+  }
+  return { carrier, planetShafts, sun, planets, ring };
+}
+
+// 歯車がかかわる遊星歯車機構（太陽・遊星・リングのどれか）。無ければ null
+function planetaryOfGear(scene: Scene, gearId: GearId): Planetary | null {
+  for (const carrierId of Object.keys(scene.carriers).sort()) {
+    const shafts = planetShaftsOf(scene, carrierId);
+    const involved = shafts.some((s) => {
+      const p = s.placement;
+      return p.kind === 'planet' && (p.parentGearId === gearId || p.childGearId === gearId);
+    });
+    const planetary = planetaryOfCarrier(scene, carrierId);
+    if (planetary === null) continue;
+    if (involved || planetary.ring?.id === gearId) return planetary;
+  }
+  return null;
+}
+
+// キャリアの遊星の数を変える（S3-03）
+function setPlanetCount(
+  scene: Scene,
+  c: Extract<Command, { type: 'setPlanetCount' }>,
+  ctx: CommandContext,
+): CommandResult {
+  if (scene.carriers[c.carrierId] === undefined) {
+    return fail('notFound', `carrier ${c.carrierId} not found`);
+  }
+  if (!planetCountInRange(c.count)) {
+    return fail(
+      'invalidValue',
+      `planet count ${c.count} out of range [${PLANET_COUNT_RANGE.min}, ${PLANET_COUNT_RANGE.max}]`,
+    );
+  }
+  const planetary = planetaryOfCarrier(scene, c.carrierId);
+  const template = planetary?.planetShafts[0];
+  const tp = template?.placement;
+  if (planetary === null || template === undefined || tp?.kind !== 'planet') {
+    return fail('notAllowed', `carrier ${c.carrierId} has no planets`);
+  }
+  const { sun, ring } = planetary;
+  const child = scene.gears[tp.childGearId];
+  if (child === undefined) return fail('notAllowed', `carrier ${c.carrierId} has no planets`);
+  if (!planetaryOk(sun.teeth, child.teeth, ring?.teeth ?? null, c.count)) {
+    return fail('notAllowed', `${c.count} planets do not fit carrier ${c.carrierId}`);
+  }
+  const angles = Array.from({ length: c.count }, (_, k) =>
+    normalizeAngle(tp.angle + (2 * Math.PI * k) / c.count),
+  );
+  const current = planetary.planetShafts.map((s) =>
+    s.placement.kind === 'planet' ? s.placement.angle : 0,
+  );
+  if (current.length === angles.length && current.every((a, k) => a === angles[k])) {
+    return done(scene);
+  }
+  // 遊星のシャフトをすべて消し、1 本目の歯車の並びを写した遊星のシャフトを等配に作る
+  const shafts: Record<ShaftId, Shaft> = { ...scene.shafts };
+  const gears: Record<GearId, Gear> = { ...scene.gears };
+  for (const shaft of planetary.planetShafts) {
+    delete shafts[shaft.id];
+    for (const g of Object.values(scene.gears)) if (g.shaftId === shaft.id) delete gears[g.id];
+  }
+  const templateGears = Object.values(scene.gears).filter((g) => g.shaftId === template.id);
+  const created: string[] = [];
+  for (const angle of angles) {
+    const shaftId = ctx.ids('shaft');
+    let childId = '';
+    const copies: Gear[] = [];
+    for (const g of templateGears) {
+      const id = ctx.ids('gear');
+      if (g.id === tp.childGearId) childId = id;
+      copies.push({ ...g, id, shaftId });
+    }
+    shafts[shaftId] = { id: shaftId, placement: { ...tp, childGearId: childId, angle } };
+    created.push(shaftId);
+    for (const g of copies) {
+      gears[g.id] = g;
+      created.push(g.id);
+    }
+  }
+  // 消した遊星のシャフトの固定具・モーター（コマンドでは付けられないが、読み込んだシーンにあれば）も消す
+  const motors: Record<MotorId, Motor> = { ...scene.motors };
+  const anchors: Record<AnchorId, Anchor> = { ...scene.anchors };
+  for (const m of Object.values(scene.motors))
+    if (shafts[m.shaftId] === undefined) delete motors[m.id];
+  for (const a of Object.values(scene.anchors)) {
+    if (a.target.kind === 'shaft' && shafts[a.target.id] === undefined) delete anchors[a.id];
+  }
+  return done({ ...scene, shafts, gears, motors, anchors }, created);
 }
 
 function growCoaxial(
@@ -484,7 +691,8 @@ function deleteParts(scene: Scene, ids: readonly string[]): CommandResult {
     if (
       !Object.hasOwn(scene.gears, id) &&
       !Object.hasOwn(scene.shafts, id) &&
-      !Object.hasOwn(scene.motors, id)
+      !Object.hasOwn(scene.motors, id) &&
+      !Object.hasOwn(scene.carriers, id)
     ) {
       return fail('notFound', `part ${id} not found`);
     }
@@ -494,6 +702,8 @@ function deleteParts(scene: Scene, ids: readonly string[]): CommandResult {
   const gears: Record<GearId, Gear> = { ...scene.gears };
   const motors: Record<MotorId, Motor> = { ...scene.motors };
   const anchors: Record<AnchorId, Anchor> = { ...scene.anchors };
+  const carriers: Record<CarrierId, Carrier> = { ...scene.carriers };
+  let carriersChanged = false;
   let shaftsChanged = false;
   let gearsChanged = false;
   let motorsChanged = false;
@@ -501,7 +711,7 @@ function deleteParts(scene: Scene, ids: readonly string[]): CommandResult {
   let layout: Layout | null = null;
 
   const detach = (shaft: Shaft): void => {
-    if (!isChildPlacement(shaft.placement)) return;
+    if (isFreePlacement(shaft.placement)) return;
     layout ??= resolveLayout(scene);
     const at = layout.shafts[shaft.id];
     // 検証済みのシーンでは全てのシャフトが根からたどれる。たどれない場合だけの逃げ道
@@ -531,10 +741,38 @@ function deleteParts(scene: Scene, ids: readonly string[]): CommandResult {
     }
   };
 
+  // キャリアを消すと、その遊星のシャフトは消す直前の基準配置の位置で detached になる（S3-03）。
+  // キャリアのシャフトに歯車もほかのキャリアも残らなければ、シャフトも消す
+  const removeCarrier = (carrierId: CarrierId, removeEmptyShaft: boolean): void => {
+    const carrier = carriers[carrierId];
+    if (carrier === undefined) return;
+    delete carriers[carrierId];
+    carriersChanged = true;
+    for (const shaft of Object.values(shafts)) {
+      const p = shaft.placement;
+      if (p.kind === 'planet' && p.carrierId === carrierId) detach(shaft);
+    }
+    if (
+      removeEmptyShaft &&
+      !Object.values(gears).some((g) => g.shaftId === carrier.shaftId) &&
+      !Object.values(carriers).some((x) => x.shaftId === carrier.shaftId)
+    ) {
+      removeShaft(carrier.shaftId);
+    }
+  };
+
   const removeShaft = (shaftId: ShaftId): void => {
     if (shafts[shaftId] === undefined) return;
     for (const gear of Object.values(gears)) {
       if (gear.shaftId === shaftId) removeGear(gear.id);
+    }
+    // 載っているキャリアも消し（S3-03）、同じ線上の子のシャフトはその場に detached で残す
+    for (const carrier of Object.values(carriers)) {
+      if (carrier.shaftId === shaftId) removeCarrier(carrier.id, false);
+    }
+    for (const shaft of Object.values(shafts)) {
+      const p = shaft.placement;
+      if (p.kind === 'concentric' && p.parentShaftId === shaftId) detach(shaft);
     }
     removeMotorsOn(shaftId);
     // シャフトの固定具も消す（S3-01。歯車を消してもシャフトが残る限り固定具は残る）
@@ -559,15 +797,20 @@ function deleteParts(scene: Scene, ids: readonly string[]): CommandResult {
     } else if (motors[id] !== undefined) {
       delete motors[id];
       motorsChanged = true;
+    } else if (carriers[id] !== undefined) {
+      removeCarrier(id, true);
     }
   }
 
-  if (!shaftsChanged && !gearsChanged && !motorsChanged && !anchorsChanged) return done(scene);
+  if (!shaftsChanged && !gearsChanged && !motorsChanged && !anchorsChanged && !carriersChanged) {
+    return done(scene);
+  }
   return done({
     shafts: shaftsChanged ? shafts : scene.shafts,
     gears: gearsChanged ? gears : scene.gears,
     motors: motorsChanged ? motors : scene.motors,
     anchors: anchorsChanged ? anchors : scene.anchors,
+    carriers: carriersChanged ? carriers : scene.carriers,
   });
 }
 
@@ -583,6 +826,8 @@ function setGearTeeth(scene: Scene, c: Extract<Command, { type: 'setGearTeeth' }
   const bad = teethError(gear.size, c.teeth, gear.kind);
   if (bad) return bad;
   if (gear.teeth === c.teeth) return done(scene);
+  const planetary = planetaryOfGear(scene, gear.id);
+  if (planetary !== null) return setPlanetaryTeeth(scene, planetary, gear, c.teeth);
   if (gear.kind !== 'bevel') {
     const next = { ...gear, teeth: c.teeth };
     // 木の親子（mesh の配置）が、内歯車の歯数差の条件を満たさなくなる変更は拒否する（S3-02）
@@ -597,6 +842,43 @@ function setGearTeeth(scene: Scene, c: Extract<Command, { type: 'setGearTeeth' }
   for (const id of bevelTreeOf(scene, gear.id)) {
     const g = scene.gears[id];
     if (g !== undefined && g.teeth !== c.teeth) gears[id] = { ...g, teeth: c.teeth };
+  }
+  return done({ ...scene, gears });
+}
+
+// 遊星歯車機構の中の歯数の変更（S3-03）。太陽か遊星を変えると、リングを z_r = z_s + 2·z_p にする。
+// 同じキャリアの遊星はすべて同じ歯数にする。リングを直接変える変更、条件（範囲・配置の条件）を満たさない変更は notAllowed
+function setPlanetaryTeeth(
+  scene: Scene,
+  planetary: Planetary,
+  gear: Gear,
+  teeth: number,
+): CommandResult {
+  const { sun, planets, ring } = planetary;
+  if (ring !== null && gear.id === ring.id) {
+    return fail('notAllowed', `ring ${gear.id} teeth follow the sun and the planets`);
+  }
+  const isSun = gear.id === sun.id;
+  const zs = isSun ? teeth : sun.teeth;
+  const zp = isSun ? (planets[0]?.teeth ?? teeth) : teeth;
+  const zr = ring === null ? null : zs + 2 * zp;
+  if (zr !== null && ring !== null && !teethInRange('internal', ring.size, zr)) {
+    return fail('notAllowed', `ring would need ${zr} teeth`);
+  }
+  if (!planetaryOk(zs, zp, zr, planetary.planetShafts.length)) {
+    return fail('notAllowed', `sun ${zs}, planets ${zp}, ring ${String(zr)} do not fit`);
+  }
+  const gears: Record<GearId, Gear> = { ...scene.gears };
+  const set = (g: Gear, z: number) => {
+    if (g.teeth !== z) gears[g.id] = { ...g, teeth: z };
+  };
+  set(sun, zs);
+  for (const p of planets) set(p, zp);
+  if (ring !== null && zr !== null) set(ring, zr);
+  for (const g of Object.values(gears)) {
+    if (g !== scene.gears[g.id] && brokenMeshPartner({ ...scene, gears }, g) !== null) {
+      return fail('notAllowed', `gear ${g.id} with ${g.teeth} teeth cannot mesh with its partner`);
+    }
   }
   return done({ ...scene, gears });
 }
@@ -721,6 +1003,10 @@ function addMotor(
     return fail('notFound', `shaft ${c.shaftId} not found`);
   }
   if (!isSizeKey(c.size)) return fail('invalidValue', `invalid size ${String(c.size)}`);
+  // 遊星のシャフト（S3-03）は公転するので、モーターを付けられない
+  if (scene.shafts[c.shaftId]?.placement.kind === 'planet') {
+    return fail('notAllowed', `shaft ${c.shaftId} is a planet shaft`);
+  }
   if (Object.values(scene.motors).some((m) => m.shaftId === c.shaftId)) {
     return fail('notAllowed', `shaft ${c.shaftId} already has a motor`);
   }
@@ -743,6 +1029,10 @@ function addAnchor(
 ): CommandResult {
   if (scene.shafts[c.shaftId] === undefined) {
     return fail('notFound', `shaft ${c.shaftId} not found`);
+  }
+  // 遊星のシャフト（S3-03）は公転するので、固定具を付けられない
+  if (scene.shafts[c.shaftId]?.placement.kind === 'planet') {
+    return fail('notAllowed', `shaft ${c.shaftId} is a planet shaft`);
   }
   // 1 つの対象に固定具は最大 1 つ。2 回目は何もしない（履歴にも積まない）
   if (anchorOfShaft(scene, c.shaftId) !== null) return done(scene);
@@ -813,7 +1103,7 @@ function freeShaft(
   const shaft = scene.shafts[shaftId];
   if (shaft === undefined) return fail('notFound', `shaft ${shaftId} not found`);
   const p = shaft.placement;
-  if (isChildPlacement(p)) return fail('notAllowed', `shaft ${shaftId} is a ${p.kind} shaft`);
+  if (!isFreePlacement(p)) return fail('notAllowed', `shaft ${shaftId} is a ${p.kind} shaft`);
   return { ok: true, shaft, placement: p };
 }
 
@@ -904,6 +1194,7 @@ function reattachShaft(
     gears,
     motors: scene.motors,
     anchors: scene.anchors,
+    carriers: scene.carriers,
   });
 }
 

@@ -28,7 +28,7 @@ function makeScene(
   for (const [id, shaftId, teeth] of gears) {
     gearMap[id] = { id, kind: 'spur', shaftId, size: 'S', teeth, offset: 0 };
   }
-  return { shafts, gears: gearMap, motors: {}, anchors: {} };
+  return { shafts, gears: gearMap, motors: {}, anchors: {}, carriers: {} };
 }
 
 function tree(a: string, b: string): Mesh {

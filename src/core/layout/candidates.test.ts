@@ -22,6 +22,7 @@ function scene(shafts: Shaft[], gears: Gear[]): Scene {
     gears: Object.fromEntries(gears.map((g) => [g.id, g])),
     motors: {},
     anchors: {},
+    carriers: {},
   };
 }
 
@@ -245,10 +246,11 @@ describe('引数の誤り', () => {
 });
 
 describe('並び・決定性・不変', () => {
-  it('外周（角度の昇順）→ 同じ軸（負 → 正）', () => {
+  it('外周（角度の昇順）→ 遊星歯車機構（S3-03）→ 同じ軸（負 → 正）', () => {
     const list = listGrowCandidates(onlyA, 'gear_a', SPEC);
     expect(list.map((c) => c.kind)).toEqual([
       ...Array<string>(PERIMETER_CANDIDATE_COUNT).fill('perimeter'),
+      'planetary',
       'coaxial',
       'coaxial',
     ]);
@@ -268,8 +270,10 @@ describe('並び・決定性・不変', () => {
       gears: Object.freeze({ gear_a: Object.freeze(gearA) }),
       motors: Object.freeze({}),
       anchors: {},
+      carriers: {},
     });
-    expect(listGrowCandidates(frozen, 'gear_a', SPEC)).toHaveLength(10);
+    // 外周 8 + 遊星歯車機構 1（S3-03）+ 同じ軸 2
+    expect(listGrowCandidates(frozen, 'gear_a', SPEC)).toHaveLength(11);
     expect(Object.keys(frozen.gears)).toEqual(['gear_a']);
     expect(Object.keys(frozen.shafts)).toEqual(['shaft_a']);
   });

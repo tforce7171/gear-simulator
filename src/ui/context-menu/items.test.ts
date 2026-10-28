@@ -22,6 +22,7 @@ const scene: Scene = {
     motor_m1: { id: 'motor_m1', shaftId: 'shaft_s1', size: 'S', rpm: 60, direction: 1, on: true },
   },
   anchors: {},
+  carriers: {},
 };
 
 const state = (watchMode: boolean, infoOverlay: boolean) => ({

@@ -1,4 +1,5 @@
 import {
+  DEFAULT_PLANET_COUNT,
   GEAR_SIZES,
   INTERNAL_MIN_TEETH,
   INTERNAL_MIN_TOOTH_DIFF,
@@ -6,6 +7,7 @@ import {
   WORM_THREADS,
 } from '../constants';
 import { axialExtent, teethRange } from '../geometry/dimensions';
+import { defaultPlanetTeeth } from '../geometry/planetary';
 import type { Vec3 } from '../math/vec3';
 import {
   gearShape,
@@ -15,6 +17,7 @@ import {
   newGearShape,
   skewPartnerShape,
 } from '../scene/gear-shape';
+import { withPlanetary } from '../scene/planetary';
 import type {
   Axis,
   Gear,
@@ -94,6 +97,20 @@ export type GrowCandidate =
       basePhase: number;
     }
   | {
+      // 平歯車の親を太陽とする遊星歯車機構（S3-03）。キャリア・遊星 DEFAULT_PLANET_COUNT 個・リングを 1 つのコマンドで作る。
+      // 表示はリング（中心・位相）と遊星（planets）
+      kind: 'planetary';
+      parentGearId: GearId;
+      size: SizeKey; // 親と同じ
+      teeth: number; // リングの歯数 z_r
+      planetTeeth: number; // 遊星の歯数 z_p
+      shape: GearShape; // リングの形 { kind: 'internal', webSide: −1 }
+      center: Vec3; // リングの中心
+      axis: Axis;
+      basePhase: number; // リングの位相
+      planets: ReadonlyArray<{ readonly center: Vec3; readonly basePhase: number }>;
+    }
+  | {
       kind: 'coaxial';
       shaftId: ShaftId;
       offset: number; // 歯幅の負側の面の位置。AXIAL_SNAP の倍数
@@ -130,7 +147,9 @@ export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec)
   };
 
   const candidates: GrowCandidate[] = [];
-  const perimeterShape = meshPartnerShape(gearShape(parent));
+  // 遊星のシャフトの歯車（S3-03）からは、同じ軸の候補（段付きの遊星）だけを出す
+  const orbiting = scene.shafts[parent.shaftId]?.placement.kind === 'planet';
+  const perimeterShape = orbiting ? null : meshPartnerShape(gearShape(parent));
   const coaxialShape = newGearShape(spec.coaxialKind);
   // 内歯車の親（S3-02）の内側の子は、歯数差の条件を満たすように歯数を下げる（大きさの最小を下回るなら出さない）
   const perimeterTeeth =
@@ -174,7 +193,7 @@ export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec)
   // パレットで内歯車を選んでいるとき（spec.coaxialKind が 'internal'）だけ出す（いつも出すと、親を覆う大きなリングの
   // 候補が、親をつかんで回す操作や外周の候補のクリックを奪うため。ピッキングでは候補が歯車より優先される）
   const encloseShape =
-    spec.coaxialKind === 'internal' ? internalEncloseShape(gearShape(parent)) : null;
+    spec.coaxialKind === 'internal' && !orbiting ? internalEncloseShape(gearShape(parent)) : null;
   const encloseTeeth = encloseTeethOf(parent);
   for (let k = 0; encloseShape !== null && encloseTeeth !== null; k++) {
     if (k >= PERIMETER_CANDIDATE_COUNT) break;
@@ -203,8 +222,12 @@ export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec)
     break;
   }
 
+  // 遊星歯車機構（S3-03）: 平歯車の親を太陽にする。機構を足した仮のシーン全体を解き、新しい干渉が無ければ出す
+  const planetary = orbiting ? null : planetaryCandidate(scene, parent, baseInterferences);
+  if (planetary !== null) candidates.push(planetary);
+
   // かさ歯車の親: axisStep 1 → 2、それぞれ side −1 → 1 の 4 か所
-  if (parent.kind === 'bevel') {
+  if (parent.kind === 'bevel' && !orbiting) {
     for (const axisStep of [1, 2] as const) {
       for (const side of [-1, 1] as const) {
         const shaft: Shaft = {
@@ -247,7 +270,7 @@ export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec)
   }
 
   // ウォーム・ホイールの親: axisStep 1 → 2、それぞれ side −1 → 1 の 4 か所
-  const skewShape = skewPartnerShape(gearShape(parent));
+  const skewShape = orbiting ? null : skewPartnerShape(gearShape(parent));
   if (skewShape !== null) {
     const teeth = skewShape.kind === 'worm' ? WORM_THREADS : spec.perimeterTeeth;
     for (const axisStep of [1, 2] as const) {
@@ -336,6 +359,52 @@ export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec)
   }
 
   return candidates;
+}
+
+// 遊星歯車機構の候補（S3-03）。平歯車の親で、歯数の組（defaultPlanetTeeth）があり、機構を足しても新しい干渉が無いとき
+function planetaryCandidate(
+  scene: Scene,
+  sun: Gear,
+  baseInterferences: ReadonlySet<string>,
+): GrowCandidate | null {
+  if (sun.kind !== 'spur') return null;
+  const teeth = defaultPlanetTeeth(sun, DEFAULT_PLANET_COUNT);
+  if (teeth === null) return null;
+  const shaftIds = scene.shafts;
+  const ids = {
+    carrierShaftId: unusedId(shaftIds, '__candidate_carrier_shaft'),
+    carrierId: unusedId(scene.carriers, '__candidate_carrier'),
+    planets: Array.from({ length: DEFAULT_PLANET_COUNT }, (_, k) => ({
+      shaftId: unusedId(shaftIds, `__candidate_planet_shaft_${k}`),
+      gearId: unusedId(scene.gears, `__candidate_planet_${k}`),
+    })),
+    ringShaftId: unusedId(shaftIds, '__candidate_ring_shaft'),
+    ringId: unusedId(scene.gears, '__candidate_ring'),
+  };
+  const layout = resolveLayout(withPlanetary(scene, sun, ids, teeth));
+  for (const [a, b] of layout.interferences) {
+    if (!baseInterferences.has(pairKey(a, b))) return null;
+  }
+  const ring = layout.gears[ids.ringId];
+  if (ring === undefined) return null;
+  const planets: Array<{ center: Vec3; basePhase: number }> = [];
+  for (const p of ids.planets) {
+    const g = layout.gears[p.gearId];
+    if (g === undefined) return null;
+    planets.push({ center: g.center, basePhase: g.basePhase });
+  }
+  return {
+    kind: 'planetary',
+    parentGearId: sun.id,
+    size: sun.size,
+    teeth: teeth.zr,
+    planetTeeth: teeth.zp,
+    shape: { kind: 'internal', webSide: -1 },
+    center: ring.center,
+    axis: ring.axis,
+    basePhase: ring.basePhase,
+    planets,
+  };
 }
 
 // 平歯車を囲む内歯車の歯数（S3-02）。2 × 親の歯数を、max(INTERNAL_MIN_TEETH, 親 + INTERNAL_MIN_TOOTH_DIFF) 以上・

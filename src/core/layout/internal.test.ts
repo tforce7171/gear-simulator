@@ -44,6 +44,7 @@ function single(gear: Gear, axis: Axis = 'y'): Scene {
     gears: { [gear.id]: gear },
     motors: {},
     anchors: {},
+    carriers: {},
   };
 }
 

@@ -7,6 +7,7 @@ const scene = (n: number): Scene => ({
   gears: {},
   motors: {},
   anchors: {},
+  carriers: {},
   // 区別のための印（型の外の値。参照で比べる）
   ...({ n } as object),
 });

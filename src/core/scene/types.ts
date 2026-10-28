@@ -6,6 +6,7 @@ export type ShaftId = string; // "shaft_xxx"
 export type GearId = string; // "gear_xxx"
 export type MotorId = string; // "motor_xxx"
 export type AnchorId = string; // "anchor_xxx"（S3-01）
+export type CarrierId = string; // "carrier_xxx"（S3-03）
 export type Axis = 'x' | 'y' | 'z';
 export type SizeKey = 'S' | 'M' | 'L';
 
@@ -14,6 +15,7 @@ export interface Scene {
   readonly gears: Readonly<Record<GearId, Gear>>;
   readonly motors: Readonly<Record<MotorId, Motor>>;
   readonly anchors: Readonly<Record<AnchorId, Anchor>>; // 固定具（S3-01）
+  readonly carriers: Readonly<Record<CarrierId, Carrier>>; // 遊星歯車のキャリア（S3-03）
 }
 
 export interface Shaft {
@@ -51,14 +53,32 @@ export type ShaftPlacement =
       readonly side: 1 | -1;
     }
   // 親が削除されてその場に残ったシャフト。削除時点のワールド座標と向きを持つ
-  | { readonly kind: 'detached'; readonly origin: Vec3; readonly axis: Axis };
+  | { readonly kind: 'detached'; readonly origin: Vec3; readonly axis: Axis }
+  // 親のシャフトと同じ線上の別のシャフト（S3-03）。原点・軸は親と同じ。キャリアやリングのシャフトに使う
+  | { readonly kind: 'concentric'; readonly parentShaftId: ShaftId }
+  // キャリアに載った遊星のシャフト（S3-03）。位置の求め方は mesh と同じ（キャリアの角度が 0 のときの基準配置）。
+  // 実際の位置は、キャリアのシャフトの回転角だけキャリアの軸まわりに回したもの。軸はキャリアのシャフトの軸
+  | {
+      readonly kind: 'planet';
+      readonly carrierId: CarrierId;
+      readonly parentGearId: GearId; // かみ合う相手。キャリアのシャフトと同じ線上の歯車（太陽歯車かリング）
+      readonly childGearId: GearId; // このシャフト上の、親とかみ合う歯車
+      readonly angle: number; // キャリアの角度が 0 のときの、キャリアの軸まわりの角度（rad）
+    };
 
-// 親の歯車から位置と向きを導く配置（mesh・bevel・skew）。root・detached は自分で位置と向きを持つ
+// 親の歯車から位置と向きを導く配置（mesh・bevel・skew・planet）。root・detached は自分で位置と向きを持ち、
+// concentric（S3-03）は親のシャフトと同じ位置と向き
 export type ChildPlacement = Extract<ShaftPlacement, { readonly parentGearId: GearId }>;
-export type FreePlacement = Exclude<ShaftPlacement, ChildPlacement>;
+export type FreePlacement = Extract<ShaftPlacement, { readonly origin: Vec3 }>;
+export type ConcentricPlacement = Extract<ShaftPlacement, { readonly kind: 'concentric' }>;
+export type PlanetPlacement = Extract<ShaftPlacement, { readonly kind: 'planet' }>;
 
 export function isChildPlacement(p: ShaftPlacement): p is ChildPlacement {
-  return p.kind === 'mesh' || p.kind === 'bevel' || p.kind === 'skew';
+  return p.kind === 'mesh' || p.kind === 'bevel' || p.kind === 'skew' || p.kind === 'planet';
+}
+
+export function isFreePlacement(p: ShaftPlacement): p is FreePlacement {
+  return p.kind === 'root' || p.kind === 'detached';
 }
 
 export type Hand = 'left' | 'right'; // ハスバ歯車のねじれの向き（S2-01）
@@ -149,4 +169,13 @@ export interface AnchorTarget {
 export interface Anchor {
   readonly id: AnchorId;
   readonly target: AnchorTarget;
+}
+
+// 遊星歯車のキャリア（S3-03）。シャフト shaftId と一緒に回る剛体で、遊星のシャフト（planet の配置）を支える。
+// 遊星の数は、このキャリアを参照する遊星のシャフトの数（別に持たない）
+export interface Carrier {
+  readonly id: CarrierId;
+  readonly shaftId: ShaftId; // このシャフトと一緒に回る
+  readonly offset: number; // 板の負側の面の位置（mm。シャフトの原点から）。AXIAL_SNAP の倍数（Gear.offset と同じ考え方）
+  readonly size: SizeKey; // 板の厚み・シャフトの太さに使う
 }

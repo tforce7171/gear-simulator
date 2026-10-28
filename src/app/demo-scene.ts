@@ -23,4 +23,5 @@ export const demoScene: Scene = {
     motor_1: { id: 'motor_1', shaftId: 'shaft_1', size: 'S', rpm: 60, direction: 1, on: true },
   },
   anchors: {},
+  carriers: {},
 };

@@ -1,7 +1,7 @@
 ---
 id: S3-03
 title: 遊星歯車とキャリア
-status: todo
+status: doing
 depends: [S3-01, S3-02]
 ---
 

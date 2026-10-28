@@ -1,7 +1,7 @@
 import type { Mesh } from '../layout/types';
 import { type GearId, isChildPlacement, type Scene, type ShaftId } from '../scene/types';
 import { type Matrix, nullSpaceWithFreeColumns } from './linalg';
-import { meshCoefficients } from './mesh-coefficients';
+import { meshTerms } from './mesh-coefficients';
 
 // かみ合いのグラフと、シャフトの角速度の拘束の零空間（design.md §6）
 
@@ -28,9 +28,8 @@ function compareIds(a: string, b: string): number {
 interface ResolvedMesh {
   readonly mesh: Mesh;
   readonly shaftA: ShaftId;
-  readonly shaftB: ShaftId;
-  readonly coefA: number;
-  readonly coefB: number;
+  // 拘束の行の項（かみ合う 2 本のシャフトと、遊星のかみ合いならキャリアのシャフト。S3-03）
+  readonly terms: ReadonlyArray<{ readonly shaftId: ShaftId; readonly coef: number }>;
 }
 
 function resolveMesh(scene: Scene, mesh: Mesh): ResolvedMesh {
@@ -45,9 +44,9 @@ function resolveMesh(scene: Scene, mesh: Mesh): ResolvedMesh {
   if (a.shaftId === b.shaftId) {
     throw new Error(`同じシャフトの歯車どうしのかみ合い: ${mesh.a}, ${mesh.b}`);
   }
-  // 拘束の行の係数（ω_shaft(a) と ω_shaft(b) にかかる係数）は、種類ごとに meshCoefficients の 1 か所で決める
-  const { a: coefA, b: coefB } = meshCoefficients(mesh, scene);
-  return { mesh, shaftA: a.shaftId, shaftB: b.shaftId, coefA, coefB };
+  // 拘束の行の係数（ω_shaft(a) と ω_shaft(b) にかかる係数）は、種類ごとに meshCoefficients の 1 か所で決める。
+  // 遊星のかみ合い（S3-03）はキャリアのシャフトの ω を引いた相対値（meshTerms）
+  return { mesh, shaftA: a.shaftId, terms: meshTerms(mesh, scene) };
 }
 
 // 基準シャフトに選ぶ順: root か detached を先に、次に ID の昇順
@@ -71,12 +70,12 @@ function buildComponent(
   // これで「優先の順に見て、それまでに選んだ行と独立なものを取る」と同じ選び方になる
   const order = referencePriority(scene, shaftIds).reverse();
   const columnOf = new Map(order.map((id, j) => [id, j]));
-  const rows: Matrix = meshes.map(({ shaftA, shaftB, coefA, coefB }) => {
+  const rows: Matrix = meshes.map(({ terms }) => {
     const row = new Array<number>(order.length).fill(0);
-    const ja = columnOf.get(shaftA) as number;
-    const jb = columnOf.get(shaftB) as number;
-    row[ja] = (row[ja] as number) + coefA;
-    row[jb] = (row[jb] as number) + coefB;
+    for (const { shaftId, coef } of terms) {
+      const j = columnOf.get(shaftId) as number;
+      row[j] = (row[j] as number) + coef;
+    }
     return row;
   });
   // 固定具（S3-01）: 固定されたシャフトは ω = 0（拘束行列 C に 1 行足す）
@@ -127,12 +126,14 @@ export function buildMeshGraph(
     }
     return root;
   };
-  for (const { shaftA, shaftB } of resolved) {
-    const ra = find(shaftA);
-    const rb = find(shaftB);
-    if (ra === rb) continue;
-    if (compareIds(ra, rb) < 0) parent.set(rb, ra);
-    else parent.set(ra, rb);
+  for (const { shaftA, terms } of resolved) {
+    for (const { shaftId } of terms) {
+      const ra = find(shaftA);
+      const rb = find(shaftId);
+      if (ra === rb) continue;
+      if (compareIds(ra, rb) < 0) parent.set(rb, ra);
+      else parent.set(ra, rb);
+    }
   }
 
   const groups = new Map<ShaftId, ShaftId[]>();

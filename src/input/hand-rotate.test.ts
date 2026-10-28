@@ -117,6 +117,7 @@ describe('grabTarget', () => {
       motor_a: { id: 'motor_a', shaftId: 'shaft_a', size: 'S', rpm: 60, direction: 1, on: true },
     },
     anchors: {},
+    carriers: {},
   };
   const layout = resolveLayout(scene);
 

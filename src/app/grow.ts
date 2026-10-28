@@ -8,7 +8,7 @@ import type { CandidateSpec } from '../render/candidates';
 
 // 歯車を生やす（S1-18）。純粋関数のみ。選んだ歯車の候補を列挙し、候補を編集コマンドに変換する
 
-export type CandidateKind = GrowCandidate['kind']; // 'perimeter' | 'bevel' | 'skew' | 'enclose' | 'coaxial'（S1-10、S2-02、S2-03、S3-02）
+export type CandidateKind = GrowCandidate['kind']; // 'perimeter' | 'bevel' | 'skew' | 'enclose' | 'planetary' | 'coaxial'（S1-10、S2-02、S2-03、S3-02、S3-03）
 
 // 生やす歯車の大きさと歯数。外周は親と同じ大きさ（同じ大きさ同士しかかみ合わない）、
 // 同じ軸はパレットで選んでいる大きさ。歯数はどちらも DEFAULT_TEETH[大きさ]
@@ -69,6 +69,9 @@ export function growCommand(candidate: GrowCandidate): Command {
       angle: candidate.angle,
       teeth: candidate.teeth,
     };
+  }
+  if (candidate.kind === 'planetary') {
+    return { type: 'growGear', mode: 'planetary', parentGearId: candidate.parentGearId };
   }
   if (candidate.kind === 'skew') {
     return {

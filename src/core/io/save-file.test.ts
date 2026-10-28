@@ -29,6 +29,7 @@ const sceneA: Scene = {
     motor_1: { id: 'motor_1', shaftId: 'shaft_1', size: 'S', rpm: 60, direction: 1, on: true },
   },
   anchors: {},
+  carriers: {},
 };
 
 describe('toSaveFile', () => {
@@ -48,7 +49,9 @@ describe('parseSaveFileObject', () => {
 
   it('空のシーンも ok', () => {
     expect(
-      parseSaveFileObject(toSaveFile({ shafts: {}, gears: {}, motors: {}, anchors: {} })).ok,
+      parseSaveFileObject(
+        toSaveFile({ shafts: {}, gears: {}, motors: {}, anchors: {}, carriers: {} }),
+      ).ok,
     ).toBe(true);
   });
 
@@ -103,6 +106,7 @@ const scene3: Scene = {
     motor_1: { id: 'motor_1', shaftId: 'shaft_1', size: 'S', rpm: 60, direction: -1, on: false },
   },
   anchors: {},
+  carriers: {},
 };
 
 // sceneA を JSON の生データにして、点区切りの場所の値を書き換えたものを返す（JSON の文字列）
@@ -135,7 +139,7 @@ describe('serializeSaveFile と parseSaveFile の往復', () => {
   });
 
   it('空のシーン', () => {
-    const empty: Scene = { shafts: {}, gears: {}, motors: {}, anchors: {} };
+    const empty: Scene = { shafts: {}, gears: {}, motors: {}, anchors: {}, carriers: {} };
     const result = parseSaveFile(serializeSaveFile(toSaveFile(empty)));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -376,7 +380,7 @@ describe('version 1 → 2 の移行（S2-05）', () => {
     if (!result.ok) return;
     expect(result.migratedFrom).toBe(1);
     expect(result.file.version).toBe(2);
-    expect(result.file.scene).toEqual({ ...v1.scene, anchors: {} });
+    expect(result.file.scene).toEqual({ ...v1.scene, anchors: {}, carriers: {} });
   });
 
   it('IndexedDB から読んだ値（parseSaveFileObject）も同じ', () => {
@@ -385,7 +389,7 @@ describe('version 1 → 2 の移行（S2-05）', () => {
     if (!result.ok) return;
     expect(result.migratedFrom).toBe(1);
     expect(result.file.version).toBe(2);
-    expect(result.file.scene).toEqual({ ...v1.scene, anchors: {} });
+    expect(result.file.scene).toEqual({ ...v1.scene, anchors: {}, carriers: {} });
   });
 });
 

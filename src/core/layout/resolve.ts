@@ -1,5 +1,7 @@
 import {
   BEVEL_APEX_CLEARANCE,
+  CARRIER_RADIUS_MARGIN,
+  CARRIER_THICKNESS,
   COLLISION_EPS,
   EMPTY_SHAFT_HALF_LENGTH,
   GEAR_SIZES,
@@ -35,22 +37,26 @@ import {
   wheelPhaseFromWorm,
   wormPhaseFromWheel,
 } from '../geometry/skew';
-import { axisVector, radialDirection } from '../math/axis';
+import { axisFrame, axisVector, radialDirection } from '../math/axis';
 import { add, dot, length, scale, sub, type Vec3 } from '../math/vec3';
 import { gearCenter } from '../scene/gear-center';
 import { assertNever } from '../scene/gear-shape';
+import { lineRootOf } from '../scene/scene';
 import {
   type Axis,
+  type Carrier,
+  type CarrierId,
   type ChildPlacement,
   type Gear,
   type GearId,
   isChildPlacement,
+  isFreePlacement,
   type Scene,
   type Shaft,
   type ShaftId,
 } from '../scene/types';
 import { type Collider, findInterferences, gearCollider, interferingWith } from './collision';
-import type { GearLayout, Layout, Mesh, ShaftLayout } from './types';
+import type { CarrierLayout, GearLayout, Layout, Mesh, Orbit, ShaftLayout } from './types';
 
 // 配置の木構造（design.md §5）。根（root・detached のシャフト）から幅優先でたどり、
 // mesh のシャフトの位置・向き、歯車の中心・位相、シャフトの span、かみ合い（木の親子と偶然のかみ合い）、
@@ -67,7 +73,8 @@ export function resolveLayout(scene: Scene): Layout {
   return layout;
 }
 
-// shaftId とその先（mesh で子孫になる）シャフトの ID を幅優先の順で返す。
+// shaftId とその先（mesh・bevel・skew・planet で子孫になる。concentric の子、キャリアの遊星のシャフトも。S3-03）
+// シャフトの ID を幅優先の順で返す。
 // シーンに無いシャフトなら空。循環していても止まる
 export function descendantShafts(scene: Scene, shaftId: ShaftId): ShaftId[] {
   if (scene.shafts[shaftId] === undefined) return [];
@@ -76,12 +83,18 @@ export function descendantShafts(scene: Scene, shaftId: ShaftId): ShaftId[] {
   const seen = new Set<ShaftId>(order);
   for (let head = 0; head < order.length; head++) {
     const current = order[head] as ShaftId;
+    const children: Shaft[] = [...(index.concentricChildren.get(current) ?? [])];
     for (const parent of index.gearsByShaft.get(current) ?? []) {
-      for (const child of index.childShaftsByParentGear.get(parent.id) ?? []) {
-        if (seen.has(child.id)) continue;
-        seen.add(child.id);
-        order.push(child.id);
-      }
+      children.push(...(index.childShaftsByParentGear.get(parent.id) ?? []));
+    }
+    // キャリアに載った遊星のシャフト（S3-03。位置はキャリアのシャフトの回転で決まる）
+    for (const carrier of index.carriersByShaft.get(current) ?? []) {
+      children.push(...(index.planetsByCarrier.get(carrier.id) ?? []));
+    }
+    for (const child of children) {
+      if (seen.has(child.id)) continue;
+      seen.add(child.id);
+      order.push(child.id);
     }
   }
   return order;
@@ -89,8 +102,13 @@ export function descendantShafts(scene: Scene, shaftId: ShaftId): ShaftId[] {
 
 interface SceneIndex {
   readonly gearsByShaft: ReadonlyMap<ShaftId, readonly Gear[]>;
-  // 親の歯車 → それを親に持つ mesh・bevel のシャフト
+  // 親の歯車 → それを親に持つ mesh・bevel・skew・planet のシャフト
   readonly childShaftsByParentGear: ReadonlyMap<GearId, readonly Shaft[]>;
+  // 親のシャフト → それを親に持つ concentric のシャフト（S3-03）
+  readonly concentricChildren: ReadonlyMap<ShaftId, readonly Shaft[]>;
+  // シャフト → それに載ったキャリア、キャリア → それに載った遊星のシャフト（S3-03）
+  readonly carriersByShaft: ReadonlyMap<ShaftId, readonly Carrier[]>;
+  readonly planetsByCarrier: ReadonlyMap<CarrierId, readonly Shaft[]>;
 }
 
 function push<K, V>(map: Map<K, V[]>, key: K, value: V): void {
@@ -103,12 +121,24 @@ function indexScene(scene: Scene): SceneIndex {
   const gearsByShaft = new Map<ShaftId, Gear[]>();
   for (const gear of Object.values(scene.gears)) push(gearsByShaft, gear.shaftId, gear);
   const childShaftsByParentGear = new Map<GearId, Shaft[]>();
+  const concentricChildren = new Map<ShaftId, Shaft[]>();
+  const planetsByCarrier = new Map<CarrierId, Shaft[]>();
   for (const shaft of Object.values(scene.shafts)) {
-    if (isChildPlacement(shaft.placement)) {
-      push(childShaftsByParentGear, shaft.placement.parentGearId, shaft);
-    }
+    const p = shaft.placement;
+    if (isChildPlacement(p)) push(childShaftsByParentGear, p.parentGearId, shaft);
+    if (p.kind === 'concentric') push(concentricChildren, p.parentShaftId, shaft);
+    if (p.kind === 'planet') push(planetsByCarrier, p.carrierId, shaft);
   }
-  return { gearsByShaft, childShaftsByParentGear };
+  const carriersByShaft = new Map<ShaftId, Carrier[]>();
+  for (const carrier of Object.values(scene.carriers))
+    push(carriersByShaft, carrier.shaftId, carrier);
+  return {
+    gearsByShaft,
+    childShaftsByParentGear,
+    concentricChildren,
+    carriersByShaft,
+    planetsByCarrier,
+  };
 }
 
 interface QueueItem {
@@ -117,6 +147,7 @@ interface QueueItem {
   readonly axis: Axis;
   // mesh・bevel のシャフトの子の歯車とその basePhase（キューに積むときに決める）
   readonly child?: { readonly gearId: GearId; readonly phase: number };
+  readonly orbit?: Orbit; // 遊星のシャフト（S3-03）
 }
 
 function compute(scene: Scene): Layout {
@@ -128,47 +159,219 @@ function compute(scene: Scene): Layout {
   const queue: QueueItem[] = [];
   for (const shaft of Object.values(scene.shafts)) {
     const p = shaft.placement;
-    if (!isChildPlacement(p)) queue.push({ shaftId: shaft.id, origin: p.origin, axis: p.axis });
+    if (isFreePlacement(p)) queue.push({ shaftId: shaft.id, origin: p.origin, axis: p.axis });
   }
+  // キャリアのシャフトがまだ置かれていない遊星のシャフト（S3-03）。置かれたら置き直す
+  let pending: Array<{ parent: Gear; shaft: Shaft }> = [];
 
-  for (let head = 0; head < queue.length; head++) {
-    const item = queue[head] as QueueItem;
-    if (shafts[item.shaftId] !== undefined) continue;
-    const { shaftId, origin, axis } = item;
-    const onShaft = index.gearsByShaft.get(shaftId) ?? [];
-    shafts[shaftId] = { origin, axis, span: spanOf(onShaft) };
-
-    for (const gear of onShaft) {
-      gears[gear.id] = {
-        center: gearCenter(origin, axis, gear),
-        axis,
-        pitchRadius: gearPitchRadius(gear),
-        basePhase: item.child?.gearId === gear.id ? item.child.phase : 0,
+  // 親の歯車 parent の木の子のシャフト childShaft を置いてキューに積む。遊星のシャフトでキャリアのシャフトがまだなら false
+  const placeTreeChild = (parent: Gear, childShaft: Shaft): boolean => {
+    const p = childShaft.placement;
+    if (!isChildPlacement(p) || shafts[childShaft.id] !== undefined) return true;
+    const child = scene.gears[p.childGearId];
+    const parentLayout = gears[parent.id];
+    const parentShaft = shafts[parent.shaftId];
+    if (child === undefined || child.shaftId !== childShaft.id) return true;
+    if (parentLayout === undefined || parentShaft === undefined) return true;
+    let orbit: Orbit | undefined;
+    if (p.kind === 'planet') {
+      const carrier = scene.carriers[p.carrierId];
+      if (carrier === undefined) return true;
+      const carrierShaft = shafts[carrier.shaftId];
+      if (carrierShaft === undefined) return false;
+      orbit = {
+        carrierId: carrier.id,
+        carrierShaftId: carrier.shaftId,
+        center: carrierShaft.origin,
       };
     }
+    const placed = placeChild(parent, parentShaft.origin, parentLayout, p, child);
+    if (placed === null) return true;
+    treePairs.push(ordered(parent.id, child.id));
+    queue.push({
+      shaftId: childShaft.id,
+      origin: placed.origin,
+      axis: placed.axis,
+      child: { gearId: child.id, phase: placed.phase },
+      ...(orbit === undefined ? {} : { orbit }),
+    });
+    return true;
+  };
 
-    for (const parent of onShaft) {
-      const parentLayout = gears[parent.id] as GearLayout;
-      for (const childShaft of index.childShaftsByParentGear.get(parent.id) ?? []) {
-        const p = childShaft.placement;
-        if (!isChildPlacement(p) || shafts[childShaft.id] !== undefined) continue;
-        const child = scene.gears[p.childGearId];
-        if (child === undefined || child.shaftId !== childShaft.id) continue;
-        const placed = placeChild(parent, origin, parentLayout, p, child);
-        if (placed === null) continue;
-        treePairs.push(ordered(parent.id, child.id));
-        queue.push({
-          shaftId: childShaft.id,
-          origin: placed.origin,
-          axis: placed.axis,
-          child: { gearId: child.id, phase: placed.phase },
-        });
+  for (;;) {
+    for (let head = 0; head < queue.length; head++) {
+      const item = queue[head] as QueueItem;
+      if (shafts[item.shaftId] !== undefined) continue;
+      const { shaftId, origin, axis } = item;
+      const onShaft = index.gearsByShaft.get(shaftId) ?? [];
+      shafts[shaftId] = {
+        origin,
+        axis,
+        span: spanOf(onShaft),
+        ...(item.orbit === undefined ? {} : { orbit: item.orbit }),
+      };
+
+      for (const gear of onShaft) {
+        gears[gear.id] = {
+          center: gearCenter(origin, axis, gear),
+          axis,
+          pitchRadius: gearPitchRadius(gear),
+          basePhase: item.child?.gearId === gear.id ? item.child.phase : 0,
+          ...(item.orbit === undefined ? {} : { orbit: item.orbit }),
+        };
+      }
+
+      // 同じ線上のシャフト（S3-03）は原点・向きが親と同じ
+      for (const c of index.concentricChildren.get(shaftId) ?? []) {
+        queue.push({ shaftId: c.id, origin, axis });
+      }
+      for (const parent of onShaft) {
+        for (const childShaft of index.childShaftsByParentGear.get(parent.id) ?? []) {
+          if (!placeTreeChild(parent, childShaft)) pending.push({ parent, shaft: childShaft });
+        }
       }
     }
+    queue.length = 0;
+    const waiting = pending;
+    pending = [];
+    for (const { parent, shaft } of waiting) {
+      if (!placeTreeChild(parent, shaft)) pending.push({ parent, shaft });
+    }
+    if (queue.length === 0) break;
   }
 
+  const carriers = carriersOf(scene, index, shafts);
+  extendSpansForCarriers(index, shafts);
   const meshes = meshesOf(scene, gears, treePairs);
-  return { shafts, gears, meshes, interferences: interferencesOf(scene, shafts, gears, meshes) };
+  phaseCoaxialPlanetPartners(scene, gears, meshes);
+  return {
+    shafts,
+    gears,
+    carriers,
+    meshes,
+    interferences: interferencesOf(scene, shafts, gears, carriers, meshes),
+  };
+}
+
+// キャリアのレイアウト（S3-03）。板の中心 = キャリアのシャフトの原点 + (offset + 厚み/2)·軸、
+// 半径 = 遊星のシャフトの公転半径の最大 + CARRIER_RADIUS_MARGIN（遊星が無ければ余白の 2 倍）
+function carriersOf(
+  scene: Scene,
+  index: SceneIndex,
+  shafts: Readonly<Record<ShaftId, ShaftLayout>>,
+): Record<CarrierId, CarrierLayout> {
+  const out: Record<CarrierId, CarrierLayout> = {};
+  for (const carrier of Object.values(scene.carriers)) {
+    const at = shafts[carrier.shaftId];
+    if (at === undefined) continue;
+    const w = axisVector(at.axis);
+    const planets = (index.planetsByCarrier.get(carrier.id) ?? [])
+      .filter((s) => shafts[s.id] !== undefined)
+      .sort((a, b) => planetAngle(a) - planetAngle(b) || compare(a.id, b.id));
+    let orbitRadius = 0;
+    for (const planet of planets) {
+      const origin = (shafts[planet.id] as ShaftLayout).origin;
+      orbitRadius = Math.max(orbitRadius, distanceToLine(origin, at.origin, at.axis));
+    }
+    out[carrier.id] = {
+      center: add(at.origin, scale(w, carrier.offset + CARRIER_THICKNESS[carrier.size] / 2)),
+      axis: at.axis,
+      radius:
+        planets.length === 0 ? 2 * CARRIER_RADIUS_MARGIN : orbitRadius + CARRIER_RADIUS_MARGIN,
+      planetShaftIds: planets.map((s) => s.id),
+    };
+  }
+  return out;
+}
+
+function planetAngle(shaft: Shaft): number {
+  return shaft.placement.kind === 'planet' ? shaft.placement.angle : 0;
+}
+
+// 点 p から、点 origin を通る軸 axis の直線までの距離
+function distanceToLine(p: Vec3, origin: Vec3, axis: Axis): number {
+  const d = sub(p, origin);
+  const along = dot(d, axisVector(axis));
+  return Math.sqrt(Math.max(0, dot(d, d) - along * along));
+}
+
+// キャリアの板の区間（S3-03）。キャリアのシャフトの原点からの [offset, offset + 厚み]
+function carrierPlateRange(carrier: Carrier): readonly [number, number] {
+  return [carrier.offset, carrier.offset + CARRIER_THICKNESS[carrier.size]];
+}
+
+// キャリアのシャフトの span に板（両面から SHAFT_END_MARGIN）を含め、遊星のシャフトの span を板の遠い側の面まで伸ばす（S3-03）
+function extendSpansForCarriers(index: SceneIndex, shafts: Record<ShaftId, ShaftLayout>): void {
+  for (const [shaftId, carriers] of index.carriersByShaft) {
+    const at = shafts[shaftId];
+    if (at === undefined) continue;
+    const hasGears = (index.gearsByShaft.get(shaftId) ?? []).length > 0;
+    let [lo, hi] = hasGears ? at.span : [Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY];
+    for (const carrier of carriers) {
+      const [plateLo, plateHi] = carrierPlateRange(carrier);
+      lo = Math.min(lo, plateLo - SHAFT_END_MARGIN);
+      hi = Math.max(hi, plateHi + SHAFT_END_MARGIN);
+      // 遊星のシャフトは板の遠い側の面まで伸ばす（板を貫いて支えられる）
+      for (const planet of index.planetsByCarrier.get(carrier.id) ?? []) {
+        const pl = shafts[planet.id];
+        if (pl === undefined) continue;
+        const shift = dot(sub(at.origin, pl.origin), axisVector(pl.axis));
+        shafts[planet.id] = {
+          ...pl,
+          span: [Math.min(pl.span[0], plateLo + shift), Math.max(pl.span[1], plateHi + shift)],
+        };
+      }
+    }
+    shafts[shaftId] = { ...at, span: [lo, hi] };
+  }
+}
+
+// 同じ線上のシャフト（concentric）の歯車で、遊星の歯車と contact でかみ合うもの（リングなど。S3-03）の basePhase を、
+// かみ合う遊星のうち最初のもの（遊星のシャフトの angle の昇順、次に ID の昇順。候補から作ったものでは 0 番の遊星）に
+// 合わせる。等配の条件を満たせば、残りの遊星とも位相が合う
+function phaseCoaxialPlanetPartners(
+  scene: Scene,
+  gears: Record<GearId, GearLayout>,
+  meshes: readonly Mesh[],
+): void {
+  const best = new Map<GearId, { planet: Gear; angle: number }>();
+  for (const m of meshes) {
+    if (m.source !== 'contact' || m.carrierShaftId === undefined) continue;
+    const la = gears[m.a];
+    const lb = gears[m.b];
+    if (la === undefined || lb === undefined) continue;
+    if ((la.orbit === undefined) === (lb.orbit === undefined)) continue;
+    const [planetId, otherId] = la.orbit !== undefined ? [m.a, m.b] : [m.b, m.a];
+    const planet = scene.gears[planetId];
+    const other = scene.gears[otherId];
+    if (planet === undefined || other === undefined) continue;
+    if (scene.shafts[other.shaftId]?.placement.kind !== 'concentric') continue;
+    const shaft = scene.shafts[planet.shaftId];
+    if (shaft === undefined) continue;
+    const angle = planetAngle(shaft);
+    const current = best.get(otherId);
+    if (
+      current === undefined ||
+      angle < current.angle ||
+      (angle === current.angle && compare(planet.shaftId, current.planet.shaftId) < 0)
+    ) {
+      best.set(otherId, { planet, angle });
+    }
+  }
+  for (const [otherId, { planet }] of best) {
+    const other = scene.gears[otherId] as Gear;
+    const lo = gears[otherId] as GearLayout;
+    const lp = gears[planet.id] as GearLayout;
+    // 遊星から見た相手の中心の向き（相手は遊星の公転の中心の線上にある）
+    const { u, v } = axisFrame(lo.axis);
+    const d = sub(lo.center, lp.center);
+    const toOther = Math.atan2(dot(d, v), dot(d, u));
+    const phase =
+      other.kind === 'internal'
+        ? internalMeshPhase(lp.basePhase, planet.teeth, false, other.teeth, toOther)
+        : meshPhase(lp.basePhase, planet.teeth, other.teeth, toOther);
+    gears[otherId] = { ...lo, basePhase: phase };
+  }
 }
 
 // 木の子のシャフトの原点・向きと、子の歯車の basePhase（子の offset は 0 として置く）。
@@ -187,6 +390,8 @@ function placeChild(
 ): { origin: Vec3; axis: Axis; phase: number } | null {
   const axis = parentLayout.axis;
   switch (p.kind) {
+    // 遊星のシャフト（S3-03）の基準配置は mesh と同じ求め方（キャリアの角度が 0 のとき）
+    case 'planet':
     case 'mesh': {
       // 中心距離は組の種類で決まる（外歯車同士は r_a + r_b、内歯車と外歯車は R − r。S3-02）。
       // 外歯車が親で子が内歯車なら、子の中心が親の中心から angle の向きに R − r 離れた位置（親を囲む）
@@ -313,12 +518,13 @@ function meshesOf(
   gears: Readonly<Record<GearId, GearLayout>>,
   treePairs: ReadonlyArray<readonly [GearId, GearId]>,
 ): Mesh[] {
-  const meshes: Mesh[] = treePairs.map(([a, b]) => ({
-    a,
-    b,
-    source: 'tree',
-    kind: meshKindOf(scene.gears[a] as Gear, scene.gears[b] as Gear),
-  }));
+  const meshes: Mesh[] = treePairs.map(([a, b]) =>
+    withCarrier(
+      { a, b, source: 'tree', kind: meshKindOf(scene.gears[a] as Gear, scene.gears[b] as Gear) },
+      gears[a],
+      gears[b],
+    ),
+  );
   const tree = new Set(treePairs.map(([a, b]) => pairKey(a, b)));
   const placed: Array<{ gear: Gear; layout: GearLayout; reach: number }> = [];
   let maxReach = 0;
@@ -340,10 +546,32 @@ function meshesOf(
       if (!inContact(p.gear, p.layout, q.gear, q.layout)) continue;
       if (tree.has(pairKey(p.gear.id, q.gear.id))) continue;
       const [a, b] = ordered(p.gear.id, q.gear.id);
-      meshes.push({ a, b, source: 'contact', kind: meshKindOf(p.gear, q.gear) });
+      const [la, lb] = a === p.gear.id ? [p.layout, q.layout] : [q.layout, p.layout];
+      meshes.push(
+        withCarrier({ a, b, source: 'contact', kind: meshKindOf(p.gear, q.gear) }, la, lb),
+      );
     }
   }
   return meshes.sort((m, n) => compare(m.a, n.a) || compare(m.b, n.b));
+}
+
+// 遊星のシャフトの歯車がかかわるかみ合い（S3-03）に、キャリアのシャフトを添える（ウィリスの式。design.md §6）
+function withCarrier(mesh: Mesh, la: GearLayout | undefined, lb: GearLayout | undefined): Mesh {
+  const orbit = la?.orbit ?? lb?.orbit;
+  return orbit === undefined ? mesh : { ...mesh, carrierShaftId: orbit.carrierShaftId };
+}
+
+// 公転する歯車（遊星のシャフトの歯車）との組で、扱えるかみ合いか（S3-03）。同じキャリアで公転する組と、
+// 公転する歯車とキャリアと同じ線上の歯車（太陽歯車・リング）の組だけ。それ以外（公転する歯車と、キャリアと
+// 同じ軸でない歯車の偶然のかみ合い、別のキャリアで公転する組）は扱わない
+function orbitCompatible(la: GearLayout, lb: GearLayout): boolean {
+  const oa = la.orbit;
+  const ob = lb.orbit;
+  if (oa === undefined && ob === undefined) return true;
+  if (oa !== undefined && ob !== undefined) return oa.carrierId === ob.carrierId;
+  const orbit = (oa ?? ob) as Orbit;
+  const other = oa === undefined ? la : lb;
+  return distanceToLine(other.center, orbit.center, other.axis) <= MESH_DISTANCE_EPS;
 }
 
 // かみ合える組（canMesh。同じ大きさで、平歯車同士かねじれの向きが逆のハスバ歯車同士）、軸が同じ、別のシャフト、
@@ -354,6 +582,7 @@ function meshesOf(
 // （軸方向の成分が MESH_DISTANCE_EPS 以内）、その長さがピッチ円半径の和と MESH_DISTANCE_EPS 以内で一致する
 function inContact(a: Gear, la: GearLayout, b: Gear, lb: GearLayout): boolean {
   if (a.size !== b.size || a.shaftId === b.shaftId) return false;
+  if (!orbitCompatible(la, lb)) return false;
   const geometry = meshGeometryOf(a);
   if (geometry !== meshGeometryOf(b)) return false;
   if (geometry === 'bevel') {
@@ -383,16 +612,143 @@ function inContact(a: Gear, la: GearLayout, b: Gear, lb: GearLayout): boolean {
 }
 
 // 全ての歯車の円柱と全てのシャフトの線分（origin + span × 軸）。exempt は meshes の組（contact を含む）
+// 遊星歯車（S3-03）: キャリアの板の円柱を足し、次の組を除く（exempt に足す）。
+// - 同じ線上のシャフト同士（concentric でつながる組。入れ子の中空軸）
+// - 機構の部品（キャリアとそのシャフト、遊星のシャフトとその親とかみ合う歯車、親の歯車、それらとかみ合う同じ線上の歯車
+//   （リング）、親とリングのシャフト）の間（かみ合いと支えの関係にあるため）
+// 公転する部品（遊星のシャフトとその歯車）は、同じキャリアで公転する部品とは基準配置で、それ以外の部品とは
+// 公転で掃く範囲（キャリアの軸まわりの中空の円柱）で判定する
 function interferencesOf(
   scene: Scene,
   shafts: Readonly<Record<ShaftId, ShaftLayout>>,
   gears: Readonly<Record<GearId, GearLayout>>,
+  carriers: Readonly<Record<CarrierId, CarrierLayout>>,
   meshes: readonly Mesh[],
 ): Array<[string, string]> {
-  return findInterferences(
-    collidersOf(scene, shafts, gears),
-    meshes.map((m) => [m.a, m.b] as const),
-  );
+  const colliders = collidersOf(scene, shafts, gears);
+  const exempt: Array<readonly [string, string]> = meshes.map((m) => [m.a, m.b] as const);
+  if (Object.keys(carriers).length === 0 && !Object.values(shafts).some((x) => x.orbit)) {
+    return findInterferences(colliders, exempt);
+  }
+  for (const [id, c] of Object.entries(carriers)) {
+    const carrier = scene.carriers[id] as Carrier;
+    colliders.push({
+      kind: 'cylinder',
+      id,
+      shaftId: carrier.shaftId,
+      center: c.center,
+      axis: c.axis,
+      radius: c.radius,
+      halfWidth: CARRIER_THICKNESS[carrier.size] / 2,
+    });
+  }
+  exempt.push(...mechanismExemptions(scene, shafts, carriers, meshes));
+
+  // 公転する部品 → そのキャリア
+  const orbitOf = new Map<string, Orbit>();
+  for (const [id, x] of Object.entries(shafts)) if (x.orbit) orbitOf.set(id, x.orbit);
+  for (const [id, g] of Object.entries(gears)) if (g.orbit) orbitOf.set(id, g.orbit);
+  const sameOrbit = ([a, b]: readonly [string, string]) =>
+    orbitOf.get(a)?.carrierId === orbitOf.get(b)?.carrierId;
+  const still = findInterferences(colliders, exempt).filter(sameOrbit);
+  if (orbitOf.size === 0) return still;
+  const swept = colliders.map((c) => {
+    const orbit = orbitOf.get(c.id);
+    return orbit === undefined ? c : sweep(c, orbit, shafts);
+  });
+  const moving = findInterferences(swept, exempt).filter((pair) => !sameOrbit(pair));
+  return [...still, ...moving].sort((p, q) => compare(p[0], q[0]) || compare(p[1], q[1]));
+}
+
+// 公転する部品が、キャリアの軸まわりに掃く範囲（中空の円柱。S3-03）。円柱（半径 ρ、軸からの距離 d）は内側 d − ρ・
+// 外側 d + ρ、線分（シャフト）は内側・外側とも d。軸方向の範囲はそのまま
+function sweep(
+  c: Collider,
+  orbit: Orbit,
+  shafts: Readonly<Record<ShaftId, ShaftLayout>>,
+): Collider {
+  const axis = shafts[orbit.carrierShaftId]?.axis;
+  if (axis === undefined) return c;
+  const w = axisVector(axis);
+  const onAxis = (p: Vec3): Vec3 => add(orbit.center, scale(w, dot(sub(p, orbit.center), w)));
+  if (c.kind === 'segment') {
+    const mid = scale(add(c.start, c.end), 0.5);
+    const d = distanceToLine(c.start, orbit.center, axis);
+    return {
+      kind: 'hollow',
+      id: c.id,
+      shaftId: c.id,
+      center: onAxis(mid),
+      axis,
+      innerRadius: d,
+      radius: d,
+      halfWidth: Math.abs(dot(sub(c.end, c.start), w)) / 2,
+    };
+  }
+  const d = distanceToLine(c.center, orbit.center, axis);
+  return {
+    kind: 'hollow',
+    id: c.id,
+    shaftId: c.shaftId,
+    center: onAxis(c.center),
+    axis,
+    innerRadius: Math.max(0, d - c.radius),
+    radius: d + c.radius,
+    halfWidth: c.halfWidth,
+  };
+}
+
+// 遊星歯車の機構の中で、互いに干渉としない組（S3-03）
+function mechanismExemptions(
+  scene: Scene,
+  shafts: Readonly<Record<ShaftId, ShaftLayout>>,
+  carriers: Readonly<Record<CarrierId, CarrierLayout>>,
+  meshes: readonly Mesh[],
+): Array<readonly [string, string]> {
+  const pairs: Array<readonly [string, string]> = [];
+  const allPairs = (ids: readonly string[]) => {
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) pairs.push([ids[i] as string, ids[j] as string]);
+    }
+  };
+  // 同じ線上のシャフト同士
+  const lines = new Map<ShaftId, ShaftId[]>();
+  for (const id of Object.keys(shafts)) {
+    const root = lineRootOf(scene, id);
+    if (root === null) continue;
+    const list = lines.get(root);
+    if (list === undefined) lines.set(root, [id]);
+    else list.push(id);
+  }
+  for (const ids of lines.values()) if (ids.length > 1) allPairs(ids);
+  // 機構の部品
+  for (const [carrierId, c] of Object.entries(carriers)) {
+    const carrier = scene.carriers[carrierId] as Carrier;
+    const members = new Set<string>([carrierId, carrier.shaftId]);
+    const childGears = new Set<GearId>();
+    for (const planetId of c.planetShaftIds) {
+      const p = scene.shafts[planetId]?.placement;
+      if (p?.kind !== 'planet') continue;
+      members.add(planetId);
+      childGears.add(p.childGearId);
+      members.add(p.childGearId);
+      const parent = scene.gears[p.parentGearId];
+      if (parent === undefined) continue;
+      members.add(parent.id);
+      members.add(parent.shaftId);
+    }
+    for (const m of meshes) {
+      if (m.carrierShaftId !== carrier.shaftId) continue;
+      const other = childGears.has(m.a) ? m.b : childGears.has(m.b) ? m.a : null;
+      if (other === null) continue;
+      const gear = scene.gears[other];
+      if (gear === undefined || shafts[gear.shaftId]?.orbit !== undefined) continue;
+      members.add(other);
+      members.add(gear.shaftId);
+    }
+    allPairs([...members]);
+  }
+  return pairs;
 }
 
 function collidersOf(
@@ -484,6 +840,8 @@ export function resolveAddition(
   shaft: Shaft | null,
   gear: Gear,
 ): Addition | null {
+  // 遊星歯車（S3-03）のあるシーンは、公転・機構の扱いがあるので全体を解き直す（機構は小さいので十分速い）
+  if (Object.keys(scene.carriers).length > 0) return resolveAdditionFully(scene, base, shaft, gear);
   const placed = placeAddition(scene, base, shaft, gear);
   if (placed === null) return null;
   const { layout, shaftLayout, treePartner } = placed;
@@ -520,6 +878,30 @@ export function resolveAddition(
   return { gear: layout, interferences };
 }
 
+// resolveAddition の、全体を解き直す版（S3-03）。足したシーンの resolveLayout から、変わった部品を含む組を取り出す
+function resolveAdditionFully(
+  scene: Scene,
+  base: Layout,
+  shaft: Shaft | null,
+  gear: Gear,
+): Addition | null {
+  if (shaft === null && base.shafts[gear.shaftId] === undefined) return null;
+  if (shaft !== null && gear.shaftId !== shaft.id) return null;
+  const next: Scene = {
+    ...scene,
+    shafts: shaft === null ? scene.shafts : { ...scene.shafts, [shaft.id]: shaft },
+    gears: { ...scene.gears, [gear.id]: gear },
+  };
+  const layout = compute(next);
+  const placed = layout.gears[gear.id];
+  if (placed === undefined) return null;
+  const changed = new Set<string>([gear.id, gear.shaftId]);
+  const interferences = layout.interferences
+    .filter(([a, b]) => changed.has(a) || changed.has(b))
+    .map(([a, b]) => [a, b] as [string, string]);
+  return { gear: placed, interferences };
+}
+
 // 足した歯車のレイアウト、載ったシャフトの（新しい）レイアウト、木の親の歯車
 function placeAddition(
   scene: Scene,
@@ -550,6 +932,7 @@ function placeAddition(
   if (gear.shaftId !== shaft.id) return null;
   const span = spanOf([gear]);
   const p = shaft.placement;
+  if (p.kind === 'concentric') return null; // 同じ線上のシャフトは足す候補にしない（S3-03）
   if (!isChildPlacement(p)) {
     return {
       layout: make(p.origin, p.axis, 0),

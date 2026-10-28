@@ -2,11 +2,19 @@
   "shafts": {
     "shaft_1": {
       "id": "shaft_1",
-      "placement": { "kind": "root", "origin": [0, 35, 0], "axis": "y" }
+      "placement": {
+        "kind": "root",
+        "origin": [0, 35, 0],
+        "axis": "y"
+      }
     },
     "shaft_2": {
       "id": "shaft_2",
-      "placement": { "kind": "root", "origin": [100, 35, 0], "axis": "y" }
+      "placement": {
+        "kind": "root",
+        "origin": [100, 35, 0],
+        "axis": "y"
+      }
     }
   },
   "gears": {
@@ -28,5 +36,6 @@
     }
   },
   "motors": {},
-  "anchors": {}
+  "anchors": {},
+  "carriers": {}
 }

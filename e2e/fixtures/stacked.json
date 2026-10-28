@@ -45,5 +45,6 @@
     }
   },
   "motors": {},
-  "anchors": {}
+  "anchors": {},
+  "carriers": {}
 }

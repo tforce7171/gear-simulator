@@ -3,7 +3,7 @@ import { newInterferences } from './interference-diff';
 import type { Layout } from './types';
 
 function layoutWith(interferences: Array<[string, string]>): Layout {
-  return { shafts: {}, gears: {}, meshes: [], interferences };
+  return { shafts: {}, gears: {}, carriers: {}, meshes: [], interferences };
 }
 
 describe('newInterferences', () => {

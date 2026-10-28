@@ -2,7 +2,11 @@
   "shafts": {
     "shaft_s1": {
       "id": "shaft_s1",
-      "placement": { "kind": "root", "origin": [0, 30, 0], "axis": "y" }
+      "placement": {
+        "kind": "root",
+        "origin": [0, 30, 0],
+        "axis": "y"
+      }
     },
     "shaft_s2": {
       "id": "shaft_s2",
@@ -101,5 +105,6 @@
       "on": true
     }
   },
-  "anchors": {}
+  "anchors": {},
+  "carriers": {}
 }
