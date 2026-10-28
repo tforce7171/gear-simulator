@@ -1,7 +1,7 @@
 ---
 id: S2-02
 title: かさ歯車
-status: todo
+status: doing
 depends: [S1-31]
 ---
 
