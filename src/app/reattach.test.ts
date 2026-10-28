@@ -46,6 +46,7 @@ function reattachScene(aSize: 'S' | 'M' = 'M'): Scene {
     },
     anchors: {},
     carriers: {},
+    racks: {},
   };
 }
 

@@ -5,11 +5,13 @@ import {
   MOTOR_RPM_RANGE,
   MOTOR_SIZES,
   PLANET_COUNT_RANGE,
+  RACK_TEETH,
   WORM_THREADS,
 } from '../constants';
 import { canMesh, meshGeometryOf } from '../geometry/can-mesh';
 import { teethInRange, teethRange } from '../geometry/dimensions';
 import { defaultPlanetTeeth, planetaryOk, planetCountInRange } from '../geometry/planetary';
+import { rackTeethInRange, snapRackPosition } from '../geometry/rack';
 import { descendantShafts, resolveLayout } from '../layout/resolve';
 import type { Layout } from '../layout/types';
 import type { Vec3 } from '../math/vec3';
@@ -25,7 +27,7 @@ import {
 } from '../scene/gear-shape';
 import type { IdGenerator } from '../scene/ids';
 import { withPlanetary } from '../scene/planetary';
-import { anchorOfShaft, planetShaftsOf } from '../scene/scene';
+import { anchorOfRack, anchorOfShaft, planetShaftsOf } from '../scene/scene';
 import { shaftAxis } from '../scene/shaft-axis';
 import {
   type Anchor,
@@ -42,6 +44,8 @@ import {
   isFreePlacement,
   type Motor,
   type MotorId,
+  type Rack,
+  type RackId,
   type Scene,
   type Shaft,
   type ShaftId,
@@ -101,6 +105,13 @@ export type Command =
       teeth: number;
       kind?: GearKind;
     }
+  // ラックに 2 つ目以降のピニオン（同じ大きさの平歯車、offset 0）と 'rack' のシャフトを作る（S3-04）。
+  // position は π·m の整数倍に吸着させる
+  | { type: 'growGear'; mode: 'rack'; rackId: RackId; position: number; teeth: number }
+  // 平歯車をピニオンにしたラック（同じ大きさ、pinion の配置）を作る（S3-04）。平歯車でない・遊星のシャフトの歯車は notAllowed
+  | { type: 'growRack'; gearId: GearId; axisStep: 1 | 2; normalSign: 1 | -1; teeth: number }
+  // ラックの歯数を変える（S3-04。RACK_TEETH の範囲）。長さと s の範囲が変わる（今の s が範囲外なら運動の側で端に寄せる）
+  | { type: 'setRackTeeth'; rackId: RackId; teeth: number }
   | { type: 'deleteParts'; ids: string[] }
   // キャリアの遊星の数を変える（S3-03）。遊星のシャフトを作り直して等配にする（1 本目の遊星のシャフトの歯車の並びを写す）。
   // 範囲外・配置の条件（planetaryConditions）を満たさない数は notAllowed
@@ -124,6 +135,8 @@ export type Command =
   // シャフトを固定する（S3-01）。歯車を固定するときは、その歯車のシャフトを渡す。
   // 既に固定されていれば何もしない（同じシーンを返す）
   | { type: 'addAnchor'; shaftId: ShaftId }
+  // ラックを固定する（S3-04。拘束 v = 0）。既に固定されていれば何もしない
+  | { type: 'addAnchor'; rackId: RackId }
   | { type: 'removeAnchor'; anchorId: AnchorId }
   | { type: 'moveShaft'; shaftId: ShaftId; origin: Vec3 }
   | { type: 'setShaftAxis'; shaftId: ShaftId; axis: Axis }
@@ -234,9 +247,15 @@ export function applyCommand(scene: Scene, command: Command, ctx: CommandContext
           return growEnclose(scene, command, ctx);
         case 'planetary':
           return growPlanetary(scene, command, ctx);
+        case 'rack':
+          return growRackPinion(scene, command, ctx);
         default:
           return growCoaxial(scene, command, ctx);
       }
+    case 'growRack':
+      return growRack(scene, command, ctx);
+    case 'setRackTeeth':
+      return setRackTeeth(scene, command);
     case 'deleteParts':
       return deleteParts(scene, command.ids);
     case 'setPlanetCount':
@@ -307,6 +326,7 @@ function addRootShaft(
       motors: scene.motors,
       anchors: scene.anchors,
       carriers: scene.carriers,
+      racks: scene.racks,
     },
     [shaftId, gearId],
   );
@@ -396,6 +416,7 @@ function growMeshChild(
       motors: scene.motors,
       anchors: scene.anchors,
       carriers: scene.carriers,
+      racks: scene.racks,
     },
     [shaftId, gearId],
   );
@@ -441,6 +462,7 @@ function growBevel(
       motors: scene.motors,
       anchors: scene.anchors,
       carriers: scene.carriers,
+      racks: scene.racks,
     },
     [shaftId, gearId],
   );
@@ -489,6 +511,7 @@ function growSkew(
       motors: scene.motors,
       anchors: scene.anchors,
       carriers: scene.carriers,
+      racks: scene.racks,
     },
     [shaftId, gearId],
   );
@@ -532,6 +555,95 @@ function growPlanetary(
     ringShaftId,
     ringId,
   ]);
+}
+
+// 平歯車をピニオンにしたラック（S3-04）。同じ大きさ、pinion の配置。created は [ラック]
+function growRack(
+  scene: Scene,
+  c: Extract<Command, { type: 'growRack' }>,
+  ctx: CommandContext,
+): CommandResult {
+  const pinion = scene.gears[c.gearId];
+  if (pinion === undefined) return fail('notFound', `gear ${c.gearId} not found`);
+  if (pinion.kind !== 'spur') return fail('notAllowed', `gear ${pinion.id} is not a spur gear`);
+  const orbiting = orbitingParentError(scene, pinion);
+  if (orbiting) return orbiting;
+  if (c.axisStep !== 1 && c.axisStep !== 2) {
+    return fail('invalidValue', `axisStep must be 1 or 2: ${String(c.axisStep)}`);
+  }
+  if (c.normalSign !== 1 && c.normalSign !== -1) {
+    return fail('invalidValue', `normalSign must be 1 or -1: ${String(c.normalSign)}`);
+  }
+  const bad = rackTeethError(c.teeth);
+  if (bad) return bad;
+  const rackId = ctx.ids('rack');
+  const rack: Rack = {
+    id: rackId,
+    size: pinion.size,
+    teeth: c.teeth,
+    placement: {
+      kind: 'pinion',
+      gearId: pinion.id,
+      axisStep: c.axisStep,
+      normalSign: c.normalSign,
+    },
+  };
+  return done({ ...scene, racks: withEntry(scene.racks, rackId, rack) }, [rackId]);
+}
+
+// ラックに 2 つ目以降のピニオン（同じ大きさの平歯車、offset 0）と 'rack' のシャフトを作る（S3-04）。created は [シャフト, 歯車]
+function growRackPinion(
+  scene: Scene,
+  c: Extract<Command, { type: 'growGear'; mode: 'rack' }>,
+  ctx: CommandContext,
+): CommandResult {
+  const rack = scene.racks[c.rackId];
+  if (rack === undefined) return fail('notFound', `rack ${c.rackId} not found`);
+  if (!Number.isFinite(c.position)) return fail('invalidValue', 'position must be finite');
+  const bad = teethError(rack.size, c.teeth);
+  if (bad) return bad;
+  const shaftId = ctx.ids('shaft');
+  const gearId = ctx.ids('gear');
+  const shaft: Shaft = {
+    id: shaftId,
+    placement: {
+      kind: 'rack',
+      rackId: rack.id,
+      childGearId: gearId,
+      position: snapRackPosition(rack.size, c.position),
+    },
+  };
+  const gear = makeGear(
+    { id: gearId, shaftId, size: rack.size, teeth: c.teeth, offset: 0 },
+    newGearShape('spur'),
+  );
+  return done(
+    {
+      ...scene,
+      shafts: withEntry(scene.shafts, shaftId, shaft),
+      gears: withEntry(scene.gears, gearId, gear),
+    },
+    [shaftId, gearId],
+  );
+}
+
+function rackTeethError(teeth: number): Failure | null {
+  if (!rackTeethInRange(teeth)) {
+    return fail(
+      'invalidValue',
+      `rack teeth ${teeth} out of range [${RACK_TEETH.min}, ${RACK_TEETH.max}]`,
+    );
+  }
+  return null;
+}
+
+function setRackTeeth(scene: Scene, c: Extract<Command, { type: 'setRackTeeth' }>): CommandResult {
+  const rack = scene.racks[c.rackId];
+  if (rack === undefined) return fail('notFound', `rack ${c.rackId} not found`);
+  const bad = rackTeethError(c.teeth);
+  if (bad) return bad;
+  if (rack.teeth === c.teeth) return done(scene);
+  return done({ ...scene, racks: withEntry(scene.racks, rack.id, { ...rack, teeth: c.teeth }) });
 }
 
 // 遊星歯車機構の部品（S3-03）。sun は遊星の親の歯車（外歯車）、planets は遊星のシャフトの親とかみ合う歯車、
@@ -692,7 +804,8 @@ function deleteParts(scene: Scene, ids: readonly string[]): CommandResult {
       !Object.hasOwn(scene.gears, id) &&
       !Object.hasOwn(scene.shafts, id) &&
       !Object.hasOwn(scene.motors, id) &&
-      !Object.hasOwn(scene.carriers, id)
+      !Object.hasOwn(scene.carriers, id) &&
+      !Object.hasOwn(scene.racks, id)
     ) {
       return fail('notFound', `part ${id} not found`);
     }
@@ -703,7 +816,9 @@ function deleteParts(scene: Scene, ids: readonly string[]): CommandResult {
   const motors: Record<MotorId, Motor> = { ...scene.motors };
   const anchors: Record<AnchorId, Anchor> = { ...scene.anchors };
   const carriers: Record<CarrierId, Carrier> = { ...scene.carriers };
+  const racks: Record<RackId, Rack> = { ...scene.racks };
   let carriersChanged = false;
+  let racksChanged = false;
   let shaftsChanged = false;
   let gearsChanged = false;
   let motorsChanged = false;
@@ -719,6 +834,41 @@ function deleteParts(scene: Scene, ids: readonly string[]): CommandResult {
     const axis: Axis = at?.axis ?? shaftAxis(scene, shaft.id) ?? 'y';
     shafts[shaft.id] = { id: shaft.id, placement: { kind: 'detached', origin, axis } };
     shaftsChanged = true;
+  };
+
+  // ピニオン（pinion の相手）を消すと、ラックは消す直前の基準位置と向きで浮く（S3-04）
+  const detachRack = (rack: Rack): void => {
+    if (rack.placement.kind === 'detached') return;
+    layout ??= resolveLayout(scene);
+    const at = layout.racks[rack.id];
+    if (at === undefined) return;
+    racks[rack.id] = {
+      ...rack,
+      placement: {
+        kind: 'detached',
+        origin: at.origin,
+        direction: at.direction,
+        normal: at.normal,
+        normalSign: at.normalSign,
+      },
+    };
+    racksChanged = true;
+  };
+
+  // ラックを消すと、それに載ったピニオンのシャフト（'rack'）は消す直前の位置で浮き、ラックの固定具も消える（S3-04）
+  const removeRack = (rackId: RackId): void => {
+    if (racks[rackId] === undefined) return;
+    for (const shaft of Object.values(shafts)) {
+      const p = shaft.placement;
+      if (p.kind === 'rack' && p.rackId === rackId) detach(shaft);
+    }
+    for (const anchor of Object.values(anchors)) {
+      if (anchor.target.kind !== 'rack' || anchor.target.id !== rackId) continue;
+      delete anchors[anchor.id];
+      anchorsChanged = true;
+    }
+    delete racks[rackId];
+    racksChanged = true;
   };
 
   const removeMotorsOn = (shaftId: ShaftId): void => {
@@ -737,7 +887,12 @@ function deleteParts(scene: Scene, ids: readonly string[]): CommandResult {
       const p = shaft.placement;
       if (isChildPlacement(p) && (p.parentGearId === gearId || p.childGearId === gearId)) {
         detach(shaft);
+      } else if (p.kind === 'rack' && p.childGearId === gearId) {
+        detach(shaft);
       }
+    }
+    for (const rack of Object.values(racks)) {
+      if (rack.placement.kind === 'pinion' && rack.placement.gearId === gearId) detachRack(rack);
     }
   };
 
@@ -799,10 +954,19 @@ function deleteParts(scene: Scene, ids: readonly string[]): CommandResult {
       motorsChanged = true;
     } else if (carriers[id] !== undefined) {
       removeCarrier(id, true);
+    } else if (racks[id] !== undefined) {
+      removeRack(id);
     }
   }
 
-  if (!shaftsChanged && !gearsChanged && !motorsChanged && !anchorsChanged && !carriersChanged) {
+  if (
+    !shaftsChanged &&
+    !gearsChanged &&
+    !motorsChanged &&
+    !anchorsChanged &&
+    !carriersChanged &&
+    !racksChanged
+  ) {
     return done(scene);
   }
   return done({
@@ -811,6 +975,7 @@ function deleteParts(scene: Scene, ids: readonly string[]): CommandResult {
     motors: motorsChanged ? motors : scene.motors,
     anchors: anchorsChanged ? anchors : scene.anchors,
     carriers: carriersChanged ? carriers : scene.carriers,
+    racks: racksChanged ? racks : scene.racks,
   });
 }
 
@@ -985,7 +1150,7 @@ function setGearOffset(
   const gear = scene.gears[c.gearId];
   if (gear === undefined) return fail('notFound', `gear ${c.gearId} not found`);
   const p = scene.shafts[gear.shaftId]?.placement;
-  if (p !== undefined && isChildPlacement(p) && p.childGearId === gear.id) {
+  if (p !== undefined && (isChildPlacement(p) || p.kind === 'rack') && p.childGearId === gear.id) {
     return fail('notAllowed', `gear ${gear.id} meshes with its parent and cannot move`);
   }
   if (!isSnapped(c.offset)) return snapError(c.offset);
@@ -1027,6 +1192,14 @@ function addAnchor(
   c: Extract<Command, { type: 'addAnchor' }>,
   ctx: CommandContext,
 ): CommandResult {
+  if ('rackId' in c) {
+    // ラック（S3-04）。1 つの対象に固定具は最大 1 つ
+    if (scene.racks[c.rackId] === undefined) return fail('notFound', `rack ${c.rackId} not found`);
+    if (anchorOfRack(scene, c.rackId) !== null) return done(scene);
+    const anchorId = ctx.ids('anchor');
+    const anchor: Anchor = { id: anchorId, target: { kind: 'rack', id: c.rackId } };
+    return done({ ...scene, anchors: withEntry(scene.anchors, anchorId, anchor) }, [anchorId]);
+  }
   if (scene.shafts[c.shaftId] === undefined) {
     return fail('notFound', `shaft ${c.shaftId} not found`);
   }
@@ -1195,6 +1368,7 @@ function reattachShaft(
     motors: scene.motors,
     anchors: scene.anchors,
     carriers: scene.carriers,
+    racks: scene.racks,
   });
 }
 

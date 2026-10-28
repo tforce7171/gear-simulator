@@ -4,10 +4,12 @@ import {
   INTERNAL_MIN_TEETH,
   INTERNAL_MIN_TOOTH_DIFF,
   PERIMETER_CANDIDATE_COUNT,
+  RACK_DEFAULT_TEETH,
   WORM_THREADS,
 } from '../constants';
 import { axialExtent, teethRange } from '../geometry/dimensions';
 import { defaultPlanetTeeth } from '../geometry/planetary';
+import { rackEndMargin, rackLength, rackPitch, snapRackPosition } from '../geometry/rack';
 import type { Vec3 } from '../math/vec3';
 import {
   gearShape,
@@ -24,6 +26,8 @@ import type {
   GearId,
   GearKind,
   GearShape,
+  Rack,
+  RackId,
   Scene,
   Shaft,
   ShaftId,
@@ -109,6 +113,34 @@ export type GrowCandidate =
       axis: Axis;
       basePhase: number; // リングの位相
       planets: ReadonlyArray<{ readonly center: Vec3; readonly basePhase: number }>;
+    }
+  | {
+      // 平歯車をピニオンにしたラック（S3-04）。同じ大きさ・RACK_DEFAULT_TEETH 歯で、中央でピニオンにかみ合う。
+      // center はラックの基準位置、axis は動く向き（direction）
+      kind: 'rack';
+      parentGearId: GearId;
+      axisStep: 1 | 2;
+      normalSign: 1 | -1;
+      size: SizeKey;
+      teeth: number; // ラックの歯数
+      center: Vec3;
+      axis: Axis;
+      normal: Axis;
+      width: Axis;
+      length: number;
+      grooveOffset: number;
+    }
+  | {
+      // ラックに載せる 2 つ目以降のピニオン（S3-04）。新しい 'rack' のシャフトの平歯車（同じ大きさ・spec.perimeterTeeth 歯）
+      kind: 'rackPinion';
+      rackId: RackId;
+      position: number; // π·m の整数倍
+      size: SizeKey;
+      teeth: number;
+      shape: GearShape; // { kind: 'spur' }
+      center: Vec3;
+      axis: Axis;
+      basePhase: number;
     }
   | {
       kind: 'coaxial';
@@ -225,6 +257,11 @@ export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec)
   // 遊星歯車機構（S3-03）: 平歯車の親を太陽にする。機構を足した仮のシーン全体を解き、新しい干渉が無ければ出す
   const planetary = orbiting ? null : planetaryCandidate(scene, parent, baseInterferences);
   if (planetary !== null) candidates.push(planetary);
+
+  // ラック（S3-04）: 平歯車の親に、axisStep 1 → 2、それぞれ normalSign −1 → 1 の 4 か所
+  if (parent.kind === 'spur' && !orbiting) {
+    candidates.push(...rackCandidates(scene, parent, baseInterferences));
+  }
 
   // かさ歯車の親: axisStep 1 → 2、それぞれ side −1 → 1 の 4 か所
   if (parent.kind === 'bevel' && !orbiting) {
@@ -359,6 +396,115 @@ export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec)
   }
 
   return candidates;
+}
+
+// ラックの候補（S3-04）。ラックを足した仮のシーン全体を解き、新しい干渉の無いもの
+function rackCandidates(
+  scene: Scene,
+  pinion: Gear,
+  baseInterferences: ReadonlySet<string>,
+): GrowCandidate[] {
+  const rackId = unusedId(scene.racks, '__candidate_rack');
+  const out: GrowCandidate[] = [];
+  for (const axisStep of [1, 2] as const) {
+    for (const normalSign of [-1, 1] as const) {
+      const rack: Rack = {
+        id: rackId,
+        size: pinion.size,
+        teeth: RACK_DEFAULT_TEETH,
+        placement: { kind: 'pinion', gearId: pinion.id, axisStep, normalSign },
+      };
+      const layout = resolveLayout({ ...scene, racks: { ...scene.racks, [rackId]: rack } });
+      const at = layout.racks[rackId];
+      if (at === undefined) continue;
+      if (layout.interferences.some(([a, b]) => !baseInterferences.has(pairKey(a, b)))) continue;
+      out.push({
+        kind: 'rack',
+        parentGearId: pinion.id,
+        axisStep,
+        normalSign,
+        size: pinion.size,
+        teeth: RACK_DEFAULT_TEETH,
+        center: at.origin,
+        axis: at.direction,
+        normal: at.normal,
+        width: at.width,
+        length: at.length,
+        grooveOffset: at.grooveOffset,
+      });
+    }
+  }
+  return out;
+}
+
+// ラックを選んだときの候補（S3-04）: 2 つ目以降のピニオン。すでにかみ合っているピニオンの位置から両側（負 → 正）へ、
+// 新しい干渉の無い最初の position（π·m の整数倍）を 1 つずつ。ピニオンは同じ大きさ・spec.perimeterTeeth 歯の平歯車。
+// どのピニオンとも s の範囲が残る（位置の差が L − 2·余白 以下）ところまで探す
+export function listRackCandidates(
+  scene: Scene,
+  rackId: RackId,
+  spec: Pick<GrowSpec, 'perimeterTeeth'>,
+): GrowCandidate[] {
+  const rack = scene.racks[rackId];
+  if (rack === undefined) throw new Error(`listRackCandidates: no rack ${rackId}`);
+  assertTeeth(rack.size, spec.perimeterTeeth);
+  const layout = resolveLayout(scene);
+  if (layout.racks[rackId] === undefined) return [];
+  const baseInterferences = new Set(layout.interferences.map(([a, b]) => pairKey(a, b)));
+  const positions = layout.rackMeshes.filter((m) => m.rack === rackId).map((m) => m.position);
+  const pitch = rackPitch(rack.size);
+  const span = rackLength(rack.size, rack.teeth) - 2 * rackEndMargin(rack.size);
+  const lo = positions.length === 0 ? 0 : Math.min(...positions);
+  const hi = positions.length === 0 ? 0 : Math.max(...positions);
+  const shaftId = unusedId(scene.shafts, '__candidate_shaft');
+  const gearId = unusedId(scene.gears, '__candidate_gear');
+
+  const tryAt = (position: number): GrowCandidate | null => {
+    const shaft: Shaft = {
+      id: shaftId,
+      placement: { kind: 'rack', rackId, childGearId: gearId, position },
+    };
+    const gear = makeGear(
+      { id: gearId, shaftId, size: rack.size, teeth: spec.perimeterTeeth, offset: 0 },
+      newGearShape('spur'),
+    );
+    const next = resolveLayout({
+      ...scene,
+      shafts: { ...scene.shafts, [shaftId]: shaft },
+      gears: { ...scene.gears, [gearId]: gear },
+    });
+    const placed = next.gears[gearId];
+    if (placed === undefined) return null;
+    if (next.interferences.some(([a, b]) => !baseInterferences.has(pairKey(a, b)))) return null;
+    return {
+      kind: 'rackPinion',
+      rackId,
+      position,
+      size: rack.size,
+      teeth: spec.perimeterTeeth,
+      shape: { kind: 'spur' },
+      center: placed.center,
+      axis: placed.axis,
+      basePhase: placed.basePhase,
+    };
+  };
+
+  const out: GrowCandidate[] = [];
+  const eps = 1e-9 * pitch;
+  // 負の側: min(p) から下へ（max(p) − 位置 ≤ span）。正の側: max(p) から上へ（位置 − min(p) ≤ span）
+  for (const sign of [-1, 1] as const) {
+    const start = snapRackPosition(rack.size, sign === 1 ? hi : lo);
+    for (let k = positions.length === 0 && sign === 1 ? 0 : 1; ; k++) {
+      const position = start + sign * k * pitch + 0;
+      if (sign === 1 ? position - lo > span + eps : hi - position > span + eps) break;
+      const found = tryAt(position);
+      if (found !== null) {
+        out.push(found);
+        break;
+      }
+    }
+  }
+  return out;
 }
 
 // 遊星歯車機構の候補（S3-03）。平歯車の親で、歯数の組（defaultPlanetTeeth）があり、機構を足しても新しい干渉が無いとき

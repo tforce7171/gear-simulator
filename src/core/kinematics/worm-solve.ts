@@ -1,10 +1,10 @@
 import { LOCK_OMEGA_EPS } from '../constants';
-import type { Mesh } from '../layout/types';
+import type { Mesh, RackMesh } from '../layout/types';
 import type { Scene, ShaftId } from '../scene/types';
 import { type ShaftDrive, solveBalanceAffine } from './balance';
-import type { KinematicComponent } from './graph';
+import { bodyIdsOf, type KinematicComponent } from './graph';
 import { type Matrix, multiply, multiplyVector, nullSpace, solveParticular } from './linalg';
-import { meshCoefficients, meshTerms } from './mesh-coefficients';
+import { meshCoefficients, meshTerms, rackMeshTerms } from './mesh-coefficients';
 import type { LockReason } from './types';
 
 // ウォームのセルフロック（S2-03。design.md §6）。ウォームのかみ合いを一方通行の拘束として扱う:
@@ -36,7 +36,7 @@ export interface WormSections {
   readonly sections: readonly WormSection[]; // トポロジカル順
   readonly sectionOfShaft: ReadonlyMap<ShaftId, number>;
   readonly constraints: readonly Constraint[];
-  // 固定具の拘束 ω = 0 を入れるシャフト（S3-01）。そのシャフトを含む区画の拘束の行として足す
+  // 固定具の拘束 ω = 0 を入れるシャフト（S3-01）とラック（S3-04 の v = 0）。そのシャフトを含む区画の拘束の行として足す
   readonly anchoredShaftIds: ReadonlySet<ShaftId>;
 }
 
@@ -62,13 +62,32 @@ function constraintOf(scene: Scene, mesh: Mesh): Constraint {
   };
 }
 
-// 成分の区画とトポロジカル順。ウォームのかみ合いが無ければ null（段階 1 と同じに解く）
+// ラックとピニオンのかみ合い（S3-04）の拘束。双方向の拘束で、ピニオンのシャフトと同じ区画に入る
+function rackConstraintOf(scene: Scene, mesh: RackMesh): Constraint {
+  const terms = rackMeshTerms(mesh, scene);
+  const [rack, pinion] = terms as [(typeof terms)[number], (typeof terms)[number]];
+  return {
+    shaftA: rack.shaftId,
+    shaftB: pinion.shaftId,
+    coefA: rack.coef,
+    coefB: pinion.coef,
+    worm: null,
+    terms,
+  };
+}
+
+// 成分の区画とトポロジカル順。ウォームのかみ合いが無ければ null（段階 1 と同じに解く）。
+// ラック（S3-04）は区画の頂点（ID はラックの ID）で、ラックの速度 v を未知数にする
 export function wormSections(scene: Scene, component: KinematicComponent): WormSections | null {
   if (!component.meshes.some((m) => m.kind === 'worm')) return null;
-  const constraints = component.meshes.map((m) => constraintOf(scene, m));
+  const constraints = [
+    ...component.meshes.map((m) => constraintOf(scene, m)),
+    ...component.rackMeshes.map((m) => rackConstraintOf(scene, m)),
+  ];
+  const bodyIds = bodyIdsOf(component);
 
   // 1. ウォーム以外のかみ合いで区画に分ける（Union-Find）
-  const parent = new Map<ShaftId, ShaftId>(component.shaftIds.map((id) => [id, id]));
+  const parent = new Map<ShaftId, ShaftId>(bodyIds.map((id) => [id, id]));
   const find = (id: ShaftId): ShaftId => {
     let root = id;
     while (parent.get(root) !== root) root = parent.get(root) as ShaftId;
@@ -85,7 +104,7 @@ export function wormSections(scene: Scene, component: KinematicComponent): WormS
   }
 
   // 2. 区画の有向グラフ（ウォームの区画 → ホイールの区画）と、強連結成分でまとめる（Tarjan）
-  const nodes = [...new Set(component.shaftIds.map(find))].sort(compareIds);
+  const nodes = [...new Set(bodyIds.map(find))].sort(compareIds);
   const edges = new Map<ShaftId, ShaftId[]>(nodes.map((n) => [n, []]));
   for (const c of constraints) {
     if (c.worm === null) continue;
@@ -98,7 +117,7 @@ export function wormSections(scene: Scene, component: KinematicComponent): WormS
 
   // 3. まとめた区画のトポロジカル順（入ってくる辺の無いもののうち、先頭のシャフトの ID が小さい順）
   const groups = new Map<ShaftId, ShaftId[]>();
-  for (const id of component.shaftIds) {
+  for (const id of [...bodyIds].sort(compareIds)) {
     const root = find(id);
     const list = groups.get(root);
     if (list === undefined) groups.set(root, [id]);
@@ -140,7 +159,7 @@ export function wormSections(scene: Scene, component: KinematicComponent): WormS
     sections,
     sectionOfShaft,
     constraints,
-    anchoredShaftIds: new Set(component.anchoredShaftIds),
+    anchoredShaftIds: new Set([...component.anchoredShaftIds, ...component.anchoredRackIds]),
   };
 }
 

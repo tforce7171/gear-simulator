@@ -24,4 +24,5 @@ export const demoScene: Scene = {
   },
   anchors: {},
   carriers: {},
+  racks: {},
 };

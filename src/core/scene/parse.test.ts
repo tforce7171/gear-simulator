@@ -21,6 +21,7 @@ const demoScene: Scene = {
   },
   anchors: {},
   carriers: {},
+  racks: {},
 };
 
 // demoScene を生データにして、点区切りの場所の値を書き換えたものを返す

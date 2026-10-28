@@ -1,7 +1,7 @@
 import type { MotionState } from '../kinematics/types';
 import { axisVector } from '../math/axis';
 import { add, cross, dot, scale, sub, type Vec3 } from '../math/vec3';
-import type { Axis, GearId, ShaftId } from '../scene/types';
+import type { Axis, GearId, RackId, ShaftId } from '../scene/types';
 import type { Layout, Orbit } from './types';
 
 // 実際の位置（S3-03。design.md §5）。resolveLayout は遊星のシャフトを基準配置（すべてのキャリアの角度が 0）で返すので、
@@ -43,4 +43,13 @@ export function gearWorldCenter(layout: Layout, motion: MotionState, gearId: Gea
   const g = layout.gears[gearId];
   if (g === undefined) return [0, 0, 0];
   return orbited(layout, g.center, g.orbit, motion);
+}
+
+// ラックの基準位置の実際の位置（S3-04）。基準位置 + s·direction（s は運動の状態のラックの変位。無ければ 0）。
+// レイアウトに無ければ [0, 0, 0]
+export function rackWorldOrigin(layout: Layout, motion: MotionState, rackId: RackId): Vec3 {
+  const r = layout.racks[rackId];
+  if (r === undefined) return [0, 0, 0];
+  const s = motion.rackPositions[rackId] ?? 0;
+  return add(r.origin, scale(axisVector(r.direction), s));
 }

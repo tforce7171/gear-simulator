@@ -29,6 +29,7 @@ const sceneA: Scene = {
   },
   anchors: {},
   carriers: {},
+  racks: {},
 };
 
 function setup() {

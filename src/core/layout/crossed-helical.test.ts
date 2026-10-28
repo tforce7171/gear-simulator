@@ -62,6 +62,7 @@ const aOnly: Scene = {
   motors: crossedPair.motors,
   anchors: {},
   carriers: {},
+  racks: {},
 };
 const gearA = crossedPair.gears.gear_a as Gear;
 const gearB = crossedPair.gears.gear_b as Gear;
@@ -190,7 +191,7 @@ describe('候補', () => {
     for (const c of fresh) {
       expect(c.kind).toBe('skew');
       expect(['y', 'z']).toContain(c.axis);
-      expect(c.shape).toEqual({ kind: 'crossedHelical' });
+      expect(c.kind === 'skew' ? c.shape : null).toEqual({ kind: 'crossedHelical' });
       expect(c.size).toBe('M');
       expect(c.teeth).toBe(20);
     }

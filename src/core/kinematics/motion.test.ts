@@ -51,12 +51,20 @@ function makeScene(
   for (const [id, shaftId, size, rpm, direction, on = true] of motors) {
     motorMap[id] = { id, shaftId, size, rpm, direction, on };
   }
-  return { shafts, gears: gearMap, motors: motorMap, anchors: {}, carriers: {} };
+  return { shafts, gears: gearMap, motors: motorMap, anchors: {}, carriers: {}, racks: {} };
 }
 
 // meshes だけを手で埋めた Layout（S1-09 に依存しない）
 function layoutOf(meshes: readonly Mesh[]): Layout {
-  return { shafts: {}, gears: {}, carriers: {}, meshes, interferences: [] };
+  return {
+    shafts: {},
+    gears: {},
+    carriers: {},
+    racks: {},
+    rackMeshes: [],
+    meshes,
+    interferences: [],
+  };
 }
 
 function tree(a: string, b: string): Mesh {
@@ -126,7 +134,14 @@ const drivenPair = (): Setup => pair(24, [['motor_a', A, 'S', 60, 1]]);
 
 describe('initialMotionState', () => {
   it('全て空', () => {
-    expect(initialMotionState()).toEqual({ angles: {}, omegas: {}, locks: [], backDriven: [] });
+    expect(initialMotionState()).toEqual({
+      angles: {},
+      omegas: {},
+      locks: [],
+      backDriven: [],
+      rackPositions: {},
+      rackVelocities: {},
+    });
   });
 });
 

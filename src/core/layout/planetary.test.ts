@@ -89,6 +89,7 @@ function sunOnly(teeth = 24, size: Gear['size'] = 'M'): Scene {
     motors: {},
     anchors: {},
     carriers: {},
+    racks: {},
   };
 }
 

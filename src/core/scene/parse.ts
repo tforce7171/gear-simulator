@@ -7,6 +7,8 @@ import type {
   Gear,
   Hand,
   Motor,
+  Rack,
+  RackPlacement,
   Scene,
   Shaft,
   ShaftPlacement,
@@ -37,6 +39,7 @@ const PREFIX = {
   motors: 'motor_',
   anchors: 'anchor_',
   carriers: 'carrier_',
+  racks: 'rack_',
 } as const;
 type Collection = keyof typeof PREFIX;
 
@@ -63,9 +66,14 @@ export function parseScene(raw: unknown): SceneParseResult {
   if (raw.carriers !== undefined && !isPlainObject(raw.carriers)) {
     shape('carriers', 'carriers must be an object');
   }
+  // ラック（S3-04）。無いシーン（S3-04 より前に保存したもの）は空として読む（暫定。S3-05 で version 3 の移行に置き換える）
+  if (raw.racks !== undefined && !isPlainObject(raw.racks)) {
+    shape('racks', 'racks must be an object');
+  }
   if (errors.length > 0) return { ok: false, errors };
   const rawAnchors: Raw = isPlainObject(raw.anchors) ? raw.anchors : {};
   const rawCarriers: Raw = isPlainObject(raw.carriers) ? raw.carriers : {};
+  const rawRacks: Raw = isPlainObject(raw.racks) ? raw.racks : {};
 
   // 部品の共通の形: 通常のオブジェクトで、キーと id が種類の接頭辞を持つ文字列
   const items = (collection: Collection): Array<[string, Raw, string]> => {
@@ -75,7 +83,9 @@ export function parseScene(raw: unknown): SceneParseResult {
         ? rawAnchors
         : collection === 'carriers'
           ? rawCarriers
-          : (raw[collection] as Raw);
+          : collection === 'racks'
+            ? rawRacks
+            : (raw[collection] as Raw);
     for (const [key, item] of Object.entries(source)) {
       const base = `${collection}.${key}`;
       if (!key.startsWith(PREFIX[collection])) {
@@ -106,6 +116,20 @@ export function parseScene(raw: unknown): SceneParseResult {
     if (typeof v === 'number') return v;
     shape(`${base}.${field}`, `${field} must be a number`, key);
     return 0;
+  };
+  const vec3 = (item: Raw, field: string, base: string, key: string): Vec3 => {
+    const v: unknown = item[field];
+    if (Array.isArray(v) && v.length === 3) {
+      const [x, y, z] = v as unknown[];
+      if (typeof x === 'number' && typeof y === 'number' && typeof z === 'number') return [x, y, z];
+    }
+    shape(`${base}.${field}`, `${field} must be 3 numbers`, key);
+    return [0, 0, 0];
+  };
+  const axis = (item: Raw, field: string, base: string, key: string): Axis => {
+    if (AXES.includes(item[field])) return item[field] as Axis;
+    shape(`${base}.${field}`, `${field} must be x, y or z: ${String(item[field])}`, key);
+    return 'x';
   };
   const size = (item: Raw, base: string, key: string): SizeKey => {
     if (SIZES.includes(item.size)) return item.size as SizeKey;
@@ -160,6 +184,14 @@ export function parseScene(raw: unknown): SceneParseResult {
     } else if (p.kind === 'concentric') {
       // 同じ線上のシャフト（S3-03）。原点・軸は持たない（親のシャフトから導く）
       placement = { kind: 'concentric', parentShaftId: str(p, 'parentShaftId', base, key) };
+    } else if (p.kind === 'rack') {
+      // ラックに載せたピニオンのシャフト（S3-04）。軸は持たない（ラックの歯幅の方向から導く）
+      placement = {
+        kind: 'rack',
+        rackId: str(p, 'rackId', base, key),
+        childGearId: str(p, 'childGearId', base, key),
+        position: num(p, 'position', base, key),
+      };
     } else if (p.kind === 'planet') {
       // 遊星のシャフト（S3-03）。軸は持たない（キャリアのシャフトから導く）
       placement = {
@@ -240,7 +272,7 @@ export function parseScene(raw: unknown): SceneParseResult {
       shape(base, 'target must be an object', key);
       continue;
     }
-    // 対象の種類が 'shaft' か、シャフトがあるかは validateScene が確かめる
+    // 対象の種類が 'shaft'・'rack'（S3-04）か、対象があるかは validateScene が確かめる
     anchors.push([
       key,
       {
@@ -268,6 +300,47 @@ export function parseScene(raw: unknown): SceneParseResult {
     ]);
   }
 
+  const racks: Array<[string, Rack]> = [];
+  for (const [key, item, id] of items('racks')) {
+    const base = `racks.${key}`;
+    const p = item.placement;
+    if (!isPlainObject(p)) {
+      shape(`${base}.placement`, 'placement must be an object', key);
+      continue;
+    }
+    const pbase = `${base}.placement`;
+    let placement: RackPlacement;
+    // axisStep・normalSign の値、direction と normal が違うか、ピニオンがあるかは validateScene が確かめる
+    if (p.kind === 'pinion') {
+      placement = {
+        kind: 'pinion',
+        gearId: str(p, 'gearId', pbase, key),
+        axisStep: num(p, 'axisStep', pbase, key) as 1 | 2,
+        normalSign: num(p, 'normalSign', pbase, key) as 1 | -1,
+      };
+    } else if (p.kind === 'detached') {
+      placement = {
+        kind: 'detached',
+        origin: vec3(p, 'origin', pbase, key),
+        direction: axis(p, 'direction', pbase, key),
+        normal: axis(p, 'normal', pbase, key),
+        normalSign: num(p, 'normalSign', pbase, key) as 1 | -1,
+      };
+    } else {
+      shape(`${pbase}.kind`, `invalid rack placement kind "${String(p.kind)}"`, key);
+      continue;
+    }
+    racks.push([
+      key,
+      {
+        id,
+        size: size(item, base, key),
+        teeth: num(item, 'teeth', base, key),
+        placement,
+      },
+    ]);
+  }
+
   if (errors.length > 0) return { ok: false, errors };
 
   // Object.fromEntries は自分のプロパティとして定義するので、"__proto__" のようなキーでも安全
@@ -277,6 +350,7 @@ export function parseScene(raw: unknown): SceneParseResult {
     motors: Object.fromEntries(motors),
     anchors: Object.fromEntries(anchors),
     carriers: Object.fromEntries(carriers),
+    racks: Object.fromEntries(racks),
   };
   const validated = validateScene(scene);
   return validated.ok ? { ok: true, scene } : { ok: false, errors: validated.errors };

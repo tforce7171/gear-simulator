@@ -1,9 +1,9 @@
-import { LOCK_OMEGA_EPS, MOTOR_SIZES } from '../constants';
+import { LOCK_OMEGA_EPS, MOTOR_SIZES, RACK_END_EPS } from '../constants';
 import type { Layout } from '../layout/types';
-import { anchoredShaftIds } from '../scene/scene';
-import type { Motor, MotorId, Scene, ShaftId } from '../scene/types';
+import { anchoredRackIds, anchoredShaftIds } from '../scene/scene';
+import type { Motor, MotorId, RackId, Scene, ShaftId } from '../scene/types';
 import { type ShaftDrive, solveVelocities } from './balance';
-import { buildMeshGraph, type KinematicComponent, type MeshGraph } from './graph';
+import { bodyIdsOf, buildMeshGraph, type KinematicComponent, type MeshGraph } from './graph';
 import { multiplyVector } from './linalg';
 import { rpmToRadPerSec } from './motor';
 import {
@@ -54,7 +54,7 @@ const anchoredGraphCache = new WeakMap<Layout, { scene: Scene; graph: MeshGraph 
 export function meshGraphOf(scene: Scene, layout: Layout): MeshGraph {
   const cached = graphCache.get(layout);
   if (cached !== undefined && cached.scene === scene) return cached.graph;
-  const graph = buildMeshGraph(scene, layout.meshes);
+  const graph = buildMeshGraph(scene, layout.meshes, new Set(), layout.rackMeshes);
   graphCache.set(layout, { scene, graph });
   return graph;
 }
@@ -62,11 +62,15 @@ export function meshGraphOf(scene: Scene, layout: Layout): MeshGraph {
 export function anchoredMeshGraphOf(scene: Scene, layout: Layout): MeshGraph {
   const cached = anchoredGraphCache.get(layout);
   if (cached !== undefined && cached.scene === scene) return cached.graph;
-  const anchored = anchoredShaftIds(scene);
+  // 固定具の対象はシャフトとラック（S3-04 のラックは v = 0）
+  const anchored = new Set<ShaftId | RackId>([
+    ...anchoredShaftIds(scene),
+    ...anchoredRackIds(scene),
+  ]);
   const graph =
     anchored.size === 0
       ? meshGraphOf(scene, layout)
-      : buildMeshGraph(scene, layout.meshes, anchored);
+      : buildMeshGraph(scene, layout.meshes, anchored, layout.rackMeshes);
   anchoredGraphCache.set(layout, { scene, graph });
   return graph;
 }
@@ -76,7 +80,77 @@ function compareIds(a: string, b: string): number {
 }
 
 function lockOf(reason: LockReason, component: KinematicComponent): LockInfo {
-  return { reason, shaftIds: [...component.shaftIds], gearIds: [...component.gearIds] };
+  const lock = { reason, shaftIds: [...component.shaftIds], gearIds: [...component.gearIds] };
+  return component.rackIds.length === 0 ? lock : { ...lock, rackIds: [...component.rackIds] };
+}
+
+function isAnchored(component: KinematicComponent): boolean {
+  return component.anchoredShaftIds.length > 0 || component.anchoredRackIds.length > 0;
+}
+
+// 行ベクトル n と q の内積
+function rowDot(n: readonly number[], q: readonly number[]): number {
+  let sum = 0;
+  for (let k = 0; k < n.length; k++) sum += (n[k] as number) * (q[k] as number);
+  return sum;
+}
+
+// ラックの変位 s = n·q が範囲 travel の外なら、q を最も小さく動かして（n の向きに）端に寄せる（S3-04。
+// ラックの歯数を減らしたときなど、構成が変わって範囲が縮んだとき）
+function clampRacksIntoTravel(
+  q: number[],
+  rows: ReadonlyArray<{
+    readonly n: readonly number[];
+    readonly travel: readonly [number, number];
+  }>,
+): number[] {
+  let out = q;
+  for (let pass = 0; pass < 3; pass++) {
+    let moved = false;
+    for (const { n, travel } of rows) {
+      const norm2 = rowDot(n, n);
+      if (norm2 === 0) continue;
+      const s = rowDot(n, out);
+      const target =
+        s > travel[1] + RACK_END_EPS ? travel[1] : s < travel[0] - RACK_END_EPS ? travel[0] : null;
+      if (target === null) continue;
+      const shift = (target - s) / norm2;
+      out = out.map((v, k) => v + shift * (n[k] as number));
+      moved = true;
+    }
+    if (!moved) break;
+  }
+  return out;
+}
+
+// ラックの端（S3-04）。q が qPrev から qNext へ動くとき（速度 qDot）、どれかのラックが端を越えるなら、最初に端に届く割合 t
+// （0〜1）を返す。端にいて外向きに動こうとしているなら 0。越えなければ null
+function rackEndFraction(
+  rows: ReadonlyArray<{
+    readonly n: readonly number[];
+    readonly travel: readonly [number, number];
+  }>,
+  qPrev: readonly number[],
+  qNext: readonly number[],
+  qDot: readonly number[],
+): number | null {
+  let t: number | null = null;
+  for (const { n, travel } of rows) {
+    const [lo, hi] = travel;
+    const sPrev = rowDot(n, qPrev);
+    const sNext = rowDot(n, qNext);
+    const v = rowDot(n, qDot);
+    const ds = sNext - sPrev;
+    let ti: number | null = null;
+    if (sPrev >= hi - RACK_END_EPS && (ds > RACK_END_EPS || v > LOCK_OMEGA_EPS)) ti = 0;
+    else if (sPrev <= lo + RACK_END_EPS && (ds < -RACK_END_EPS || v < -LOCK_OMEGA_EPS)) ti = 0;
+    else if (sNext > hi + RACK_END_EPS) ti = (hi - sPrev) / ds;
+    else if (sNext < lo - RACK_END_EPS) ti = (lo - sPrev) / ds;
+    if (ti === null) continue;
+    const clamped = Math.min(1, Math.max(0, ti));
+    t = t === null ? clamped : Math.min(t, clamped);
+  }
+  return t;
 }
 
 // 角度を進めずに、いまの入力での ω・ロック・負けたモーターを求める（dt = 0 の stepMotion と同じ）
@@ -138,13 +212,19 @@ export function stepMotion(
 
   const angles: Record<ShaftId, number> = {};
   const omegas: Record<ShaftId, number> = {};
+  const rackPositions: Record<RackId, number> = {};
+  const rackVelocities: Record<RackId, number> = {};
   const locks: LockInfo[] = [];
   const backDriven: MotorId[] = [];
+  // 前の状態の「角度」。ラック（S3-04）は変位 s
+  const isRack = (id: string): boolean => scene.racks[id] !== undefined;
+  const prevValue = (id: string): number =>
+    (isRack(id) ? prev.rackPositions[id] : prev.angles[id]) ?? 0;
 
   // 固定具を外して解き直したときの、成分のロックの理由（段階 1・ウォームの条件。ロックしなければ null）。
   // 固定具は連結のしかたを変えないので、固定具を外したグラフにも同じシャフトの組の成分がある
   function freeLockReason(component: KinematicComponent): LockReason | null {
-    const freeIndex = freeGraph.componentOfShaft[component.shaftIds[0] as ShaftId] as number;
+    const freeIndex = freeGraph.componentOfShaft[bodyIdsOf(component)[0] as ShaftId] as number;
     const free = freeGraph.components[freeIndex] as KinematicComponent;
     const hasMotor = free.shaftIds.some((id) => motorsOfShaft.has(id));
     if (free.dof === 0) return hasMotor ? 'contradiction' : null;
@@ -164,21 +244,23 @@ export function stepMotion(
   // 外してもロックするなら、外したときの段階 1（・ウォーム）の理由にする（固定具で自由度 0 になっても、
   // 本当の原因はウォームの逆駆動、などのため）
   function anchorAware(reason: LockReason, component: KinematicComponent): LockReason {
-    if (component.anchoredShaftIds.length === 0) return reason;
+    if (!isAnchored(component)) return reason;
     return freeLockReason(component) ?? 'anchor';
   }
 
   // 手でつかんだシャフトが動けないときの理由: 固定具を外すと動けるなら 'anchor'、外しても自由度 0 なら 'contradiction'
   function grabbedLockReason(component: KinematicComponent): LockReason {
-    if (component.anchoredShaftIds.length === 0) return 'contradiction';
-    const freeIndex = freeGraph.componentOfShaft[component.shaftIds[0] as ShaftId] as number;
+    if (!isAnchored(component)) return 'contradiction';
+    const freeIndex = freeGraph.componentOfShaft[bodyIdsOf(component)[0] as ShaftId] as number;
     return (freeGraph.components[freeIndex]?.dof ?? 0) === 0 ? 'contradiction' : 'anchor';
   }
 
   graph.components.forEach((component, index) => {
     const { shaftIds, basis, dof } = component;
+    const bodyIds = bodyIdsOf(component);
     const hasMotor = shaftIds.some((id) => motorsOfShaft.has(id));
     const grabbed = index === handComponent;
+    const lockCount = locks.length;
 
     // 自由度 0: 角度は前の値のまま（無ければ 0）、ω = 0。ON のモーターか手があれば矛盾のロック
     // （固定具を外せば解けるなら 'anchor'。S3-01）
@@ -186,6 +268,10 @@ export function stepMotion(
       for (const id of shaftIds) {
         angles[id] = prev.angles[id] ?? 0;
         omegas[id] = 0;
+      }
+      for (const id of component.rackIds) {
+        rackPositions[id] = prev.rackPositions[id] ?? 0;
+        rackVelocities[id] = 0;
       }
       if (grabbed) {
         locks.push(lockOf(grabbedLockReason(component), component));
@@ -195,13 +281,24 @@ export function stepMotion(
       return;
     }
 
-    // q は基準シャフトの角度。前の状態に無ければ 0 から
-    const qPrev = component.referenceShaftIds.map((id) => prev.angles[id] ?? 0);
+    // ラックの行と s の範囲（S3-04）。レイアウトに無いラック（ピニオンが根からたどれない）は範囲を見ない
+    const rackRows = component.rackIds.flatMap((id, k) => {
+      const travel = layout.racks[id]?.travel;
+      const n = basis[shaftIds.length + k];
+      return travel === undefined || n === undefined ? [] : [{ n, travel }];
+    });
+    // q は基準シャフト（ラックだけの成分ではラック）の角度。前の状態に無ければ 0 から。
+    // ラックの範囲が縮んで今の s が外に出ていれば、端に寄せる（S3-04）
+    const qPrev = clampRacksIntoTravel(
+      component.referenceShaftIds.map((id) => prevValue(id)),
+      rackRows,
+    );
     let qNext: number[];
     let qDot: number[];
     const worm = worms[index] ?? null;
     const wormSection =
       worm === null || hand === undefined ? undefined : worm.sectionOfShaft.get(hand.shaftId);
+    const handRow = hand === undefined ? -1 : bodyIds.indexOf(hand.shaftId);
     if (
       grabbed &&
       worm !== null &&
@@ -215,24 +312,24 @@ export function stepMotion(
     } else if (
       grabbed &&
       hand !== undefined &&
-      (basis[shaftIds.indexOf(hand.shaftId)] ?? []).every((x) => Math.abs(x) < PINNED_EPS)
+      (basis[handRow] ?? []).every((x) => Math.abs(x) < PINNED_EPS)
     ) {
       // つかんだシャフトが固定具で動けない（固定具の拘束を入れた零空間で、その行がすべて 0）: ドラッグ中はロック（S3-01）
       locks.push(lockOf(grabbedLockReason(component), component));
       qDot = qPrev.map(() => 0);
       qNext = qPrev;
     } else if (grabbed && hand !== undefined && dof === 1) {
-      const n = basis[shaftIds.indexOf(hand.shaftId)]?.[0] ?? 0;
+      const n = basis[handRow]?.[0] ?? 0;
       qNext = [hand.angle / n];
       qDot = qNext.map((v, k) => (dt > 0 ? (v - (qPrev[k] as number)) / dt : 0));
     } else if (grabbed && hand !== undefined) {
       // 自由度 2 以上（S3-03 の遊星歯車など）: つかんだシャフトの角度を手の角度にし、残りの自由度はつり合いで決める。
       // つかんだシャフトの ω（= 角度の差 / dt）を規定値として、ウォームの規定値と同じ solveFixed で解く（モーターも効く）。
       // dt = 0 では角度の差を一度に動かす（モーターは無いものとし、ω の二乗和が最小の動き）。ω は 0
-      const row = shaftIds.indexOf(hand.shaftId);
+      const row = handRow;
       const current = multiplyVector([basis[row] as number[]], qPrev)[0] ?? 0;
       const delta = hand.angle - current;
-      const refRows = component.referenceShaftIds.map((id) => shaftIds.indexOf(id));
+      const refRows = component.referenceShaftIds.map((id) => bodyIds.indexOf(id));
       const toQ = (omegasOfShafts: readonly number[]) => refRows.map((i) => omegasOfShafts[i] ?? 0);
       if (dt > 0) {
         const solved =
@@ -240,7 +337,7 @@ export function stepMotion(
             basis,
             dof,
             [{ row, value: delta / dt }],
-            shaftIds.map((id) => drives.get(id) ?? NO_DRIVE),
+            bodyIds.map((id) => drives.get(id) ?? NO_DRIVE),
           ) ?? basis.map(() => 0);
         qDot = toQ(solved);
         qNext = qPrev.map((v, k) => v + (qDot[k] as number) * dt);
@@ -250,7 +347,7 @@ export function stepMotion(
             basis,
             dof,
             [{ row, value: delta }],
-            shaftIds.map(() => NO_DRIVE),
+            bodyIds.map(() => NO_DRIVE),
           ) ?? basis.map(() => 0);
         qNext = qPrev.map((v, k) => v + (toQ(moved)[k] as number));
         qDot = qPrev.map(() => 0);
@@ -274,11 +371,29 @@ export function stepMotion(
       qNext = qPrev.map((v, k) => v + (qDot[k] as number) * dt);
     }
 
+    // ラックの端（S3-04）: 端を越えるなら端で止め（その割合だけ進める）、成分をロックにする（ω = 0、v = 0）。
+    // 端にいて外向きに動こうとしている間もロック。内向きなら動く（モーターの向きを変えれば戻る）
+    if (locks.length === lockCount && rackRows.length > 0) {
+      const t = rackEndFraction(rackRows, qPrev, qNext, qDot);
+      if (t !== null) {
+        const from = qPrev;
+        const to = qNext;
+        qNext = from.map((v, k) => v + t * ((to[k] as number) - v));
+        qDot = qDot.map(() => 0);
+        locks.push(lockOf('rackEnd', component));
+      }
+    }
+
     const theta = multiplyVector(basis, qNext);
     const omega = multiplyVector(basis, qDot);
-    shaftIds.forEach((id, i) => {
-      angles[id] = theta[i] as number;
-      omegas[id] = (omega[i] as number) + 0; // −0 を 0 にそろえる
+    bodyIds.forEach((id, i) => {
+      if (i < shaftIds.length) {
+        angles[id] = theta[i] as number;
+        omegas[id] = (omega[i] as number) + 0; // −0 を 0 にそろえる
+      } else {
+        rackPositions[id] = (theta[i] as number) + 0;
+        rackVelocities[id] = (omega[i] as number) + 0;
+      }
     });
 
     for (const id of shaftIds) {
@@ -290,5 +405,5 @@ export function stepMotion(
   });
 
   backDriven.sort(compareIds);
-  return { angles, omegas, locks, backDriven };
+  return { angles, omegas, locks, backDriven, rackPositions, rackVelocities };
 }

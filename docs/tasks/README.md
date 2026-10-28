@@ -71,7 +71,7 @@
 | [S3-01](stage3/01-anchor.md) | 固定具（アンカー） | S2-05 | done |
 | [S3-02](stage3/02-internal-gear.md) | 内歯車 | S2-05 | done |
 | [S3-03](stage3/03-planetary.md) | 遊星歯車とキャリア | S3-01, S3-02 | done |
-| [S3-04](stage3/04-rack-pinion.md) | ラック＆ピニオン | S2-05 | todo |
+| [S3-04](stage3/04-rack-pinion.md) | ラック＆ピニオン | S2-05 | doing |
 | [S3-05](stage3/05-stage3-integration.md) | 音・テーマ・保存形式の拡張 | S3-01〜S3-04 | todo |
 
 ## タスク資料のひな形

@@ -12,6 +12,7 @@ const scene: Scene = {
   },
   anchors: {},
   carriers: {},
+  racks: {},
 };
 
 describe('selectionForPick', () => {

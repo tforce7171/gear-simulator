@@ -360,7 +360,9 @@ test('段階 1 で保存した version 1 のファイルをインポート → �
   expect(v1.version).toBe(1);
   await importFile(page, v1Path);
   // 固定具の無いシーンには anchors: {} を補う（S3-01 の暫定。S3-05 で version 3 の移行に置き換える）
-  await expect.poll(() => getScene(page)).toEqual({ ...v1.scene, anchors: {}, carriers: {} });
+  await expect
+    .poll(() => getScene(page))
+    .toEqual({ ...v1.scene, anchors: {}, carriers: {}, racks: {} });
   await expect(page.getByTestId('toast')).toHaveCount(0);
 });
 
@@ -375,7 +377,7 @@ test('version 1 の自動保存から起動できる', async ({ page }) => {
   }, v1);
   await page.reload();
   await waitReady(page);
-  expect(await getScene(page)).toEqual({ ...v1.scene, anchors: {}, carriers: {} });
+  expect(await getScene(page)).toEqual({ ...v1.scene, anchors: {}, carriers: {}, racks: {} });
 });
 
 test('getAudio().voices にウォームの組の音源があり、kind で種類が分かる', async ({ page }) => {

@@ -1,6 +1,7 @@
-import { AXIAL_SNAP, GEAR_SIZES, MOTOR_RPM_RANGE, WORM_THREADS } from '../constants';
+import { AXIAL_SNAP, GEAR_SIZES, MOTOR_RPM_RANGE, RACK_TEETH, WORM_THREADS } from '../constants';
 import { canMesh, meshGeometryOf, placementKindOf } from '../geometry/can-mesh';
 import { teethRange } from '../geometry/dimensions';
+import { rackTeethInRange } from '../geometry/rack';
 import { isApex, isGearKind, isHand, isWebSide } from './gear-shape';
 import { lineRootOf, placementParentShafts } from './scene';
 import type { Scene, ShaftId } from './types';
@@ -42,7 +43,9 @@ export type SceneErrorCode =
   | 'invalidSide' // bevel・skew の配置の side が 1 でも -1 でもない（S2-02、S2-03）
   | 'bevelApexMismatch' // bevel の配置の子の apex が −side でない（S2-02）
   | 'meshCycle'
-  | 'invalidAnchorTarget' // 固定具の対象の種類が 'shaft' でない（S3-01。S3-04 でラックを足す）
+  | 'invalidAnchorTarget' // 固定具の対象の種類が 'shaft'・'rack' でない（S3-01、S3-04）
+  | 'invalidNormalSign' // ラックの normalSign が 1 でも -1 でもない（S3-04）
+  | 'rackAxesNotDistinct' // 浮いたラックの direction と normal が同じ軸（S3-04）
   | 'multipleAnchors' // 1 つの対象に固定具が 2 つ以上（S3-01）
   | 'planetLineMismatch' // 遊星の親の歯車のシャフトが、キャリアのシャフトと同じ線上にない（S3-03）
   | 'nestedOrbit'; // キャリア・同じ線上のシャフトの親が遊星のシャフト（2 段以上の遊星は範囲外。S3-03）
@@ -66,7 +69,7 @@ export function validateScene(scene: Scene): { ok: true } | { ok: false; errors:
   };
 
   // キーと id の一致
-  for (const collection of ['shafts', 'gears', 'motors', 'anchors', 'carriers'] as const) {
+  for (const collection of ['shafts', 'gears', 'motors', 'anchors', 'carriers', 'racks'] as const) {
     for (const [key, item] of Object.entries(scene[collection])) {
       if (item.id !== key) {
         push(
@@ -103,6 +106,51 @@ export function validateScene(scene: Scene): { ok: true } | { ok: false; errors:
           `${base}.parentShaftId`,
           `parent shaft "${p.parentShaftId}" is a planet shaft`,
         );
+      }
+    } else if (p.kind === 'rack') {
+      // ラックに載せたピニオンのシャフト（S3-04）: ラックがあり、子は同じ大きさの平歯車で offset 0
+      const rack = scene.racks[p.rackId];
+      if (rack === undefined) {
+        push('missingRef', key, `${base}.rackId`, `rack "${p.rackId}" not found`);
+      }
+      if (!isFiniteNumber(p.position)) {
+        push('notFinite', key, `${base}.position`, 'position must be finite');
+      }
+      const child = scene.gears[p.childGearId];
+      if (child === undefined) {
+        push('missingRef', key, `${base}.childGearId`, `gear "${p.childGearId}" not found`);
+      } else {
+        if (child.shaftId !== key) {
+          push(
+            'meshChildNotOnShaft',
+            p.childGearId,
+            `${base}.childGearId`,
+            `child gear "${p.childGearId}" is not on shaft "${key}"`,
+          );
+        }
+        if (child.offset !== 0) {
+          push(
+            'meshChildOffset',
+            p.childGearId,
+            `gears.${p.childGearId}.offset`,
+            `child gear "${p.childGearId}" must have offset 0`,
+          );
+        }
+        if (rack !== undefined && child.size !== rack.size) {
+          push(
+            'meshSizeMismatch',
+            p.childGearId,
+            `gears.${p.childGearId}.size`,
+            `child size "${child.size}" differs from rack size "${rack.size}"`,
+          );
+        } else if (child.kind !== 'spur') {
+          push(
+            'meshKindMismatch',
+            p.childGearId,
+            `gears.${p.childGearId}.kind`,
+            `child gear "${p.childGearId}" (${child.kind}) cannot mesh with a rack`,
+          );
+        }
       }
     } else if (
       p.kind === 'mesh' ||
@@ -260,6 +308,89 @@ export function validateScene(scene: Scene): { ok: true } | { ok: false; errors:
     }
   }
 
+  // ラック（S3-04）: 大きさ、歯数（RACK_TEETH）、配置（pinion: ピニオンが同じ大きさの平歯車で遊星のシャフトでない、
+  // axisStep が 1・2、normalSign が ±1。detached: 原点が有限、direction・normal が軸で互いに違う、normalSign が ±1）
+  for (const [key, rack] of Object.entries(scene.racks)) {
+    const base = `racks.${key}`;
+    if (!isSizeKey(rack.size)) {
+      push('invalidSize', key, `${base}.size`, `invalid size "${String(rack.size)}"`);
+    }
+    if (!Number.isInteger(rack.teeth)) {
+      push('teethNotInteger', key, `${base}.teeth`, `teeth must be an integer: ${rack.teeth}`);
+    } else if (!rackTeethInRange(rack.teeth)) {
+      push(
+        'teethOutOfRange',
+        key,
+        `${base}.teeth`,
+        `rack teeth ${rack.teeth} out of range [${RACK_TEETH.min}, ${RACK_TEETH.max}]`,
+      );
+    }
+    const p = rack.placement;
+    const pbase = `${base}.placement`;
+    if (p.normalSign !== 1 && p.normalSign !== -1) {
+      push(
+        'invalidNormalSign',
+        key,
+        `${pbase}.normalSign`,
+        `normalSign must be 1 or -1: ${String(p.normalSign)}`,
+      );
+    }
+    if (p.kind === 'pinion') {
+      if (p.axisStep !== 1 && p.axisStep !== 2) {
+        push(
+          'invalidAxisStep',
+          key,
+          `${pbase}.axisStep`,
+          `axisStep must be 1 or 2: ${String(p.axisStep)}`,
+        );
+      }
+      const pinion = scene.gears[p.gearId];
+      if (pinion === undefined) {
+        push('missingRef', key, `${pbase}.gearId`, `gear "${p.gearId}" not found`);
+      } else if (pinion.size !== rack.size) {
+        push(
+          'meshSizeMismatch',
+          key,
+          `${base}.size`,
+          `rack size "${rack.size}" differs from pinion size "${pinion.size}"`,
+        );
+      } else if (pinion.kind !== 'spur') {
+        push(
+          'meshKindMismatch',
+          key,
+          `${pbase}.gearId`,
+          `pinion "${p.gearId}" (${pinion.kind}) cannot mesh with a rack`,
+        );
+      } else if (scene.shafts[pinion.shaftId]?.placement.kind === 'planet') {
+        push('nestedOrbit', key, `${pbase}.gearId`, `pinion "${p.gearId}" is on a planet shaft`);
+      }
+    } else if (p.kind === 'detached') {
+      const origin: readonly unknown[] = Array.isArray(p.origin) ? p.origin : [];
+      if (origin.length !== 3 || !origin.every(isFiniteNumber)) {
+        push('notFinite', key, `${pbase}.origin`, 'origin must be 3 finite numbers');
+      }
+      if (!AXES.includes(p.direction)) {
+        push('invalidAxis', key, `${pbase}.direction`, `invalid axis "${String(p.direction)}"`);
+      } else if (!AXES.includes(p.normal)) {
+        push('invalidAxis', key, `${pbase}.normal`, `invalid axis "${String(p.normal)}"`);
+      } else if (p.direction === p.normal) {
+        push(
+          'rackAxesNotDistinct',
+          key,
+          `${pbase}.normal`,
+          `direction and normal must differ: ${p.direction}`,
+        );
+      }
+    } else {
+      push(
+        'invalidKind',
+        key,
+        `${pbase}.kind`,
+        `invalid rack placement kind "${String((p as { kind: unknown }).kind)}"`,
+      );
+    }
+  }
+
   // 歯車
   for (const [key, gear] of Object.entries(scene.gears)) {
     const base = `gears.${key}`;
@@ -364,35 +495,41 @@ export function validateScene(scene: Scene): { ok: true } | { ok: false; errors:
     }
   }
 
-  // 固定具（S3-01）: 対象はシャフトで、シーンにあり、1 つの対象に最大 1 つ
-  const anchorsPerShaft = new Map<ShaftId, string[]>();
+  // 固定具（S3-01）: 対象はシャフトかラック（S3-04）で、シーンにあり、1 つの対象に最大 1 つ
+  const anchorsPerTarget = new Map<string, { path: string; ids: string[] }>();
   for (const [key, anchor] of Object.entries(scene.anchors)) {
     const base = `anchors.${key}.target`;
     const target = anchor.target;
-    if (target.kind !== 'shaft') {
+    if (target.kind !== 'shaft' && target.kind !== 'rack') {
       push(
         'invalidAnchorTarget',
         key,
         `${base}.kind`,
-        `invalid anchor target "${String(target.kind)}"`,
+        `invalid anchor target "${String((target as { kind: unknown }).kind)}"`,
       );
       continue;
     }
-    if (scene.shafts[target.id] === undefined) {
-      push('missingRef', key, `${base}.id`, `shaft "${target.id}" not found`);
+    const exists =
+      target.kind === 'shaft'
+        ? scene.shafts[target.id] !== undefined
+        : scene.racks[target.id] !== undefined;
+    if (!exists) {
+      push('missingRef', key, `${base}.id`, `${target.kind} "${target.id}" not found`);
       continue;
     }
-    const list = anchorsPerShaft.get(target.id) ?? [];
-    list.push(key);
-    anchorsPerShaft.set(target.id, list);
+    const path = `${target.kind === 'shaft' ? 'shafts' : 'racks'}.${target.id}`;
+    const entry = anchorsPerTarget.get(path) ?? { path, ids: [] };
+    entry.ids.push(key);
+    anchorsPerTarget.set(path, entry);
   }
-  for (const [shaftId, list] of anchorsPerShaft) {
-    if (list.length > 1) {
+  for (const { path, ids } of anchorsPerTarget.values()) {
+    if (ids.length > 1) {
+      const targetId = path.slice(path.indexOf('.') + 1);
       push(
         'multipleAnchors',
-        shaftId,
-        `shafts.${shaftId}`,
-        `shaft "${shaftId}" has ${list.length} anchors: ${list.join(', ')}`,
+        targetId,
+        path,
+        `"${targetId}" has ${ids.length} anchors: ${ids.join(', ')}`,
       );
     }
   }
@@ -417,7 +554,8 @@ export function validateScene(scene: Scene): { ok: true } | { ok: false; errors:
   for (const key of Object.keys(scene.shafts)) {
     if (!visit(key)) continue;
     const p = scene.shafts[key]?.placement;
-    const field = p?.kind === 'concentric' ? 'parentShaftId' : 'parentGearId';
+    const field =
+      p?.kind === 'concentric' ? 'parentShaftId' : p?.kind === 'rack' ? 'rackId' : 'parentGearId';
     push(
       'meshCycle',
       key,

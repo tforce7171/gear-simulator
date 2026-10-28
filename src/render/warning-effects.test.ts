@@ -76,6 +76,7 @@ describe('warningParts', () => {
     },
     anchors: {},
     carriers: {},
+    racks: {},
   };
   const layout = resolveLayout(scene);
   const motion: MotionState = {

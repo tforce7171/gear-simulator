@@ -1,18 +1,35 @@
-import type { Mesh } from '../layout/types';
-import { type GearId, isChildPlacement, type Scene, type ShaftId } from '../scene/types';
+import type { Mesh, RackMesh } from '../layout/types';
+import {
+  type GearId,
+  isChildPlacement,
+  type RackId,
+  type Scene,
+  type ShaftId,
+} from '../scene/types';
 import { type Matrix, nullSpaceWithFreeColumns } from './linalg';
-import { meshTerms } from './mesh-coefficients';
+import { meshTerms, rackMeshTerms } from './mesh-coefficients';
 
 // かみ合いのグラフと、シャフトの角速度の拘束の零空間（design.md §6）
 
+// 未知数はシャフトの ω と、ラックの速度 v（S3-04。direction の正の向き、mm/s）。basis の行はシャフト（shaftIds）、
+// 続けてラック（rackIds）の順。ラックの行の「角度」はラックの変位 s（θ = N q で一緒に積分する）
 export interface KinematicComponent {
   readonly shaftIds: ShaftId[]; // ID の昇順
+  readonly rackIds: RackId[]; // この成分のラック（S3-04）。ID の昇順。basis の shaftIds の後の行
   readonly gearIds: GearId[]; // この成分のシャフトに載った歯車。ID の昇順
   readonly meshes: Mesh[]; // この成分の中のかみ合い（入力の順）
-  readonly basis: Matrix; // shaftIds.length 行 × dof 列。ω = basis · q
+  readonly rackMeshes: RackMesh[]; // この成分の中のラックとピニオンのかみ合い（S3-04。入力の順）
+  readonly basis: Matrix; // (shaftIds + rackIds).length 行 × dof 列。ω = basis · q
   readonly dof: number; // 0 なら回転条件の矛盾
-  readonly referenceShaftIds: ShaftId[]; // 長さ dof。basis のこの行が単位行列
+  // 長さ dof。basis のこの行が単位行列（シャフトを先に選び、ラックは最後。ラックだけの成分ではラック）
+  readonly referenceShaftIds: Array<ShaftId | RackId>;
   readonly anchoredShaftIds: ShaftId[]; // 固定具の拘束 ω = 0 を入れたシャフト（S3-01）。ID の昇順
+  readonly anchoredRackIds: RackId[]; // 固定具の拘束 v = 0 を入れたラック（S3-04）。ID の昇順
+}
+
+// basis の行の順の ID（シャフト、続けてラック。S3-04）
+export function bodyIdsOf(component: KinematicComponent): Array<ShaftId | RackId> {
+  return [...component.shaftIds, ...component.rackIds];
 }
 
 export interface MeshGraph {
@@ -26,7 +43,8 @@ function compareIds(a: string, b: string): number {
 }
 
 interface ResolvedMesh {
-  readonly mesh: Mesh;
+  readonly mesh: Mesh | null;
+  readonly rackMesh: RackMesh | null; // ラックとピニオンのかみ合い（S3-04）
   readonly shaftA: ShaftId;
   // 拘束の行の項（かみ合う 2 本のシャフトと、遊星のかみ合いならキャリアのシャフト。S3-03）
   readonly terms: ReadonlyArray<{ readonly shaftId: ShaftId; readonly coef: number }>;
@@ -46,14 +64,25 @@ function resolveMesh(scene: Scene, mesh: Mesh): ResolvedMesh {
   }
   // 拘束の行の係数（ω_shaft(a) と ω_shaft(b) にかかる係数）は、種類ごとに meshCoefficients の 1 か所で決める。
   // 遊星のかみ合い（S3-03）はキャリアのシャフトの ω を引いた相対値（meshTerms）
-  return { mesh, shaftA: a.shaftId, terms: meshTerms(mesh, scene) };
+  return { mesh, rackMesh: null, shaftA: a.shaftId, terms: meshTerms(mesh, scene) };
 }
 
-// 基準シャフトに選ぶ順: root か detached を先に、次に ID の昇順
+function resolveRackMesh(scene: Scene, rackMesh: RackMesh): ResolvedMesh {
+  return {
+    mesh: null,
+    rackMesh,
+    shaftA: rackMesh.rack,
+    terms: rackMeshTerms(rackMesh, scene),
+  };
+}
+
+// 基準シャフトに選ぶ順: root か detached を先に、次に ID の昇順。ラックの ピニオンのシャフト（'rack'）は子と同じ、
+// ラック（S3-04）は最後
 function referencePriority(scene: Scene, shaftIds: readonly ShaftId[]): ShaftId[] {
   const preferred = (id: ShaftId): number => {
+    if (scene.shafts[id] === undefined) return 2;
     const p = scene.shafts[id]?.placement;
-    return p !== undefined && isChildPlacement(p) ? 1 : 0;
+    return p !== undefined && (isChildPlacement(p) || p.kind === 'rack') ? 1 : 0;
   };
   return [...shaftIds].sort((x, y) => preferred(x) - preferred(y) || compareIds(x, y));
 }
@@ -61,14 +90,16 @@ function referencePriority(scene: Scene, shaftIds: readonly ShaftId[]): ShaftId[
 function buildComponent(
   scene: Scene,
   shaftIds: ShaftId[],
+  rackIds: RackId[],
   gearIds: GearId[],
   meshes: readonly ResolvedMesh[],
-  anchored: ReadonlySet<ShaftId>,
+  anchored: ReadonlySet<ShaftId | RackId>,
 ): KinematicComponent {
+  const bodyIds = [...shaftIds, ...rackIds];
   // 列の並びを基準シャフトの優先の逆にする。消去のピボットは左から貪欲に取られ、
   // 自由な列（＝基底の単位行列の行）は右から貪欲に取られる（行列の双対）。
   // これで「優先の順に見て、それまでに選んだ行と独立なものを取る」と同じ選び方になる
-  const order = referencePriority(scene, shaftIds).reverse();
+  const order = referencePriority(scene, bodyIds).reverse();
   const columnOf = new Map(order.map((id, j) => [id, j]));
   const rows: Matrix = meshes.map(({ terms }) => {
     const row = new Array<number>(order.length).fill(0);
@@ -78,9 +109,10 @@ function buildComponent(
     }
     return row;
   });
-  // 固定具（S3-01）: 固定されたシャフトは ω = 0（拘束行列 C に 1 行足す）
+  // 固定具（S3-01）: 固定されたシャフトは ω = 0、ラック（S3-04）は v = 0（拘束行列 C に 1 行足す）
   const anchoredShaftIds = shaftIds.filter((id) => anchored.has(id));
-  for (const id of anchoredShaftIds) {
+  const anchoredRackIds = rackIds.filter((id) => anchored.has(id));
+  for (const id of [...anchoredShaftIds, ...anchoredRackIds]) {
     const row = new Array<number>(order.length).fill(0);
     row[columnOf.get(id) as number] = 1;
     rows.push(row);
@@ -88,33 +120,43 @@ function buildComponent(
   const { basis: permuted, freeColumns } = nullSpaceWithFreeColumns(rows, order.length);
   // 自由な列を、優先の高い順（列の右から）に並べて q の順にする
   const freeByPriority = [...freeColumns].reverse();
-  const basis: Matrix = shaftIds.map((id) => {
+  const basis: Matrix = bodyIds.map((id) => {
     const row = permuted[columnOf.get(id) as number] as number[];
     return freeByPriority.map((_, k) => row[freeColumns.length - 1 - k] as number);
   });
   return {
     shaftIds,
+    rackIds,
     gearIds,
-    meshes: meshes.map((m) => m.mesh),
+    meshes: meshes.flatMap((m) => (m.mesh === null ? [] : [m.mesh])),
+    rackMeshes: meshes.flatMap((m) => (m.rackMesh === null ? [] : [m.rackMesh])),
     basis,
     dof: freeColumns.length,
     referenceShaftIds: freeByPriority.map((j) => order[j] as ShaftId),
     anchoredShaftIds,
+    anchoredRackIds,
   };
 }
 
-// anchored: 固定具で ω = 0 に拘束するシャフト（S3-01）。省くと固定具の拘束を入れない
-// （ロックの理由 'anchor' の判定で、固定具を外して解き直すときに使う）
+// anchored: 固定具で ω = 0（ラックは v = 0）に拘束するシャフトとラック（S3-01、S3-04）。省くと固定具の拘束を入れない
+// （ロックの理由 'anchor' の判定で、固定具を外して解き直すときに使う）。
+// rackMeshes: ラックとピニオンのかみ合い（S3-04。Layout.rackMeshes）。シーンの全てのラックが頂点になる
 export function buildMeshGraph(
   scene: Scene,
   meshes: readonly Mesh[],
-  anchored: ReadonlySet<ShaftId> = new Set(),
+  anchored: ReadonlySet<ShaftId | RackId> = new Set(),
+  rackMeshes: readonly RackMesh[] = [],
 ): MeshGraph {
-  const resolved = meshes.map((mesh) => resolveMesh(scene, mesh));
+  const resolved = [
+    ...meshes.map((mesh) => resolveMesh(scene, mesh)),
+    ...rackMeshes.map((m) => resolveRackMesh(scene, m)),
+  ];
+  const rackSet = new Set(Object.keys(scene.racks));
 
-  // 連結成分（Union-Find）。代表は ID の最も小さいシャフト
+  // 連結成分（Union-Find）。代表は ID の最も小さいシャフト（ラックも頂点。S3-04）
   const parent = new Map<ShaftId, ShaftId>();
   for (const id of Object.keys(scene.shafts)) parent.set(id, id);
+  for (const id of rackSet) parent.set(id, id);
   const find = (id: ShaftId): ShaftId => {
     let root = id;
     while (parent.get(root) !== root) root = parent.get(root) as ShaftId;
@@ -137,7 +179,7 @@ export function buildMeshGraph(
   }
 
   const groups = new Map<ShaftId, ShaftId[]>();
-  for (const id of Object.keys(scene.shafts).sort(compareIds)) {
+  for (const id of [...Object.keys(scene.shafts), ...rackSet].sort(compareIds)) {
     const root = find(id);
     const group = groups.get(root);
     if (group === undefined) groups.set(root, [id]);
@@ -161,7 +203,8 @@ export function buildMeshGraph(
   const components = roots.map((root, index) =>
     buildComponent(
       scene,
-      groups.get(root) as ShaftId[],
+      (groups.get(root) as ShaftId[]).filter((id) => !rackSet.has(id)),
+      (groups.get(root) as ShaftId[]).filter((id) => rackSet.has(id)),
       gearsOf[index] as GearId[],
       meshesOf[index] as ResolvedMesh[],
       anchored,

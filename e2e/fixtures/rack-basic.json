@@ -1,0 +1,47 @@
+{
+  "shafts": {
+    "shaft_p": {
+      "id": "shaft_p",
+      "placement": {
+        "kind": "root",
+        "origin": [0, 60, 0],
+        "axis": "z"
+      }
+    }
+  },
+  "gears": {
+    "gear_p": {
+      "id": "gear_p",
+      "kind": "spur",
+      "shaftId": "shaft_p",
+      "size": "M",
+      "teeth": 20,
+      "offset": 0
+    }
+  },
+  "motors": {
+    "motor_p": {
+      "id": "motor_p",
+      "shaftId": "shaft_p",
+      "size": "M",
+      "rpm": 60,
+      "direction": 1,
+      "on": true
+    }
+  },
+  "anchors": {},
+  "carriers": {},
+  "racks": {
+    "rack_r": {
+      "id": "rack_r",
+      "size": "M",
+      "teeth": 30,
+      "placement": {
+        "kind": "pinion",
+        "gearId": "gear_p",
+        "axisStep": 1,
+        "normalSign": 1
+      }
+    }
+  }
+}

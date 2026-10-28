@@ -36,6 +36,7 @@ const base: Scene = {
   motors: { motor_1: motor },
   anchors: {},
   carriers: {},
+  racks: {},
 };
 
 const meshShaft: Shaft = {
@@ -58,6 +59,7 @@ const withChild: Scene = {
   motors: base.motors,
   anchors: {},
   carriers: {},
+  racks: {},
 };
 
 function withGear(scene: Scene, gear: Gear): Scene {
@@ -87,6 +89,7 @@ const cyclic: Scene = {
   motors: {},
   anchors: {},
   carriers: {},
+  racks: {},
 };
 
 describe('validateScene: 正しいシーン', () => {
@@ -121,6 +124,7 @@ describe('validateScene: 正しいシーン', () => {
       motors: {},
       anchors: {},
       carriers: {},
+      racks: {},
     };
     expect(validateScene(scene)).toEqual({ ok: true });
   });
@@ -258,6 +262,7 @@ describe('validateScene: 不正なシーン', () => {
       motors: { motor_1: { ...motor, rpm: Number.NaN } },
       anchors: {},
       carriers: {},
+      racks: {},
     };
     const paths = errorsOf(scene)
       .filter((e) => e.code === 'notFinite')
@@ -345,6 +350,7 @@ describe('かさ歯車（S2-02）', () => {
     motors: {},
     anchors: {},
     carriers: {},
+    racks: {},
   };
   const withPlacement = (patch: Record<string, unknown>): Scene => ({
     ...pair,

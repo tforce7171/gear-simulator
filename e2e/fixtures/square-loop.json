@@ -72,5 +72,6 @@
   },
   "motors": {},
   "anchors": {},
-  "carriers": {}
+  "carriers": {},
+  "racks": {}
 }

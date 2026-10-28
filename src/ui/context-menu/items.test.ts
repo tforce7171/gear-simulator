@@ -23,6 +23,7 @@ const scene: Scene = {
   },
   anchors: {},
   carriers: {},
+  racks: {},
 };
 
 const state = (watchMode: boolean, infoOverlay: boolean) => ({

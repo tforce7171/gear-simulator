@@ -1,7 +1,7 @@
 ---
 id: S3-04
 title: ラック＆ピニオン
-status: todo
+status: doing
 depends: [S2-05]
 ---
 

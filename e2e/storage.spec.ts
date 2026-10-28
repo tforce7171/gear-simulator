@@ -8,7 +8,7 @@ import { expect, test } from './fixtures/test';
 const sceneA = JSON.parse(
   readFileSync(new URL('./fixtures/scene-a.json', import.meta.url), 'utf8'),
 ) as Scene;
-const EMPTY: Scene = { shafts: {}, gears: {}, motors: {}, anchors: {}, carriers: {} };
+const EMPTY: Scene = { shafts: {}, gears: {}, motors: {}, anchors: {}, carriers: {}, racks: {} };
 
 type StorageStatus = {
   lastAutosaveAt: number | null;

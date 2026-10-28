@@ -70,6 +70,7 @@ test('太陽だけのシーンで太陽を選び、遊星歯車機構の候補�
     motors: {},
     anchors: {},
     carriers: {},
+    racks: {},
   };
   await openApp(page, { scene: sunOnly, camera: VIEW });
   await clickGear(page, 'gear_s');

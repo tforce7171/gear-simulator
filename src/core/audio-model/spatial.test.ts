@@ -40,6 +40,8 @@ function layoutWith(gears: Record<string, { center: Vec3; pitchRadius: number }>
       ]),
     ),
     carriers: {},
+    racks: {},
+    rackMeshes: [],
     meshes: [],
     interferences: [],
   };

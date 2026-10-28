@@ -110,5 +110,5 @@ export function generatePerfScene(count: number, seed: number = DEFAULT_SEED): S
     }
     prevHead = head;
   }
-  return { shafts, gears, motors, anchors: {}, carriers: {} };
+  return { shafts, gears, motors, anchors: {}, carriers: {}, racks: {} };
 }
