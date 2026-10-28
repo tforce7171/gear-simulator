@@ -19,5 +19,6 @@
       "offset": 0
     }
   },
-  "motors": {}
+  "motors": {},
+  "anchors": {}
 }

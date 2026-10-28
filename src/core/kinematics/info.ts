@@ -2,7 +2,7 @@ import { LOCK_OMEGA_EPS } from '../constants';
 import type { Layout } from '../layout/types';
 import type { GearId, MotorId, Scene } from '../scene/types';
 import { speedRatio } from './graph';
-import { meshGraphOf } from './motion';
+import { anchoredMeshGraphOf, meshGraphOf } from './motion';
 import type { MotionState } from './types';
 
 // 情報表示の値（S1-23、要件 §7.3）。歯車ごとの rpm・回転方向・ギア比
@@ -53,6 +53,9 @@ export function computeGearInfo(
   motion: MotionState,
 ): Record<GearId, GearInfo> {
   const graph = meshGraphOf(scene, layout);
+  // 固定具（S3-01）で自由度が減ると速度比が決まることがある（S3-03 の遊星歯車など）ので、固定具の拘束を入れた
+  // グラフで先に求め、決まらなければ（固定具で止まった成分など）かみ合いだけのグラフで求める
+  const anchoredGraph = anchoredMeshGraphOf(scene, layout);
 
   // 連結成分ごとの基準のモーター: ID の文字列順で最初のもの（ON/OFF は問わない）
   const referenceOf = new Map<number, { motorId: MotorId; shaftId: string }>();
@@ -73,7 +76,9 @@ export function computeGearInfo(
     let ratio: number | null = null;
     if (reference !== undefined) {
       // ω_gear / ω_ref。自由度が 1 でない（矛盾・段階 3 の 2 以上）と null
-      const r = speedRatio(graph, reference.shaftId, gear.shaftId);
+      const r =
+        speedRatio(anchoredGraph, reference.shaftId, gear.shaftId) ??
+        speedRatio(graph, reference.shaftId, gear.shaftId);
       ratio = r === null || r === 0 ? null : Math.abs(1 / r);
     }
     result[gear.id] = {

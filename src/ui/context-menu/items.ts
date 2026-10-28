@@ -2,7 +2,8 @@
 import type { AppState } from '../../app/store';
 import type { MessageKey } from '../../core/i18n';
 import type { Vec3 } from '../../core/math/vec3';
-import type { MotorId, Scene, ShaftId } from '../../core/scene/types';
+import { anchorOfShaft } from '../../core/scene/scene';
+import type { AnchorId, MotorId, Scene, ShaftId } from '../../core/scene/types';
 
 // 右クリックした所。部品の上なら選んだ部品（ShaftId | GearId。モーターはシャフトとして選ぶ）と、
 // 当たった点（「ここに寄る」の先）
@@ -12,6 +13,8 @@ export type MenuAction =
   | 'delete'
   | 'attachMotor'
   | 'detachMotor'
+  | 'anchor'
+  | 'unanchor'
   | 'focusHere'
   | 'frameAll'
   | 'toggleWatch'
@@ -38,6 +41,13 @@ export function targetMotorId(scene: Scene, partId: string): MotorId | null {
   return Object.values(scene.motors).find((m) => m.shaftId === shaftId)?.id ?? null;
 }
 
+// 対象のシャフトを固定している固定具（S3-01）。無ければ null
+export function targetAnchorId(scene: Scene, partId: string): AnchorId | null {
+  const shaftId = targetShaftId(scene, partId);
+  if (shaftId === null) return null;
+  return anchorOfShaft(scene, shaftId)?.id ?? null;
+}
+
 function item(action: MenuAction, checked?: boolean): MenuItem {
   const labelKey: MessageKey = `contextMenu.${action}`;
   return checked === undefined ? { action, labelKey } : { action, labelKey, checked };
@@ -58,6 +68,8 @@ export function buildContextMenuItems(
   if (targetShaftId(state.scene, target.partId) !== null) {
     items.push(
       item(targetMotorId(state.scene, target.partId) === null ? 'attachMotor' : 'detachMotor'),
+      // 固定する／固定を外す（S3-01）。歯車ならそのシャフト
+      item(targetAnchorId(state.scene, target.partId) === null ? 'anchor' : 'unanchor'),
     );
   }
   items.push(item('focusHere'));

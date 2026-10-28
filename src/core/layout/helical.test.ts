@@ -43,6 +43,7 @@ function withNeighbor(c: Pick<Gear, 'kind'> & { hand?: Hand; teeth?: number }): 
     },
     gears: { gear_a: helicalPair.gears.gear_a as Gear, gear_c: gearC },
     motors: {},
+    anchors: {},
   };
 }
 
@@ -125,6 +126,7 @@ describe('三角形', () => {
               ]),
             ),
             motors: {},
+            anchors: {},
           };
           const layout = resolveLayout(scene);
           expect(layout.meshes.length).toBeLessThan(3);
@@ -143,6 +145,7 @@ describe('候補（S1-10 の拡張）', () => {
     shafts: { shaft_a: helicalPair.shafts.shaft_a as Scene['shafts'][string] },
     gears: { gear_a: helicalPair.gears.gear_a as Gear },
     motors: {},
+    anchors: {},
   };
   const perimeters = (list: readonly GrowCandidate[]) =>
     list.filter((c): c is Extract<GrowCandidate, { kind: 'perimeter' }> => c.kind === 'perimeter');
@@ -248,6 +251,7 @@ describe('候補（S1-10 の拡張）', () => {
         gear_p: { id: 'gear_p', kind: 'spur', shaftId: 'shaft_p', size: 'M', teeth: 20, offset: 0 },
       },
       motors: {},
+      anchors: {},
     };
     const angles = perimeters(
       listGrowCandidates(scene, 'gear_p', { ...spec, coaxialKind: 'spur' }),

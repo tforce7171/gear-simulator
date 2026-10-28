@@ -88,6 +88,10 @@ export const ja = {
   'properties.motor.on': 'ON',
   'properties.motor.off': 'OFF',
   'properties.motor.remove': '外す',
+  // 固定具（S3-01）
+  'properties.anchor': '固定具',
+  'properties.anchor.check': '固定する',
+  'properties.anchor.gearNote': 'この歯車のシャフトを固定します（同じシャフトの部品も止まります）',
   // テーマと品質の名前（S1-24。S1-30 の設定画面で使う）
   'theme.brass': '真鍮',
   'theme.wood': '木製',
@@ -152,6 +156,8 @@ export const ja = {
   'contextMenu.delete': '削除',
   'contextMenu.attachMotor': 'モーターを付ける',
   'contextMenu.detachMotor': 'モーターを外す',
+  'contextMenu.anchor': '固定する',
+  'contextMenu.unanchor': '固定を外す',
   'contextMenu.focusHere': 'ここに寄る',
   'contextMenu.frameAll': '全体表示',
   'contextMenu.toggleWatch': '眺めるモード',

@@ -6,7 +6,7 @@ import type { Scene } from './types';
 
 describe('emptyScene', () => {
   it('空のコレクションを持つ', () => {
-    expect(emptyScene()).toEqual({ shafts: {}, gears: {}, motors: {} });
+    expect(emptyScene()).toEqual({ shafts: {}, gears: {}, motors: {}, anchors: {} });
   });
 });
 
@@ -55,6 +55,7 @@ describe('shaftAxis', () => {
       g_loopB: { id: 'g_loopB', kind: 'spur', shaftId: 'loopB', size: 'S', teeth: 12, offset: 0 },
     },
     motors: {},
+    anchors: {},
   };
 
   it("root（'x'）の子・孫はどちらも 'x'", () => {

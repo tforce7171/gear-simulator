@@ -4,6 +4,7 @@ import type { GrowCandidate } from '../core/layout/candidates';
 import { newInterferences } from '../core/layout/interference-diff';
 import { resolveLayout } from '../core/layout/resolve';
 import type { Vec3 } from '../core/math/vec3';
+import type { IdKind } from '../core/scene/ids';
 import { type Axis, isChildPlacement, type Scene } from '../core/scene/types';
 import { grabTarget, type HandRotateSession, startHandRotate } from '../input/hand-rotate';
 import {
@@ -144,8 +145,7 @@ const GRABBING_CURSOR = 'grabbing';
 
 const NO_RINGS: readonly ReattachRing[] = [];
 
-const ghostIds = (kind: 'shaft' | 'gear' | 'motor'): string =>
-  kind === 'shaft' ? GHOST_SHAFT_ID : GHOST_GEAR_ID;
+const ghostIds = (kind: IdKind): string => (kind === 'shaft' ? GHOST_SHAFT_ID : GHOST_GEAR_ID);
 
 export function createInteractions(deps: InteractionsDeps): Interactions {
   const { store, canvas } = deps;

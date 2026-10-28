@@ -34,6 +34,8 @@ export interface WormSections {
   readonly sections: readonly WormSection[]; // トポロジカル順
   readonly sectionOfShaft: ReadonlyMap<ShaftId, number>;
   readonly constraints: readonly Constraint[];
+  // 固定具の拘束 ω = 0 を入れるシャフト（S3-01）。そのシャフトを含む区画の拘束の行として足す
+  readonly anchoredShaftIds: ReadonlySet<ShaftId>;
 }
 
 function compareIds(a: string, b: string): number {
@@ -123,7 +125,12 @@ export function wormSections(scene: Scene, component: KinematicComponent): WormS
     for (const id of shaftIds) sectionOfShaft.set(id, index);
     return { shaftIds, incoming: incoming.has(g) };
   });
-  return { sections, sectionOfShaft, constraints };
+  return {
+    sections,
+    sectionOfShaft,
+    constraints,
+    anchoredShaftIds: new Set(component.anchoredShaftIds),
+  };
 }
 
 // 強連結成分。各頂点 → その成分の代表（成分の中で最も小さい頂点）
@@ -209,6 +216,13 @@ export function solveWormSections(
         fixed.push({ row: local.get(wheelShaft) as number, value: (-cw * ww) / ch });
       }
     }
+    // 固定具（S3-01）: 区画の中の拘束として ω = 0 の行を足す（区画の零空間に入る）
+    ids.forEach((id, i) => {
+      if (!structure.anchoredShaftIds.has(id)) return;
+      const row = new Array<number>(ids.length).fill(0);
+      row[i] = 1;
+      rows.push(row);
+    });
     const basis = nullSpace(rows, ids.length);
     const dof = basis[0]?.length ?? 0;
     const sectionDrives = ids.map((id) => drives.get(id) ?? NO_DRIVE);

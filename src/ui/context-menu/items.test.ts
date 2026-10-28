@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { Scene } from '../../core/scene/types';
-import { buildContextMenuItems, type ContextTarget, placeMenu, targetShaftId } from './items';
+import {
+  buildContextMenuItems,
+  type ContextTarget,
+  placeMenu,
+  targetAnchorId,
+  targetShaftId,
+} from './items';
 
 // シャフト s1（モーターあり）に歯車 g1、シャフト s2（モーターなし）に歯車 g2
 const scene: Scene = {
@@ -15,6 +21,7 @@ const scene: Scene = {
   motors: {
     motor_m1: { id: 'motor_m1', shaftId: 'shaft_s1', size: 'S', rpm: 60, direction: 1, on: true },
   },
+  anchors: {},
 };
 
 const state = (watchMode: boolean, infoOverlay: boolean) => ({
@@ -39,26 +46,46 @@ describe('targetShaftId', () => {
 describe('buildContextMenuItems', () => {
   const actions = (items: ReturnType<typeof buildContextMenuItems>) => items.map((i) => i.action);
 
-  it('歯車（シャフトにモーターなし）→ delete・attachMotor・focusHere', () => {
+  it('歯車（シャフトにモーターなし）→ delete・attachMotor・anchor・focusHere', () => {
     expect(actions(buildContextMenuItems(part('gear_g2'), state(false, false)))).toEqual([
       'delete',
       'attachMotor',
+      'anchor',
       'focusHere',
     ]);
   });
-  it('歯車（シャフトにモーターあり）→ delete・detachMotor・focusHere', () => {
+  it('歯車（シャフトにモーターあり）→ delete・detachMotor・anchor・focusHere', () => {
     expect(actions(buildContextMenuItems(part('gear_g1'), state(false, false)))).toEqual([
       'delete',
       'detachMotor',
+      'anchor',
       'focusHere',
     ]);
   });
-  it('モーターの付いたシャフト → delete・detachMotor・focusHere', () => {
+  it('モーターの付いたシャフト → delete・detachMotor・anchor・focusHere', () => {
     expect(actions(buildContextMenuItems(part('shaft_s1'), state(false, false)))).toEqual([
       'delete',
       'detachMotor',
+      'anchor',
       'focusHere',
     ]);
+  });
+  it('固定したシャフト・その歯車 → anchor の代わりに unanchor（S3-01）', () => {
+    const anchored: Scene = {
+      ...scene,
+      anchors: { anchor_1: { id: 'anchor_1', target: { kind: 'shaft', id: 'shaft_s2' } } },
+    };
+    const view = { watchMode: false, infoOverlay: false };
+    for (const id of ['shaft_s2', 'gear_g2']) {
+      expect(actions(buildContextMenuItems(part(id), { scene: anchored, view }))).toEqual([
+        'delete',
+        'attachMotor',
+        'unanchor',
+        'focusHere',
+      ]);
+      expect(targetAnchorId(anchored, id)).toBe('anchor_1');
+    }
+    expect(targetAnchorId(anchored, 'gear_g1')).toBeNull();
   });
   it('何もない所、眺めるモード OFF・情報表示 ON → frameAll・toggleWatch・toggleInfo とチェックの印', () => {
     const items = buildContextMenuItems({ kind: 'empty' }, state(false, true));

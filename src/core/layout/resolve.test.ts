@@ -22,6 +22,7 @@ function scene(shafts: Shaft[], gears: Gear[]): Scene {
     shafts: Object.fromEntries(shafts.map((s) => [s.id, s])),
     gears: Object.fromEntries(gears.map((g) => [g.id, g])),
     motors: {},
+    anchors: {},
   };
 }
 
@@ -437,6 +438,7 @@ describe('resolveAddition: 全体を解き直した結果と一致する', () =>
       shafts: shaft === null ? base.shafts : { ...base.shafts, [shaft.id]: shaft },
       gears: { ...base.gears, [added.id]: added },
       motors: base.motors,
+      anchors: {},
     };
     const full = resolveLayout(tentative);
     const result = resolveAddition(base, layout, shaft, added);

@@ -44,7 +44,7 @@ function makeScene(
   for (const [id, shaftId, size, rpm, direction, on = true] of motors) {
     motorMap[id] = { id, shaftId, size, rpm, direction, on };
   }
-  return { shafts, gears: gearMap, motors: motorMap };
+  return { shafts, gears: gearMap, motors: motorMap, anchors: {} };
 }
 
 function tree(a: string, b: string): Mesh {

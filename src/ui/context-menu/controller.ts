@@ -10,6 +10,7 @@ import {
   buildContextMenuItems,
   type ContextTarget,
   type MenuAction,
+  targetAnchorId,
   targetMotorId,
   targetShaftId,
 } from './items';
@@ -58,6 +59,16 @@ export function createContextMenu(deps: ContextMenuDeps): ContextMenu {
       case 'detachMotor': {
         const motorId = target.kind === 'part' ? targetMotorId(scene, target.partId) : null;
         if (motorId !== null) command({ type: 'removeMotor', motorId });
+        return;
+      }
+      case 'anchor': {
+        const shaftId = target.kind === 'part' ? targetShaftId(scene, target.partId) : null;
+        if (shaftId !== null) command({ type: 'addAnchor', shaftId });
+        return;
+      }
+      case 'unanchor': {
+        const anchorId = target.kind === 'part' ? targetAnchorId(scene, target.partId) : null;
+        if (anchorId !== null) command({ type: 'removeAnchor', anchorId });
         return;
       }
       case 'focusHere':

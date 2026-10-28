@@ -10,6 +10,7 @@ const scene: Scene = {
   motors: {
     motor_1: { id: 'motor_1', shaftId: 'shaft_1', size: 'M', rpm: 30, direction: 1, on: true },
   },
+  anchors: {},
 };
 
 describe('selectionForPick', () => {

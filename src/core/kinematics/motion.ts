@@ -1,5 +1,6 @@
 import { LOCK_OMEGA_EPS, MOTOR_SIZES } from '../constants';
 import type { Layout } from '../layout/types';
+import { anchoredShaftIds } from '../scene/scene';
 import type { Motor, MotorId, Scene, ShaftId } from '../scene/types';
 import { type ShaftDrive, solveVelocities } from './balance';
 import { buildMeshGraph, type KinematicComponent, type MeshGraph } from './graph';
@@ -16,6 +17,10 @@ import { solveWormSections, type WormSections, wormSections } from './worm-solve
 
 // 運動の状態を 1 フレーム進める（design.md §6）。かみ合いのグラフ（S1-05）と力のつり合い（S1-06）から、
 // ロック・負けたモーター・角度（θ = N q）を求める
+
+// つかんだシャフトの零空間の行が、この値未満の成分だけなら動けない（固定具で止まっている。S3-01）。
+// 基底の成分は速度比（歯数の比）の大きさなので、丸めの誤差だけを 0 とみなす
+const PINNED_EPS = 1e-9;
 
 export interface MotionOptions {
   readonly paused?: boolean; // 全モーターを OFF とみなす（シーンは変えない）
@@ -38,14 +43,29 @@ function wormSectionsOf(scene: Scene, graph: MeshGraph): Array<WormSections | nu
 }
 
 // グラフは Layout の参照ごとに覚え、シーンの参照が変わったときだけ作り直す。
-// 情報表示のギア比（S1-23）も同じグラフを使う
+// meshGraphOf は固定具の拘束を入れないグラフ（かみ合いだけ。ロックの理由 'anchor' の判定と、
+// 情報表示のギア比（S1-23）の逃げ道に使う）、anchoredMeshGraphOf は固定具の拘束 ω = 0 を入れたグラフ（S3-01。
+// 運動はこちらで解く）。固定具が無ければ 2 つは同じオブジェクト
 const graphCache = new WeakMap<Layout, { scene: Scene; graph: MeshGraph }>();
+const anchoredGraphCache = new WeakMap<Layout, { scene: Scene; graph: MeshGraph }>();
 
 export function meshGraphOf(scene: Scene, layout: Layout): MeshGraph {
   const cached = graphCache.get(layout);
   if (cached !== undefined && cached.scene === scene) return cached.graph;
   const graph = buildMeshGraph(scene, layout.meshes);
   graphCache.set(layout, { scene, graph });
+  return graph;
+}
+
+export function anchoredMeshGraphOf(scene: Scene, layout: Layout): MeshGraph {
+  const cached = anchoredGraphCache.get(layout);
+  if (cached !== undefined && cached.scene === scene) return cached.graph;
+  const anchored = anchoredShaftIds(scene);
+  const graph =
+    anchored.size === 0
+      ? meshGraphOf(scene, layout)
+      : buildMeshGraph(scene, layout.meshes, anchored);
+  anchoredGraphCache.set(layout, { scene, graph });
   return graph;
 }
 
@@ -76,8 +96,11 @@ export function stepMotion(
   opts: MotionOptions = {},
 ): MotionState {
   const paused = opts.paused === true;
-  const graph = meshGraphOf(scene, layout);
+  const graph = anchoredMeshGraphOf(scene, layout);
   const balance = solveVelocities(scene, graph, { paused });
+  // 固定具を外したグラフ（S3-01）。固定具のある成分がロックしたときだけ、理由を決めるために解く
+  const freeGraph = meshGraphOf(scene, layout);
+  let freeBalance: ReturnType<typeof solveVelocities> | null = null;
 
   // ON のモーター（一時停止中は無い）を、シャフトごとに
   const motorsOfShaft = new Map<ShaftId, Motor[]>();
@@ -116,18 +139,57 @@ export function stepMotion(
   const locks: LockInfo[] = [];
   const backDriven: MotorId[] = [];
 
+  // 固定具を外して解き直したときの、成分のロックの理由（段階 1・ウォームの条件。ロックしなければ null）。
+  // 固定具は連結のしかたを変えないので、固定具を外したグラフにも同じシャフトの組の成分がある
+  function freeLockReason(component: KinematicComponent): LockReason | null {
+    const freeIndex = freeGraph.componentOfShaft[component.shaftIds[0] as ShaftId] as number;
+    const free = freeGraph.components[freeIndex] as KinematicComponent;
+    const hasMotor = free.shaftIds.some((id) => motorsOfShaft.has(id));
+    if (free.dof === 0) return hasMotor ? 'contradiction' : null;
+    const worm = wormSectionsOf(scene, freeGraph)[freeIndex] ?? null;
+    if (worm !== null) {
+      const solution = solveWormSections(worm, drives);
+      return solution.ok ? null : solution.reason;
+    }
+    freeBalance ??= solveVelocities(scene, freeGraph, { paused });
+    const omegasFree = freeBalance.omegas;
+    const stalemate =
+      hasMotor && free.shaftIds.every((id) => Math.abs(omegasFree[id] ?? 0) < LOCK_OMEGA_EPS);
+    return stalemate ? 'stalemate' : null;
+  }
+
+  // ロックの理由に固定具を考える（S3-01）: 固定具のある成分で、固定具を外して解き直すとロックしないなら 'anchor'。
+  // 外してもロックするなら、外したときの段階 1（・ウォーム）の理由にする（固定具で自由度 0 になっても、
+  // 本当の原因はウォームの逆駆動、などのため）
+  function anchorAware(reason: LockReason, component: KinematicComponent): LockReason {
+    if (component.anchoredShaftIds.length === 0) return reason;
+    return freeLockReason(component) ?? 'anchor';
+  }
+
+  // 手でつかんだシャフトが動けないときの理由: 固定具を外すと動けるなら 'anchor'、外しても自由度 0 なら 'contradiction'
+  function grabbedLockReason(component: KinematicComponent): LockReason {
+    if (component.anchoredShaftIds.length === 0) return 'contradiction';
+    const freeIndex = freeGraph.componentOfShaft[component.shaftIds[0] as ShaftId] as number;
+    return (freeGraph.components[freeIndex]?.dof ?? 0) === 0 ? 'contradiction' : 'anchor';
+  }
+
   graph.components.forEach((component, index) => {
     const { shaftIds, basis, dof } = component;
     const hasMotor = shaftIds.some((id) => motorsOfShaft.has(id));
     const grabbed = index === handComponent;
 
     // 自由度 0: 角度は前の値のまま（無ければ 0）、ω = 0。ON のモーターか手があれば矛盾のロック
+    // （固定具を外せば解けるなら 'anchor'。S3-01）
     if (dof === 0) {
       for (const id of shaftIds) {
         angles[id] = prev.angles[id] ?? 0;
         omegas[id] = 0;
       }
-      if (hasMotor || grabbed) locks.push(lockOf('contradiction', component));
+      if (grabbed) {
+        locks.push(lockOf(grabbedLockReason(component), component));
+      } else if (hasMotor) {
+        locks.push(lockOf(anchorAware('contradiction', component), component));
+      }
       return;
     }
 
@@ -148,12 +210,20 @@ export function stepMotion(
       locks.push(lockOf('wormBackDrive', component));
       qDot = qPrev.map(() => 0);
       qNext = qPrev;
+    } else if (
+      grabbed &&
+      hand !== undefined &&
+      (basis[shaftIds.indexOf(hand.shaftId)] ?? []).every((x) => Math.abs(x) < PINNED_EPS)
+    ) {
+      // つかんだシャフトが固定具で動けない（固定具の拘束を入れた零空間で、その行がすべて 0）: ドラッグ中はロック（S3-01）
+      locks.push(lockOf(grabbedLockReason(component), component));
+      qDot = qPrev.map(() => 0);
+      qNext = qPrev;
     } else if (grabbed && hand !== undefined) {
       if (dof !== 1) {
         throw new Error(`自由度 ${dof} の成分を手で回すのは未対応（S3-03）: ${hand.shaftId}`);
       }
       const n = basis[shaftIds.indexOf(hand.shaftId)]?.[0] ?? 0;
-      if (n === 0) throw new Error(`つかんだシャフトが成分の自由度に乗っていない: ${hand.shaftId}`);
       qNext = [hand.angle / n];
       qDot = qNext.map((v, k) => (dt > 0 ? (v - (qPrev[k] as number)) / dt : 0));
     } else if (worm !== null) {
@@ -162,7 +232,7 @@ export function stepMotion(
       if (solution.ok) {
         qDot = component.referenceShaftIds.map((id) => solution.omegas.get(id) ?? 0);
       } else {
-        locks.push(lockOf(solution.reason, component));
+        locks.push(lockOf(anchorAware(solution.reason, component), component));
         qDot = qPrev.map(() => 0);
       }
       qNext = qPrev.map((v, k) => v + (qDot[k] as number) * dt);
@@ -170,7 +240,7 @@ export function stepMotion(
       const solved = balance.componentQ[index] ?? [];
       const stalemate =
         hasMotor && shaftIds.every((id) => Math.abs(balance.omegas[id] ?? 0) < LOCK_OMEGA_EPS);
-      if (stalemate) locks.push(lockOf('stalemate', component));
+      if (stalemate) locks.push(lockOf(anchorAware('stalemate', component), component));
       qDot = stalemate ? solved.map(() => 0) : solved;
       qNext = qPrev.map((v, k) => v + (qDot[k] as number) * dt);
     }

@@ -6,7 +6,9 @@ test.use({ viewport: VISUAL_VIEWPORT });
 test('空のシーン（床のグリッドだけ）', async ({ page }) => {
   await page.goto('/');
   await page.waitForFunction(() => window.__gearSim?.isReady() === true);
-  await page.evaluate(() => window.__gearSim?.loadScene({ shafts: {}, gears: {}, motors: {} }));
+  await page.evaluate(() =>
+    window.__gearSim?.loadScene({ shafts: {}, gears: {}, motors: {}, anchors: {} }),
+  );
   // 読み込んだシーンが描かれるまで 2 フレーム待つ
   await page.evaluate(
     () =>

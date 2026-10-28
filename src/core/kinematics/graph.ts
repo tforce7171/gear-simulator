@@ -12,6 +12,7 @@ export interface KinematicComponent {
   readonly basis: Matrix; // shaftIds.length 行 × dof 列。ω = basis · q
   readonly dof: number; // 0 なら回転条件の矛盾
   readonly referenceShaftIds: ShaftId[]; // 長さ dof。basis のこの行が単位行列
+  readonly anchoredShaftIds: ShaftId[]; // 固定具の拘束 ω = 0 を入れたシャフト（S3-01）。ID の昇順
 }
 
 export interface MeshGraph {
@@ -63,6 +64,7 @@ function buildComponent(
   shaftIds: ShaftId[],
   gearIds: GearId[],
   meshes: readonly ResolvedMesh[],
+  anchored: ReadonlySet<ShaftId>,
 ): KinematicComponent {
   // 列の並びを基準シャフトの優先の逆にする。消去のピボットは左から貪欲に取られ、
   // 自由な列（＝基底の単位行列の行）は右から貪欲に取られる（行列の双対）。
@@ -77,6 +79,13 @@ function buildComponent(
     row[jb] = (row[jb] as number) + coefB;
     return row;
   });
+  // 固定具（S3-01）: 固定されたシャフトは ω = 0（拘束行列 C に 1 行足す）
+  const anchoredShaftIds = shaftIds.filter((id) => anchored.has(id));
+  for (const id of anchoredShaftIds) {
+    const row = new Array<number>(order.length).fill(0);
+    row[columnOf.get(id) as number] = 1;
+    rows.push(row);
+  }
   const { basis: permuted, freeColumns } = nullSpaceWithFreeColumns(rows, order.length);
   // 自由な列を、優先の高い順（列の右から）に並べて q の順にする
   const freeByPriority = [...freeColumns].reverse();
@@ -91,10 +100,17 @@ function buildComponent(
     basis,
     dof: freeColumns.length,
     referenceShaftIds: freeByPriority.map((j) => order[j] as ShaftId),
+    anchoredShaftIds,
   };
 }
 
-export function buildMeshGraph(scene: Scene, meshes: readonly Mesh[]): MeshGraph {
+// anchored: 固定具で ω = 0 に拘束するシャフト（S3-01）。省くと固定具の拘束を入れない
+// （ロックの理由 'anchor' の判定で、固定具を外して解き直すときに使う）
+export function buildMeshGraph(
+  scene: Scene,
+  meshes: readonly Mesh[],
+  anchored: ReadonlySet<ShaftId> = new Set(),
+): MeshGraph {
   const resolved = meshes.map((mesh) => resolveMesh(scene, mesh));
 
   // 連結成分（Union-Find）。代表は ID の最も小さいシャフト
@@ -147,6 +163,7 @@ export function buildMeshGraph(scene: Scene, meshes: readonly Mesh[]): MeshGraph
       groups.get(root) as ShaftId[],
       gearsOf[index] as GearId[],
       meshesOf[index] as ResolvedMesh[],
+      anchored,
     ),
   );
   return { components, componentOfShaft };

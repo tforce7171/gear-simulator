@@ -44,6 +44,7 @@ function reattachScene(aSize: 'S' | 'M' = 'M'): Scene {
         on: true,
       },
     },
+    anchors: {},
   };
 }
 

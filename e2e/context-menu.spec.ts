@@ -97,12 +97,13 @@ async function settledCamera(page: Page): Promise<CameraPose> {
   return getCamera(page);
 }
 
-test('g2 で右クリック → メニューに 3 項目、2 つ目が attachMotor、g2 が選ばれる', async ({
+// S3-01 で「固定する」（anchor）が 3 つ目に入って 4 項目になった
+test('g2 で右クリック → メニューに 4 項目、2 つ目が attachMotor、g2 が選ばれる', async ({
   page,
 }) => {
   await open(page);
   await rightClick(page, await gearPoint(page, 'gear_g2'));
-  await expect(items(page)).toHaveCount(3);
+  await expect(items(page)).toHaveCount(4);
   await expect(items(page).nth(1)).toHaveAttribute('data-action', 'attachMotor');
   await expect(menu(page)).toHaveAttribute('role', 'menu');
   await expect(items(page).first()).toHaveAttribute('role', 'menuitem');

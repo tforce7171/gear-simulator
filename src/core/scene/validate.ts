@@ -38,7 +38,9 @@ export type SceneErrorCode =
   | 'invalidAxisStep' // bevel・skew の配置の axisStep が 1 でも 2 でもない（S2-02、S2-03）
   | 'invalidSide' // bevel・skew の配置の side が 1 でも -1 でもない（S2-02、S2-03）
   | 'bevelApexMismatch' // bevel の配置の子の apex が −side でない（S2-02）
-  | 'meshCycle';
+  | 'meshCycle'
+  | 'invalidAnchorTarget' // 固定具の対象の種類が 'shaft' でない（S3-01。S3-04 でラックを足す）
+  | 'multipleAnchors'; // 1 つの対象に固定具が 2 つ以上（S3-01）
 
 const AXES: readonly unknown[] = ['x', 'y', 'z'];
 
@@ -59,7 +61,7 @@ export function validateScene(scene: Scene): { ok: true } | { ok: false; errors:
   };
 
   // キーと id の一致
-  for (const collection of ['shafts', 'gears', 'motors'] as const) {
+  for (const collection of ['shafts', 'gears', 'motors', 'anchors'] as const) {
     for (const [key, item] of Object.entries(scene[collection])) {
       if (item.id !== key) {
         push(
@@ -273,6 +275,39 @@ export function validateScene(scene: Scene): { ok: true } | { ok: false; errors:
         shaftId,
         `shafts.${shaftId}`,
         `shaft "${shaftId}" has ${list.length} motors: ${list.join(', ')}`,
+      );
+    }
+  }
+
+  // 固定具（S3-01）: 対象はシャフトで、シーンにあり、1 つの対象に最大 1 つ
+  const anchorsPerShaft = new Map<ShaftId, string[]>();
+  for (const [key, anchor] of Object.entries(scene.anchors)) {
+    const base = `anchors.${key}.target`;
+    const target = anchor.target;
+    if (target.kind !== 'shaft') {
+      push(
+        'invalidAnchorTarget',
+        key,
+        `${base}.kind`,
+        `invalid anchor target "${String(target.kind)}"`,
+      );
+      continue;
+    }
+    if (scene.shafts[target.id] === undefined) {
+      push('missingRef', key, `${base}.id`, `shaft "${target.id}" not found`);
+      continue;
+    }
+    const list = anchorsPerShaft.get(target.id) ?? [];
+    list.push(key);
+    anchorsPerShaft.set(target.id, list);
+  }
+  for (const [shaftId, list] of anchorsPerShaft) {
+    if (list.length > 1) {
+      push(
+        'multipleAnchors',
+        shaftId,
+        `shafts.${shaftId}`,
+        `shaft "${shaftId}" has ${list.length} anchors: ${list.join(', ')}`,
       );
     }
   }

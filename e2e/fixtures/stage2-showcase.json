@@ -152,5 +152,6 @@
       "direction": 1,
       "on": true
     }
-  }
+  },
+  "anchors": {}
 }

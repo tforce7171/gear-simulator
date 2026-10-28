@@ -74,6 +74,7 @@ describe('warningParts', () => {
       motor_2: { id: 'motor_2', shaftId: 'shaft_2', size: 'S', rpm: 60, direction: 1, on: true },
       motor_3: { id: 'motor_3', shaftId: 'shaft_3', size: 'S', rpm: 60, direction: 1, on: true },
     },
+    anchors: {},
   };
   const layout = resolveLayout(scene);
   const motion: MotionState = {

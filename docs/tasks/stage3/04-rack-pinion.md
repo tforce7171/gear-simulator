@@ -41,6 +41,8 @@ depends: [S2-05]
 - **ウォームを含む成分**（S2-03）: ウォームのかみ合いを含む連結成分は `src/core/kinematics/worm-solve.ts`（区画ごとにトポロジカル順に解く）で解いている。ラックの v とその拘束は、ピニオンのシャフトと同じ区画に入れる（ラックとピニオンのかみ合いは双方向の拘束）
 - **手で動かす**: ラックをつかんで `direction` に沿ってドラッグすると、手の位置に追従する（s に規定値を与える。無限に強い力）。端より先には行かず、端で押し続ける間はロック。ピニオンをつかんで回したときも、端でロックする
 - **固定具**: S3-01 の固定の対象にラックを足す（拘束 `v = 0`）。プロパティパネル・コンテキストメニューで固定できる
+  - S3-01 の作り（design.md §4・§6）: 固定具の拘束は `buildMeshGraph(scene, meshes, anchored)` が拘束行列に `ω = 0` の行として足し、`KinematicComponent.anchoredShaftIds` に残す。ウォームを含む成分は `WormSections.anchoredShaftIds` の区画の行。理由 `'anchor'` は `motion.ts` の `anchorAware`（固定具を外した `meshGraphOf` の同じ成分で解き直す）。ラックの `v = 0` も同じ行の足し方にし、`anchoredShaftIds` に相当するものをラックにも用意する。`validateScene` の `invalidAnchorTarget`（対象の種類が `'shaft'` でない）に `'rack'` を通すこと、`parseScene` の `target.kind`、`anchorOfShaft` に相当するラック用の関数、コンテキストメニューの `targetAnchorId`（今はシャフト・歯車だけ）も広げる
+  - 固定具の見た目はシャフトの負の端の台座と支柱（`src/render/anchor.ts`）。ラックの固定の見た目はこのタスクで決める
 - **干渉判定**: ラックを、動く範囲全体（`s` の最小 − L/2 〜 最大 + L/2）を長さとし、断面の外接円を半径とする、`direction` 向きの円柱で近似する。かみ合っているピニオンは除く
 - **編集**
   - ピニオンの歯数を変えると、ラックの基準位置がついてくる（木構造）。ラックの歯数を変えると長さと s の範囲が変わり、いまの s が範囲外なら端に寄せる
