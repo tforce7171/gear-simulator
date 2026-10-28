@@ -127,3 +127,21 @@ p.gs-prop__hint {
   width: 100%;
   margin-top: 8px;
 }
+
+/* 固定具の「固定する」のチェック（S3-01） */
+.gs-prop__check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  margin: 2px 0;
+  cursor: pointer;
+}
+
+.gs-prop__checkbox {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: #7aa2d6;
+  cursor: pointer;
+}

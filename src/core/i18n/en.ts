@@ -89,6 +89,10 @@ export const en = {
   'properties.motor.on': 'ON',
   'properties.motor.off': 'OFF',
   'properties.motor.remove': 'Remove',
+  // 固定具（S3-01）
+  'properties.anchor': 'Anchor',
+  'properties.anchor.check': 'Anchor',
+  'properties.anchor.gearNote': "Anchors this gear's shaft (parts on the same shaft stop too)",
   // Theme and quality names (S1-24. Used by the settings screen in S1-30)
   'theme.brass': 'Brass',
   'theme.wood': 'Wood',
@@ -152,6 +156,8 @@ export const en = {
   'contextMenu.delete': 'Delete',
   'contextMenu.attachMotor': 'Attach motor',
   'contextMenu.detachMotor': 'Remove motor',
+  'contextMenu.anchor': 'Anchor',
+  'contextMenu.unanchor': 'Remove anchor',
   'contextMenu.focusHere': 'Zoom here',
   'contextMenu.frameAll': 'Frame all',
   'contextMenu.toggleWatch': 'Watch mode',

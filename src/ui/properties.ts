@@ -1,6 +1,7 @@
 // プロパティパネルの中身（S1-20、要件 §3.2・§3.3・§5）。選んでいる歯車・シャフトの設定と、そのシャフトの
 // モーターの欄を組み立てる。選択・シーン（Undo を含む）・言語が変わるたびに作り直す。
 // 歯車は種類の名前と、種類ごとの表示（ハスバのねじれの向き、かさ歯車の注記と向きの反転、ウォームの条数。S2-05）を出す。
+// 固定具（S3-01）は「固定する」のチェック（addAnchor・removeAnchor。歯車ならそのシャフトを固定する）。
 // 設定の変更はすべて編集コマンド（setGearTeeth・flipBevelApex・addMotor・updateMotor・removeMotor）で行い、
 // 1 回の確定を 1 回のコマンド（Undo 1 回）にする。値が変わらない確定ではコマンドを出さない
 import { onLanguageChange, t } from '../app/i18n';
@@ -9,6 +10,7 @@ import { GEAR_SIZES, MOTOR_RPM_RANGE } from '../core/constants';
 import type { Command } from '../core/edit/commands';
 import type { MessageKey, MessageParams } from '../core/i18n';
 import type { Layout } from '../core/layout/types';
+import { anchorOfShaft } from '../core/scene/scene';
 import type { Axis, Gear, Motor, Scene, ShaftId, SizeKey } from '../core/scene/types';
 import { h } from './dom';
 import { parseClampedInt } from './number-input';
@@ -331,16 +333,47 @@ export function createProperties(deps: PropertiesDeps): Properties {
     return section;
   }
 
+  // 固定具（S3-01）: 「固定する」のチェック。歯車を選んでいるときは、そのシャフトを固定する旨を出す
+  function anchorSection(scene: Scene, shaftId: ShaftId, forGear: boolean): HTMLElement {
+    const section = h('section', 'gs-prop__section', 'prop-anchor');
+    section.append(text('h3', 'gs-prop__heading', 'properties.anchor'));
+    const anchor = anchorOfShaft(scene, shaftId);
+    const label = h('label', 'gs-prop__check');
+    const check = h('input', 'gs-prop__checkbox', 'prop-anchor-check');
+    check.type = 'checkbox';
+    check.checked = anchor !== null;
+    check.addEventListener('change', () => {
+      if (check.checked) command({ type: 'addAnchor', shaftId });
+      else if (anchor !== null) command({ type: 'removeAnchor', anchorId: anchor.id });
+    });
+    label.append(check, text('span', 'gs-prop__check-label', 'properties.anchor.check'));
+    section.append(label);
+    if (forGear) {
+      section.append(
+        text('p', 'gs-prop__hint', 'properties.anchor.gearNote', undefined, 'prop-anchor-note'),
+      );
+    }
+    return section;
+  }
+
   function build(scene: Scene, selection: string | null): HTMLElement | null {
     if (selection === null) return null;
     const content = h('div', 'gs-prop', 'prop-content');
     const gear = scene.gears[selection];
     if (gear !== undefined) {
-      content.append(gearSection(scene, gear), motorSection(scene, gear.shaftId));
+      content.append(
+        gearSection(scene, gear),
+        motorSection(scene, gear.shaftId),
+        anchorSection(scene, gear.shaftId, true),
+      );
       return content;
     }
     if (scene.shafts[selection] !== undefined) {
-      content.append(shaftSection(scene, selection), motorSection(scene, selection));
+      content.append(
+        shaftSection(scene, selection),
+        motorSection(scene, selection),
+        anchorSection(scene, selection, false),
+      );
       return content;
     }
     return null;
