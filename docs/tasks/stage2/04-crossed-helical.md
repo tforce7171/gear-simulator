@@ -1,7 +1,7 @@
 ---
 id: S2-04
 title: ねじ歯車
-status: doing
+status: done
 depends: [S2-01, S2-03]
 ---
 
@@ -88,4 +88,4 @@ depends: [S2-01, S2-03]
 ## 完了の条件
 - [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
 - [x] design.md と後続のタスク資料に、必要な変更を反映した（§3、§4、§5、§6）
-- [ ] `status: done` にしてコミットした
+- [x] `status: done` にしてコミットした
