@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GEAR_SIZES, HELIX_ANGLE, PRESSURE_ANGLE } from '../core/constants';
+import { CROSSED_HELIX_ANGLE, GEAR_SIZES, HELIX_ANGLE, PRESSURE_ANGLE } from '../core/constants';
 import { helicalTotalTwist } from '../core/geometry/helical';
 import { spurOutline } from '../core/geometry/involute';
 import {
@@ -336,5 +336,39 @@ describe('buildWormGeometry（S2-03）', () => {
     const wheel30 = cache.acquire({ kind: 'wormWheel' }, 'M', 30);
     expect(cache.acquire({ kind: 'wormWheel' }, 'M', 40)).not.toBe(wheel30);
     expect(cache.size()).toBe(3);
+  });
+});
+
+describe('ねじ歯車の形（S2-04）', () => {
+  it('中・20 歯: 両端の断面の歯の角度の差が b / r = 8 / 20 = 0.4 rad（右ねじれ 45°）', () => {
+    expect(helicalTotalTwist('M', 20, 'right', CROSSED_HELIX_ANGLE)).toBeCloseTo(8 / 20, 12);
+    const cache = createGeometryCache();
+    const geometry = cache.acquire({ kind: 'crossedHelical' }, 'M', 20);
+    const pos = geometry.getAttribute('position');
+    const nearest = ([x, y, z]: readonly [number, number, number]) => {
+      let best = Number.POSITIVE_INFINITY;
+      for (let i = 0; i < pos.count; i++) {
+        best = Math.min(best, Math.hypot(pos.getX(i) - x, pos.getY(i) - y, pos.getZ(i) - z));
+      }
+      return best;
+    };
+    const rotated = ([x, y]: readonly [number, number], a: number): [number, number] => [
+      x * Math.cos(a) - y * Math.sin(a),
+      x * Math.sin(a) + y * Math.cos(a),
+    ];
+    const tip = spurOutline(GEAR_SIZES.M.module, 20)[10] as [number, number];
+    const b = GEAR_SIZES.M.faceWidth;
+    // 中央の断面が平歯車と同じ。右ねじれなので −b/2 は −0.2、+b/2 は +0.2 回った位置に同じ点がある
+    const lower = rotated(tip, -0.2);
+    const upper = rotated(tip, 0.2);
+    expect(nearest([lower[0], lower[1], -b / 2])).toBeLessThan(1e-5);
+    expect(nearest([upper[0], upper[1], b / 2])).toBeLessThan(1e-5);
+    expect(nearest([lower[0], lower[1], b / 2])).toBeGreaterThan(0.1);
+    // 形状のキーは (種類, 大きさ, 歯数)。同じ歯数のハスバ歯車・ホイールとは別の形
+    expect(cache.acquire({ kind: 'crossedHelical' }, 'M', 20)).toBe(geometry);
+    expect(cache.acquire({ kind: 'helical', hand: 'right' }, 'M', 20)).not.toBe(geometry);
+    expect(cache.acquire({ kind: 'wormWheel' }, 'M', 20)).not.toBe(geometry);
+    expect(cache.acquire({ kind: 'crossedHelical' }, 'M', 40)).not.toBe(geometry);
+    expect(cache.size()).toBe(4);
   });
 });

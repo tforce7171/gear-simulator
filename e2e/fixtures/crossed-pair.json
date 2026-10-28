@@ -1,0 +1,50 @@
+{
+  "shafts": {
+    "shaft_a": {
+      "id": "shaft_a",
+      "placement": {
+        "kind": "root",
+        "origin": [0, 80, 0],
+        "axis": "x"
+      }
+    },
+    "shaft_b": {
+      "id": "shaft_b",
+      "placement": {
+        "kind": "skew",
+        "parentGearId": "gear_a",
+        "childGearId": "gear_b",
+        "axisStep": 2,
+        "side": 1
+      }
+    }
+  },
+  "gears": {
+    "gear_a": {
+      "id": "gear_a",
+      "kind": "crossedHelical",
+      "shaftId": "shaft_a",
+      "size": "M",
+      "teeth": 20,
+      "offset": 0
+    },
+    "gear_b": {
+      "id": "gear_b",
+      "kind": "crossedHelical",
+      "shaftId": "shaft_b",
+      "size": "M",
+      "teeth": 40,
+      "offset": 0
+    }
+  },
+  "motors": {
+    "motor_m": {
+      "id": "motor_m",
+      "shaftId": "shaft_a",
+      "size": "M",
+      "rpm": 60,
+      "direction": 1,
+      "on": true
+    }
+  }
+}

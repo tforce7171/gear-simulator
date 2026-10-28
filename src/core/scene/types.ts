@@ -98,8 +98,14 @@ export interface WormWheel extends GearBase {
   readonly kind: 'wormWheel';
 }
 
+// ねじ歯車（S2-04）。ねじれ角 CROSSED_HELIX_ANGLE（45°）の右ねじれ（固定）。同じ大きさのねじ歯車とだけ、
+// ねじれた位置の 90°（skew の配置）でかみ合う。歯数の範囲と歯幅は平歯車と同じ、ピッチ円半径は m·z/2
+export interface CrossedHelicalGear extends GearBase {
+  readonly kind: 'crossedHelical';
+}
+
 // 種類ごとの判別共用体。種類ごとに分ける箇所は switch (gear.kind) で網羅性を型で確かめる（assertNever）
-export type Gear = SpurGear | HelicalGear | BevelGear | WormGear | WormWheel; // S2-04 以降で種類を足す
+export type Gear = SpurGear | HelicalGear | BevelGear | WormGear | WormWheel | CrossedHelicalGear; // 段階 3 で種類を足す
 export type GearKind = Gear['kind'];
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;

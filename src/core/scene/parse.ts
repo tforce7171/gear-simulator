@@ -160,6 +160,7 @@ export function parseScene(raw: unknown): SceneParseResult {
         break;
       case 'worm':
       case 'wormWheel':
+      case 'crossedHelical':
         // ウォームの teeth が 1（条数）かは validateScene が確かめる（S2-03）
         gears.push([key, { ...common, kind }]);
         break;

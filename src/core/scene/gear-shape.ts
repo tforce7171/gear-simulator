@@ -20,6 +20,8 @@ export function gearShape(gear: Gear): GearShape {
       return { kind: 'worm' };
     case 'wormWheel':
       return { kind: 'wormWheel' };
+    case 'crossedHelical':
+      return { kind: 'crossedHelical' };
     default:
       return assertNever(gear);
   }
@@ -38,6 +40,8 @@ export function newGearShape(kind: GearKind): GearShape {
       return { kind: 'worm' };
     case 'wormWheel':
       return { kind: 'wormWheel' };
+    case 'crossedHelical':
+      return { kind: 'crossedHelical' };
     default:
       return assertNever(kind);
   }
@@ -49,7 +53,7 @@ export function oppositeHand(hand: Hand): Hand {
 
 // 外周に生やす子の形。親とかみ合う形（平歯車は平歯車、ハスバ歯車は逆のねじれの向き）。
 // かさ歯車は外周（mesh）には生やさない（bevel の配置。子の apex は −side で決まる）ので null。
-// ウォームとホイールも外周には生やさない（skew の配置。S2-03）ので null
+// ウォームとホイール（S2-03）、ねじ歯車（S2-04）も外周には生やさない（skew の配置）ので null
 export function meshPartnerShape(shape: GearShape): GearShape | null {
   switch (shape.kind) {
     case 'spur':
@@ -59,20 +63,23 @@ export function meshPartnerShape(shape: GearShape): GearShape | null {
     case 'bevel':
     case 'worm':
     case 'wormWheel':
+    case 'crossedHelical':
       return null;
     default:
       return assertNever(shape);
   }
 }
 
-// ねじれた位置の 90°（skew の配置）に生やす子の形（S2-03）。ウォームにはホイール、ホイールにはウォーム。
-// skew に生やさない種類は null（S2-04 でねじ歯車 → ねじ歯車を足す）
+// ねじれた位置の 90°（skew の配置）に生やす子の形（S2-03）。ウォームにはホイール、ホイールにはウォーム、
+// ねじ歯車にはねじ歯車（S2-04）。skew に生やさない種類は null
 export function skewPartnerShape(shape: GearShape): GearShape | null {
   switch (shape.kind) {
     case 'worm':
       return { kind: 'wormWheel' };
     case 'wormWheel':
       return { kind: 'worm' };
+    case 'crossedHelical':
+      return { kind: 'crossedHelical' };
     case 'spur':
     case 'helical':
     case 'bevel':
@@ -94,6 +101,7 @@ const GEAR_KINDS: Readonly<Record<GearKind, true>> = {
   bevel: true,
   worm: true,
   wormWheel: true,
+  crossedHelical: true,
 };
 
 export function isGearKind(value: unknown): value is GearKind {

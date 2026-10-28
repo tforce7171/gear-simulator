@@ -3,8 +3,8 @@ import type { Gear, GearShape } from '../scene/types';
 
 // かみ合える歯車の組（S2-01。design.md §5）。位置は見ず、種類・大きさ・形を変える属性だけで決める
 
-// かみ合いの種類。S2-04 以降で足す
-export type MeshKind = 'spur' | 'helical' | 'bevel' | 'worm';
+// かみ合いの種類。段階 3 で足す
+export type MeshKind = 'spur' | 'helical' | 'bevel' | 'worm' | 'crossedHelical';
 
 // かみ合う 2 軸の位置関係（S2-03）。平行（外周の mesh の配置）、交わる 90°（bevel）、ねじれた位置の 90°（skew）。
 // 種類ごとに 1 つに決まり、かみ合える組は同じ位置関係を持つ
@@ -19,6 +19,7 @@ export function meshGeometryOf(gear: GearShape): MeshGeometry {
       return 'bevel';
     case 'worm':
     case 'wormWheel':
+    case 'crossedHelical':
       return 'skew';
     default:
       return assertNever(gear);
@@ -32,7 +33,8 @@ export function placementKindOf(geometry: MeshGeometry): 'mesh' | 'bevel' | 'ske
 
 // 平歯車同士、ねじれの向きが逆のハスバ歯車同士、同じ歯数のかさ歯車同士（どれも同じ大きさ）だけがかみ合う。
 // かさ歯車は歯数比 1:1 のみ（S2-02）なので、歯数もそろっている必要がある。
-// ウォームとかみ合えるのはホイールだけ、ホイールとかみ合えるのはウォームだけ（S2-03）
+// ウォームとかみ合えるのはホイールだけ、ホイールとかみ合えるのはウォームだけ（S2-03）。
+// ねじ歯車はねじ歯車とだけ（S2-04。どれも右ねじれ 45° なので向きは見ない。歯数は自由）
 export function canMesh(a: Gear, b: Gear): boolean {
   if (a.size !== b.size) return false;
   switch (a.kind) {
@@ -46,6 +48,8 @@ export function canMesh(a: Gear, b: Gear): boolean {
       return b.kind === 'wormWheel';
     case 'wormWheel':
       return b.kind === 'worm';
+    case 'crossedHelical':
+      return b.kind === 'crossedHelical';
     default:
       return assertNever(a);
   }
@@ -63,6 +67,8 @@ export function meshKindOf(gear: GearShape): MeshKind {
     case 'worm':
     case 'wormWheel':
       return 'worm';
+    case 'crossedHelical':
+      return 'crossedHelical';
     default:
       return assertNever(gear);
   }
