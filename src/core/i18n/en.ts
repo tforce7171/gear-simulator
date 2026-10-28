@@ -33,7 +33,7 @@ export const en = {
   // Gear type to add (S2-05)
   'palette.kind': 'Gear type to add',
   'palette.kind.hint':
-    'Same-shaft candidates use this type. Candidates around a gear follow the gear they mesh with',
+    'Same-shaft candidates use this type. Candidates around a gear follow the gear they mesh with. With spur gears, internal gears enclosing the parent are offered too',
   'gearKind.spur': 'Spur gear',
   'gearKind.helical': 'Helical gear',
   'gearKind.bevel': 'Bevel gear',
@@ -95,7 +95,28 @@ export const en = {
   'properties.carrier.planets': 'Planets',
   'properties.carrier.planetCount': '{count}',
   'properties.rack': 'Rack',
-  'properties.rack.teethCount': '{count}',
+  // S3-05
+  'properties.carrier.planetCount.choose': 'Use {count} planets',
+  'properties.carrier.planetCount.disabled':
+    '{count} planets do not satisfy the tooth conditions (concentric, equal spacing, clearance)',
+  'properties.carrier.note':
+    'Only counts that satisfy the conditions (concentric, equal spacing, no touching planets) can be chosen',
+  'properties.rack.teeth.dec': 'One tooth fewer on the rack',
+  'properties.rack.teeth.inc': 'One tooth more on the rack',
+  'properties.internal.web': 'Web (bottom)',
+  'properties.internal.web.positive': 'Positive side of the axis',
+  'properties.internal.web.negative': 'Negative side of the axis',
+  'properties.internal.web.flip': 'Flip the web',
+  'properties.internal.web.flip.tooltip': 'Move the bottom of the cup (web) to the other face',
+  'properties.planetary.role.sun': 'Sun gear',
+  'properties.planetary.role.planet': 'Planet gear',
+  'properties.planetary.role.ring': 'Ring (internal gear)',
+  'properties.planetary.role': 'Role',
+  'properties.planetary.teethNote':
+    'Only tooth counts that satisfy the planetary conditions can be chosen (the ring follows automatically)',
+  'properties.planetary.ringNote':
+    'The ring tooth count follows the sun and the planets (sun + 2 × planet)',
+  'properties.teeth.count': '{count}',
   'properties.anchor': 'Anchor',
   'properties.anchor.check': 'Anchor',
   'properties.anchor.gearNote': "Anchors this gear's shaft (parts on the same shaft stop too)",
@@ -108,6 +129,9 @@ export const en = {
   // Info overlay (S1-23). Heading of the second line of the label
   'info.ratio': 'Ratio',
   'info.wormRatio': 'Worm ratio',
+  'info.speed': '{speed} mm/s',
+  'info.rack.direction': 'Direction',
+  'info.rack.stopped': 'Stopped',
   // Pause indicator (S1-22)
   'sim.paused': 'Paused (Space to resume)',
   // Axis gizmo (S1-14)

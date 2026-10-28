@@ -1,4 +1,7 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
+import { initialMotionState, solveMotion } from '../core/kinematics/motion';
+import { resolveLayout } from '../core/layout/resolve';
 import type { Scene } from '../core/scene/types';
 import { infoArrowSpec } from '../render/info-arrows';
 import { createInfoOverlay, INFO_REFRESH_MS } from './info-overlay';
@@ -32,21 +35,22 @@ const sceneA: Scene = {
   racks: {},
 };
 
-function setup() {
-  const store = createStore(sceneA);
+function setup(scene: Scene = sceneA) {
+  const store = createStore(scene);
   const setValues = vi.fn();
   const setPosition = vi.fn();
+  const setArrowAngle = vi.fn();
   const setArrows = vi.fn();
   const overlay = createInfoOverlay({
     getState: () => store.getState(),
     layoutOf: createLayoutMemo(),
     getLanguage: () => 'ja',
-    labels: { setValues, setPosition },
+    labels: { setValues, setPosition, setArrowAngle },
     setArrows,
     arrowSpec: infoArrowSpec,
     project: (world) => ({ x: world[0], y: world[2], visible: true }),
   });
-  return { store, overlay, setValues, setPosition, setArrows };
+  return { store, overlay, setValues, setPosition, setArrowAngle, setArrows };
 }
 
 describe('createInfoOverlay', () => {
@@ -100,5 +104,51 @@ describe('createInfoOverlay', () => {
     store.dispatch({ type: 'select', id: 'gear_g3' });
     overlay.frame(1000 + INFO_REFRESH_MS + 1);
     expect(setValues).toHaveBeenCalledTimes(3);
+  });
+});
+
+// S3-05: キャリアの rpm とラックの速度・向き
+function fixture(name: string): Scene {
+  const url = new URL(`../../e2e/fixtures/${name}.json`, import.meta.url);
+  return JSON.parse(readFileSync(url, 'utf8')) as Scene;
+}
+
+describe('キャリアとラックの情報（S3-05）', () => {
+  it('ON: planetary-ring-fixed のキャリアは 20 rpm（太陽 60 rpm、リング固定）', () => {
+    const scene = fixture('planetary-ring-fixed');
+    const { store, overlay, setValues, setPosition } = setup(scene);
+    store.setMotion(solveMotion(scene, resolveLayout(scene), initialMotionState()));
+    store.dispatch({ type: 'setInfoOverlay', on: true });
+    overlay.frame(0);
+    const values = setValues.mock.lastCall?.[0] as Map<string, { kind?: string; rpm: number }>;
+    expect(values.get('carrier_k')?.kind).toBe('carrier');
+    expect(values.get('carrier_k')?.rpm).toBeCloseTo(20, 9);
+    // 遊星は自転の rpm（シャフトの ω。60 rpm の逆向き）
+    expect(values.get('gear_p0')?.rpm).toBeCloseTo(60, 9);
+    expect(setPosition).toHaveBeenCalledWith(
+      'carrier_k',
+      expect.any(Number),
+      expect.any(Number),
+      true,
+    );
+  });
+
+  it('OFF でラックを選択: ラックだけ。rack-basic の速さは 40π mm/s、向きの矢印の角度を毎フレーム渡す', () => {
+    const scene = fixture('rack-basic');
+    const { store, overlay, setValues, setArrowAngle } = setup(scene);
+    store.setMotion(solveMotion(scene, resolveLayout(scene), initialMotionState()));
+    store.dispatch({ type: 'select', id: 'rack_r' });
+    overlay.frame(0);
+    const values = setValues.mock.lastCall?.[0] as Map<
+      string,
+      { kind?: string; speed: number; direction: number }
+    >;
+    expect([...values.keys()]).toEqual(['rack_r']);
+    expect(values.get('rack_r')?.kind).toBe('rack');
+    expect(values.get('rack_r')?.speed).toBeCloseTo(40 * Math.PI, 9);
+    expect(Math.abs(values.get('rack_r')?.direction ?? 0)).toBe(1);
+    // project は (x, z) を画面にするので、x 向きのラックの矢印は 0 か π
+    const angle = setArrowAngle.mock.lastCall?.[1] as number;
+    expect(Math.abs(Math.cos(angle))).toBeCloseTo(1, 9);
   });
 });

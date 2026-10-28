@@ -699,6 +699,41 @@ function planetaryOfGear(scene: Scene, gearId: GearId): Planetary | null {
   return null;
 }
 
+// プロパティパネルの選択肢（S3-05）: キャリアの遊星の数のうち、配置の条件を満たす数（昇順）。
+// 遊星が無いキャリア・無いキャリアは空。setPlanetCount が受け付ける数と一致する
+export function allowedPlanetCounts(scene: Scene, carrierId: CarrierId): number[] {
+  const planetary = planetaryOfCarrier(scene, carrierId);
+  const tp = planetary?.planetShafts[0]?.placement;
+  if (planetary === null || tp?.kind !== 'planet') return [];
+  const zp = scene.gears[tp.childGearId]?.teeth;
+  if (zp === undefined) return [];
+  const out: number[] = [];
+  for (let n = PLANET_COUNT_RANGE.min; n <= PLANET_COUNT_RANGE.max; n++) {
+    if (planetaryOk(planetary.sun.teeth, zp, planetary.ring?.teeth ?? null, n)) out.push(n);
+  }
+  return out;
+}
+
+// プロパティパネルの選択肢（S3-05）: 遊星歯車機構の中の歯車の、選べる歯数。機構の外の歯車は null。
+// role は機構の中の役割、teeth は今の歯数と、setGearTeeth が受け付ける歯数（昇順。リングは直接変えられないので空）
+export function planetaryTeethChoices(
+  scene: Scene,
+  gearId: GearId,
+): { readonly role: 'sun' | 'planet' | 'ring'; readonly teeth: number[] } | null {
+  const gear = scene.gears[gearId];
+  if (gear === undefined) return null;
+  const planetary = planetaryOfGear(scene, gearId);
+  if (planetary === null) return null;
+  if (planetary.ring?.id === gearId) return { role: 'ring', teeth: [] };
+  const role = gearId === planetary.sun.id ? 'sun' : 'planet';
+  const { min, max } = teethRange(gear.kind, gear.size);
+  const teeth: number[] = [];
+  for (let z = min; z <= max; z++) {
+    if (z === gear.teeth || setPlanetaryTeeth(scene, planetary, gear, z).ok) teeth.push(z);
+  }
+  return { role, teeth };
+}
+
 // キャリアの遊星の数を変える（S3-03）
 function setPlanetCount(
   scene: Scene,

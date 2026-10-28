@@ -110,6 +110,28 @@ p.gs-prop__hint {
   text-align: right;
 }
 
+.gs-prop__select {
+  height: 28px;
+  min-width: 88px;
+  box-sizing: border-box;
+  padding: 0 4px;
+  border: 1px solid var(--gs-button-border);
+  border-radius: 4px;
+  background: var(--gs-bg);
+  color: var(--gs-text);
+  font: inherit;
+}
+
+.gs-prop__select:focus-visible {
+  outline: 2px solid #7aa2d6;
+  outline-offset: 1px;
+}
+
+.gs-prop__size:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .gs-prop__rpm {
   display: flex;
   align-items: center;

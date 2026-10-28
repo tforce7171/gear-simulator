@@ -33,7 +33,8 @@ export const ja = {
   'palette.parts': '置く部品',
   // 生やす歯車の種類（S2-05）
   'palette.kind': '生やす歯車の種類',
-  'palette.kind.hint': '同じ軸の候補をこの種類で作ります。外周の候補の種類は相手の歯車で決まります',
+  'palette.kind.hint':
+    '同じ軸の候補をこの種類で作ります。外周の候補の種類は相手の歯車で決まります。平歯車を選ぶと、親を囲む内歯車の候補も出ます',
   'gearKind.spur': '平歯車',
   'gearKind.helical': 'ハスバ歯車',
   'gearKind.bevel': 'かさ歯車',
@@ -94,7 +95,27 @@ export const ja = {
   'properties.carrier.planets': '遊星の数',
   'properties.carrier.planetCount': '{count} 個',
   'properties.rack': 'ラック',
-  'properties.rack.teethCount': '{count} 歯',
+  // S3-05: 段階 3 の部品のプロパティ
+  'properties.carrier.planetCount.choose': '遊星を {count} 個にする',
+  'properties.carrier.planetCount.disabled':
+    '{count} 個は歯数の条件（同心・等配・隣の遊星）を満たしません',
+  'properties.carrier.note': '条件（同心・等配・隣の遊星が当たらない）を満たす数だけ選べます',
+  'properties.rack.teeth.dec': 'ラックの歯数を 1 減らす',
+  'properties.rack.teeth.inc': 'ラックの歯数を 1 増やす',
+  'properties.internal.web': 'ウェブ（底）',
+  'properties.internal.web.positive': '軸の正の側',
+  'properties.internal.web.negative': '軸の負の側',
+  'properties.internal.web.flip': 'ウェブの向きを反転',
+  'properties.internal.web.flip.tooltip': 'カップの底（ウェブ）を反対側の面に移す',
+  'properties.planetary.role.sun': '太陽歯車',
+  'properties.planetary.role.planet': '遊星歯車',
+  'properties.planetary.role.ring': 'リング（内歯車）',
+  'properties.planetary.role': '機構の中の役割',
+  'properties.planetary.teethNote':
+    '遊星歯車機構の条件を満たす歯数だけ選べます（リングの歯数は自動でそろいます）',
+  'properties.planetary.ringNote':
+    'リングの歯数は、太陽と遊星の歯数から決まります（太陽 + 2 × 遊星）',
+  'properties.teeth.count': '{count} 歯',
   'properties.anchor': '固定具',
   'properties.anchor.check': '固定する',
   'properties.anchor.gearNote': 'この歯車のシャフトを固定します（同じシャフトの部品も止まります）',
@@ -108,6 +129,10 @@ export const ja = {
   // 情報表示（S1-23）。ラベルの 2 行目の見出し
   'info.ratio': 'ギア比',
   'info.wormRatio': 'ウォーム比',
+  // 情報表示の単位と向き（S3-05。ラックの速度）
+  'info.speed': '{speed} mm/s',
+  'info.rack.direction': '向き',
+  'info.rack.stopped': '停止',
   // 一時停止中の表示（S1-22）
   'sim.paused': '一時停止中（Space で再開）',
   // 軸の目印（S1-14）。球の title と aria-label

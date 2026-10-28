@@ -335,7 +335,7 @@ async function importFile(page: Page, path: string): Promise<void> {
   await (await chooser).setFiles(path);
 }
 
-test('エクスポート → インポートで stage2-showcase が元と等しい。ダウンロードしたファイルの version は 2', async ({
+test('エクスポート → インポートで stage2-showcase が元と等しい。ダウンロードしたファイルの version は最新（S3-05 から 3）', async ({
   page,
 }) => {
   await openApp(page, { scene: showcase });
@@ -344,7 +344,7 @@ test('エクスポート → インポートで stage2-showcase が元と等し�
   const path = await (await downloading).path();
   const file = JSON.parse(readFileSync(path, 'utf8'));
   expect(file.format).toBe('gear-simulator');
-  expect(file.version).toBe(2);
+  expect(file.version).toBe(3);
   expect(file.scene).toEqual(showcase);
 
   await page.evaluate((s) => window.__gearSim?.loadScene(s), EMPTY);
@@ -359,7 +359,7 @@ test('段階 1 で保存した version 1 のファイルをインポート → �
   const v1 = JSON.parse(readFileSync(v1Path, 'utf8')) as { version: number; scene: Scene };
   expect(v1.version).toBe(1);
   await importFile(page, v1Path);
-  // 固定具の無いシーンには anchors: {} を補う（S3-01 の暫定。S3-05 で version 3 の移行に置き換える）
+  // 固定具などの無いシーンには、version 2 → 3 の移行（S3-05）が anchors・carriers・racks を {} で足す
   await expect
     .poll(() => getScene(page))
     .toEqual({ ...v1.scene, anchors: {}, carriers: {}, racks: {} });

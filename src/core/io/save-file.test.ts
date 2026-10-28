@@ -519,7 +519,9 @@ describe('version 2 → 3 の移行（S3-05）', () => {
   });
 
   it('S3-01〜S3-04 の間に version 2 のまま保存された段階 3 の部品は、移行で残る', () => {
-    const scene = readJson(new URL('../../../e2e/fixtures/planetary-ring-fixed.json', import.meta.url));
+    const scene = readJson(
+      new URL('../../../e2e/fixtures/planetary-ring-fixed.json', import.meta.url),
+    );
     const result = parseSaveFileObject({ format: 'gear-simulator', version: 2, scene });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
