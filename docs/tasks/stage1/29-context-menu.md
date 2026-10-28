@@ -1,7 +1,7 @@
 ---
 id: S1-29
 title: コンテキストメニュー
-status: doing
+status: done
 depends: [S1-14, S1-20, S1-23]
 ---
 
@@ -97,6 +97,6 @@ depends: [S1-14, S1-20, S1-23]
 - 右ドラッグでカメラを回すつもりで、少しだけ動かしたときにメニューが誤って出ないか。
 
 ## 完了の条件
-- [ ] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
-- [ ] design.md と後続のタスク資料に、必要な変更を反映した（`__gearSim.getView` を design.md §10 に書く）
-- [ ] `status: done` にしてコミットした
+- [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
+- [x] design.md と後続のタスク資料に、必要な変更を反映した（`__gearSim.getView` を design.md §10 に書く）
+- [x] `status: done` にしてコミットした
