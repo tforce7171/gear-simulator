@@ -15,6 +15,7 @@ import type { HandleKind } from '../input/handle-drag';
 import type { ViewName } from '../input/views';
 import type { InputDevice } from '../input/wheel';
 import type { PickHit } from '../render/picking';
+import type { RenderStats } from '../render/renderer';
 
 export interface GearSimDebug {
   /** 最初のフレームを描いたら true */
@@ -95,6 +96,12 @@ export interface GearSimDebug {
     pixelRatio: number;
     textures: number;
   };
+  /**
+   * 描画の負荷（S1-31。scripts/perf.ts が使う）。frame は実際に描いた回数（renderer.info.render.frame。
+   * 見た目が変わらないフレームは描かないので、rAF の回数より少ないことがある）、calls・triangles は
+   * 最後に描いたフレームの値、redrawChecks・redrawCheckMs は描き直しの判定の回数と時間の合計（ms）
+   */
+  getRenderStats(): RenderStats;
   /**
    * 音の状態（S1-25）。contextState は AudioContext を作る前は 'none'（最初のユーザー操作で作る）。
    * voices は今鳴らしているかみ合い（動いている組のうち Layout.meshes の順で最初の 16 組）。

@@ -487,6 +487,7 @@ installGearSim({
     return { locked: [...locked].sort(), interfering: [...interfering].sort() };
   },
   getRenderInfo: () => renderer.renderInfo(),
+  getRenderStats: () => renderer.renderStats(),
   getInfoOverlay: () => ({
     enabled: store.getState().view.infoOverlay,
     arrows: infoOverlay.arrows(),
