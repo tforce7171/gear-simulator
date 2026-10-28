@@ -32,6 +32,7 @@ depends: [S1-01, S1-02, S1-03, S1-04, S1-05, S1-06, S1-07, S1-08, S1-09, S1-10, 
    シーン A を読み、モーターを OFF → g2 を手で 90° 分ドラッグ（S1-21）→ 各シャフトの角度が `z₁·θ₁ + z₂·θ₂ ≈ 定数` を保つ（ドラッグ前と比べて差 < 1e-6）→ 離すと全 ω = 0。ドラッグの経路は S1-21 の `e2e/hand-rotation.spec.ts` の `pathPoints`（歯車の面上の点を `projectToScreen` したもの）と同じ作り方でよい。
 6. **右クリックと設定**（`menu-and-settings.spec.ts`）
    シーン A を読む → g2 を右クリック →「モーターを付ける」→ 設定でテーマを木製、言語を英語 → 再読み込み → テーマ・言語・付けたモーターが残っている。
+   - S1-30 の時点: 設定画面の項目は `[data-setting="<フィールド名>"] [data-value="<値>"]` のボタン（例: `[data-setting="theme"] [data-value="wood"]`）で選ぶ。設定は `__gearSim.getSettings()` で確かめられる。単体の確かめは `e2e/settings.spec.ts` にあるので、重複は整理してよい。
 7. **ループと付け直し**（`loop-and-reattach.spec.ts`）
    `one-root-motor.json`（S1-18）を読む → A の外周の候補で B を生やし、B の外周の候補で C を生やす（A と C はかみ合わない位置）→ C を選び、円弧ハンドル（S1-19）で A とちょうどかみ合う角度まで動かす（吸着する）→ `getLayout().meshes` に A-C（`source: 'contact'`）、`getMotion().locks` に `reason: 'contradiction'`、`interferences` が空 → Ctrl+Z → ロックが解ける → B を Delete → C のシャフトが `detached` → C を選び、本体を A の外周の候補の位置へドラッグして離す（S1-19 の付け直し。押す点は、C のシャフトの真下の位置・高さのハンドルを避ける。S1-19 の `e2e/handles.spec.ts` の `pointOnP` のように `pick` で確かめる）→ C のシャフトが `{ kind: 'mesh', parentGearId: A }`、`locks` が空、C のシャフトの ω ≈ −π。
 

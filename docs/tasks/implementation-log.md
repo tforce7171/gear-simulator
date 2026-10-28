@@ -244,3 +244,9 @@
 | S1-29 | `buildContextMenuItems` の引数は `AppState` 全体ではなく `Pick<AppState, 'scene' \| 'view'>` にした | 使うのはこの 2 つだけで、`AppState` を渡す呼び出しはそのまま型が合うため |
 | S1-29 | 共有のチェックアウトへの書き込みが拒否されたため、`.claude/worktrees/S1-29` に `task/S1-29` の worktree を作って作業した | バックグラウンドのセッションの隔離の決まりで、共有のチェックアウトを書き換えられなかったため。ブランチ名とコミットは同じ |
 | S1-29 | e2e のカメラの静止待ち（`settledCamera`）は、時間ではなく描画のフレームで数え、3 フレーム続けて位置・注視点が動かないことを待つ形にした。「ここに寄る」「全体表示」は、加えて注視点が目標から 1 mm 未満になるまで `expect.poll` で待ってから判定する（期待値は資料のまま） | 100 ms おきに 2 回読む形では、負荷で rAF が止まると移動の途中で抜けて落ちた。カメラの補間はフレームごとに進むため、フレームで数えれば負荷に左右されない |
+| S1-30 | `saveSettings` は `void` ではなく `boolean`（書けたら `true`、`setItem` が投げたら `false`。storage が `undefined` なら何もせず `true`）を返す。トーストを 1 回だけ出す判断は `main.ts` が持つ | `storage` の層から `ui` のトーストを呼ばずに、失敗を呼び出し側へ伝えるため。`void` として使う呼び出しはそのまま型が合う |
+| S1-30 | `localStorage` にアクセスするだけで投げる環境に備え、`browserStorage()`（投げたら `undefined`）を足した。保存領域が `undefined` のときは書くたびのトーストを出さない | 資料の「`localStorage` にアクセスできない → 初期値」を満たすため。使えないことは起動時に分かっており、変更のたびに知らせる意味がないため |
+| S1-30 | `createStore` の `settings` を省いたときの初期値（`DEFAULT_SETTINGS`）は `defaultSettings('')`（言語は英語）。アプリでは `main.ts` が必ず読んだ設定を渡す | store は `navigator` に触れないため。単体テスト用の既定値で、画面の初期値には使われない |
+| S1-30 | 言語は双方向に結び付けた: ストアの購読で `setLanguage(settings.language)`、`onLanguageChange` で `updateSettings { language }`。`__gearSim.setLanguage` は `updateSettings { language }` を通す | 資料の「いつも一致する」を、どちらの経路から変えても崩れないようにするため（どちらも値が変わらなければ知らせないので循環しない） |
+| S1-30 | 設定画面の選択肢は `role="radio"` のボタン（`data-value`、`aria-checked`）にした。テーマの表示名は既存の `theme.brass`・`theme.wood` を使い、新しいキーは足していない。ダイアログの外のクリックは `<dialog>` の外枠の矩形の外でのクリックで判定する | 資料は選択肢の形を決めていなかった。部品パレットの大きさの選択（S1-17）と同じ形にそろえた |
+| S1-30 | Edit ツールでの書き込みが共有チェックアウトでは拒否されたため、ファイルの変更はシェル（python・heredoc）で行った。ブランチ `task/S1-30` の上で作業している | バックグラウンドのセッションの隔離の決まりのため |

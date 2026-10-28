@@ -1,4 +1,5 @@
 // ホイールの入力の判別と解釈（S1-14）。純粋関数のみ（DOM に触れない）
+import type { TrackpadScroll } from '../core/settings';
 
 export interface WheelSample {
   deltaX: number;
@@ -8,8 +9,9 @@ export interface WheelSample {
   timeStamp: number; // ms
 }
 export type InputDevice = 'mouse' | 'trackpad';
-export type InputDeviceSetting = 'auto' | InputDevice;
-export type TrackpadScroll = 'pan' | 'orbit'; // design.md §7 の Settings.trackpadScroll
+
+// 設定の型は core/settings.ts が持つ（S1-30。core は input を import できないため）
+export type { InputDeviceSetting, TrackpadScroll } from '../core/settings';
 
 // マウスの弱い証拠とみなす |deltaY| の下限（1 目盛りぶんの画素）
 export const MOUSE_NOTCH_MIN_PX = 50;

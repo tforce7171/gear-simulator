@@ -13,26 +13,15 @@ import { resolveLayout } from '../core/layout/resolve';
 import type { Layout } from '../core/layout/types';
 import { createRandomIdGenerator, type IdGenerator } from '../core/scene/ids';
 import type { Scene, SizeKey } from '../core/scene/types';
-import { DEFAULT_QUALITY, DEFAULT_THEME, type Quality, type ThemeId } from '../core/theme';
-import type { InputDeviceSetting, TrackpadScroll } from '../input/wheel';
+import { defaultSettings, type Settings } from '../core/settings';
 import { pruneSelection } from './selection';
 
-// 設定（design.md §7 の Settings）。項目は各担当タスクで足す（S1-30 で localStorage に保存する）
-export interface Settings {
-  readonly inputDevice: InputDeviceSetting; // 入力デバイス（S1-14）
-  readonly trackpadScroll: TrackpadScroll; // 2 本指スクロールの割り当て（S1-14）
-  readonly theme: ThemeId; // テーマ（S1-24）
-  readonly quality: Quality; // 描画の品質（S1-24）
-  readonly muted: boolean; // ミュート（S1-25。M キーとツールバーのボタン）
-}
+// 設定（design.md §7 の Settings）。型・初期値・保存の形は core/settings.ts（S1-30）
+export type { Settings } from '../core/settings';
 
-export const DEFAULT_SETTINGS: Settings = {
-  inputDevice: 'auto',
-  trackpadScroll: 'pan',
-  theme: DEFAULT_THEME,
-  quality: DEFAULT_QUALITY,
-  muted: false,
-};
+// createStore に settings を渡さないときの初期値（言語は英語）。アプリは main.ts が localStorage から
+// 読んだ設定を渡す（S1-30）
+export const DEFAULT_SETTINGS: Settings = defaultSettings('');
 
 // 表示の状態（design.md §7 の AppState.view）。保存しない
 export interface ViewState {
@@ -105,6 +94,7 @@ export type AppAction =
 
 export interface StoreOptions {
   readonly ids?: IdGenerator; // 新しい部品の ID（既定はランダム）
+  readonly settings?: Settings; // 設定の初期値（S1-30。既定は DEFAULT_SETTINGS）
 }
 
 export interface Store {
@@ -230,7 +220,7 @@ export function createStore(scene: Scene, options: StoreOptions = {}): Store {
     motion: initialMotion(scene, resolveLayout(scene)),
     sim: DEFAULT_SIM,
     view: DEFAULT_VIEW,
-    settings: DEFAULT_SETTINGS,
+    settings: options.settings ?? DEFAULT_SETTINGS,
     palette: DEFAULT_PALETTE,
     currentWork: null,
   };

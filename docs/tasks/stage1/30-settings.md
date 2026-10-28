@@ -1,7 +1,7 @@
 ---
 id: S1-30
 title: 設定画面
-status: todo
+status: done
 depends: [S1-14, S1-24, S1-25]
 ---
 
@@ -62,37 +62,37 @@ depends: [S1-14, S1-24, S1-25]
   ```
 
 ## 受け入れ条件
-- [ ] 設定画面で 5 項目を変えられ、すぐ反映される。
-- [ ] 再読み込みしても、5 項目とミュートが残る。
-- [ ] localStorage が使えない・壊れていても、初期値で起動してエラーを出さない。
-- [ ] 木製テーマにすると音の材質も木になる。
+- [x] 設定画面で 5 項目を変えられ、すぐ反映される。
+- [x] 再読み込みしても、5 項目とミュートが残る。
+- [x] localStorage が使えない・壊れていても、初期値で起動してエラーを出さない。
+- [x] 木製テーマにすると音の材質も木になる。
 
 ## テストケース
 ### Vitest
-- [ ] `defaultSettings('ja-JP').language === 'ja'`、`defaultSettings('en-US').language === 'en'`、`defaultSettings('fr').language === 'en'`。theme `brass`、quality `high`、muted `false`。
-- [ ] `parseSettings(undefined | null | 1 | 'x' | [], d)` → `d` と等しい。
-- [ ] `parseSettings({ version: 1, theme: 'wood' }, d)` → theme `wood`、他は `d` のまま。
-- [ ] `parseSettings({ version: 1, theme: 'gold', quality: 'low', muted: 'yes' }, d)` → theme `brass`、quality `low`、muted `false`。
-- [ ] `parseSettings({ version: 2, theme: 'wood' }, d)` → `d`。
-- [ ] `parseSettings({ version: 1, unknown: 1 }, d)` の結果に `unknown` がない。
-- [ ] 往復: すべての項目を初期値と違う値にした設定 → `serializeSettings` → `JSON.parse` → `parseSettings` → 元と `toEqual`。
-- [ ] `loadSettings`: `undefined` → 初期値。`getItem` が投げる偽の Storage → 初期値。`'{bad'` を返す → 初期値。
-- [ ] `saveSettings`: `setItem` が投げる偽の Storage → 例外を外に出さない。`undefined` → 何もしない。
+- [x] `defaultSettings('ja-JP').language === 'ja'`、`defaultSettings('en-US').language === 'en'`、`defaultSettings('fr').language === 'en'`。theme `brass`、quality `high`、muted `false`。
+- [x] `parseSettings(undefined | null | 1 | 'x' | [], d)` → `d` と等しい。
+- [x] `parseSettings({ version: 1, theme: 'wood' }, d)` → theme `wood`、他は `d` のまま。
+- [x] `parseSettings({ version: 1, theme: 'gold', quality: 'low', muted: 'yes' }, d)` → theme `brass`、quality `low`、muted `false`。
+- [x] `parseSettings({ version: 2, theme: 'wood' }, d)` → `d`。
+- [x] `parseSettings({ version: 1, unknown: 1 }, d)` の結果に `unknown` がない。
+- [x] 往復: すべての項目を初期値と違う値にした設定 → `serializeSettings` → `JSON.parse` → `parseSettings` → 元と `toEqual`。
+- [x] `loadSettings`: `undefined` → 初期値。`getItem` が投げる偽の Storage → 初期値。`'{bad'` を返す → 初期値。
+- [x] `saveSettings`: `setItem` が投げる偽の Storage → 例外を外に出さない。`undefined` → 何もしない。
 
 ### Playwright
-- [ ] 設定画面を開き、テーマ「木製」→ `getRenderInfo().theme === 'wood'`、`getAudio().material === 'wood'`。品質「軽量」→ `getRenderInfo().quality === 'low'`。
-- [ ] 言語「English」→ ツールバーとダイアログの文字が英語になる（例: 設定画面の題名が `Settings`）。
-- [ ] 上の 3 つと、入力デバイス「マウス」、ミュート（`M`）を変えて再読み込み → `getSettings()` の 5 項目と muted が変えた値のまま。ツールバーのミュートボタンが `aria-pressed="true"`。
-- [ ] ツールバーのテーマボタンで木製にしてから設定画面を開く → テーマの選択が「木製」。
-- [ ] `addInitScript` で localStorage に `gear-simulator:settings = '{bad'` を入れて起動 → `getSettings()` が初期値、コンソールエラー 0 件。
-- [ ] `addInitScript` で `Storage.prototype.getItem` と `setItem` が例外を投げるようにして起動 → 初期値で起動、設定を変えても動き続ける、保存できなかったトーストが 1 回だけ出る（2 回目の変更では増えない）、コンソールエラー 0 件。
-- [ ] Esc で設定画面が閉じる。
+- [x] 設定画面を開き、テーマ「木製」→ `getRenderInfo().theme === 'wood'`、`getAudio().material === 'wood'`。品質「軽量」→ `getRenderInfo().quality === 'low'`。
+- [x] 言語「English」→ ツールバーとダイアログの文字が英語になる（例: 設定画面の題名が `Settings`）。
+- [x] 上の 3 つと、入力デバイス「マウス」、ミュート（`M`）を変えて再読み込み → `getSettings()` の 5 項目と muted が変えた値のまま。ツールバーのミュートボタンが `aria-pressed="true"`。
+- [x] ツールバーのテーマボタンで木製にしてから設定画面を開く → テーマの選択が「木製」。
+- [x] `addInitScript` で localStorage に `gear-simulator:settings = '{bad'` を入れて起動 → `getSettings()` が初期値、コンソールエラー 0 件。
+- [x] `addInitScript` で `Storage.prototype.getItem` と `setItem` が例外を投げるようにして起動 → 初期値で起動、設定を変えても動き続ける、保存できなかったトーストが 1 回だけ出る（2 回目の変更では増えない）、コンソールエラー 0 件。
+- [x] Esc で設定画面が閉じる。
 
 ## 人が手で確かめる項目
 - 設定画面の配置が日本語・英語の両方で崩れないか。
 - 入力デバイスと 2 本指スクロールの割り当てを変えたとき、実機のマウスとトラックパッドで期待どおりに効くか。
 
 ## 完了の条件
-- [ ] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
-- [ ] design.md と後続のタスク資料に、必要な変更を反映した（`Settings` の型と保存の形を design.md §7・§9 に、`__gearSim.getSettings` を §10 に書く）
-- [ ] `status: done` にしてコミットした
+- [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
+- [x] design.md と後続のタスク資料に、必要な変更を反映した（`Settings` の型と保存の形を design.md §7・§9 に、`__gearSim.getSettings` を §10 に書く）
+- [x] `status: done` にしてコミットした

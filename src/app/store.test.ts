@@ -3,7 +3,7 @@ import { createSequentialIdGenerator } from '../core/scene/ids';
 import { emptyScene } from '../core/scene/scene';
 import type { Scene } from '../core/scene/types';
 import { demoScene } from './demo-scene';
-import { createLayoutMemo, createStore } from './store';
+import { createLayoutMemo, createStore, DEFAULT_SETTINGS } from './store';
 
 const offScene: Scene = {
   ...demoScene,
@@ -130,7 +130,7 @@ describe('createLayoutMemo', () => {
 });
 
 describe('設定と表示の状態（S1-14）', () => {
-  it('初期値: inputDevice auto・trackpadScroll pan・theme brass・quality high・muted false・watchMode false・infoOverlay false', () => {
+  it('初期値: inputDevice auto・trackpadScroll pan・theme brass・quality high・muted false・language en・watchMode false・infoOverlay false', () => {
     const { settings, view } = createStore(demoScene).getState();
     expect(settings).toEqual({
       inputDevice: 'auto',
@@ -138,6 +138,7 @@ describe('設定と表示の状態（S1-14）', () => {
       theme: 'brass',
       quality: 'high',
       muted: false,
+      language: 'en',
     });
     expect(view).toEqual({ watchMode: false, infoOverlay: false });
   });
@@ -153,6 +154,7 @@ describe('設定と表示の状態（S1-14）', () => {
       theme: 'brass',
       quality: 'high',
       muted: false,
+      language: 'en',
     });
     expect(after.scene).toBe(before.scene);
     expect(after.history).toBe(before.history);
@@ -192,6 +194,14 @@ describe('設定と表示の状態（S1-14）', () => {
     store.dispatch({ type: 'loadScene', scene: offScene });
     expect(store.getState().settings.inputDevice).toBe('trackpad');
     expect(store.getState().view.watchMode).toBe(true);
+  });
+
+  it('createStore の settings で初期値を渡せ、updateSettings で言語も変えられる（S1-30）', () => {
+    const settings = { ...DEFAULT_SETTINGS, theme: 'wood' as const, language: 'ja' as const };
+    const store = createStore(demoScene, { settings });
+    expect(store.getState().settings).toBe(settings);
+    store.dispatch({ type: 'updateSettings', patch: { language: 'en' } });
+    expect(store.getState().settings).toEqual({ ...settings, language: 'en' });
   });
 });
 

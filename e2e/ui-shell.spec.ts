@@ -23,6 +23,7 @@ const ENABLED_IDS: ReadonlySet<string> = new Set([
   'info',
   'theme',
   'mute',
+  'settings',
 ]);
 
 type Box = { x: number; y: number; width: number; height: number };

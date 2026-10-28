@@ -136,6 +136,22 @@ export const ja = {
   'contextMenu.frameAll': '全体表示',
   'contextMenu.toggleWatch': '眺めるモード',
   'contextMenu.toggleInfo': '情報表示',
+  // 設定画面（S1-30）。テーマの選択肢は theme.brass・theme.wood、言語の選択肢は辞書を通さない
+  'settings.title': '設定',
+  'settings.close': '閉じる',
+  'settings.quality': '品質',
+  'settings.quality.high': '高品質',
+  'settings.quality.low': '軽量',
+  'settings.inputDevice': '入力デバイス',
+  'settings.inputDevice.auto': '自動',
+  'settings.inputDevice.mouse': 'マウス',
+  'settings.inputDevice.trackpad': 'トラックパッド',
+  'settings.trackpadScroll': '2 本指スクロールの割り当て',
+  'settings.trackpadScroll.pan': '平行移動',
+  'settings.trackpadScroll.orbit': '回転',
+  'settings.language': '言語',
+  'settings.theme': 'テーマ',
+  'settings.saveFailed': '設定を保存できなかった（次に開いたときは元の設定に戻る）',
 } as const;
 
 export type MessageKey = keyof typeof ja;
