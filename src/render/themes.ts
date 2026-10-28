@@ -22,6 +22,8 @@ import {
 } from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import type { Aabb } from '../core/layout/bounds';
+import { GEAR_KIND_LIST } from '../core/scene/gear-shape';
+import type { GearKind } from '../core/scene/types';
 import { QUALITY_PROFILES, type Quality, type ThemeId } from '../core/theme';
 import type { BaseMaterials } from './sync';
 
@@ -35,8 +37,35 @@ export interface PartLook {
   readonly woodGrain?: boolean; // 木目のテクスチャを貼る
 }
 
+// 歯車の材質（S2-05）。テーマと歯車の種類で決まる（GEAR_KIND_MATERIALS）
+export type GearMaterialId = 'brass' | 'steel' | 'bronze' | 'lightWood' | 'darkWood';
+
+export const GEAR_MATERIAL_LOOKS: Readonly<Record<GearMaterialId, PartLook>> = {
+  brass: { color: 0xc9a24a, metalness: 1, roughness: 0.32 }, // 真鍮
+  steel: { color: 0xb9bec4, metalness: 1, roughness: 0.28 }, // 鋼（銀色。シャフトより明るく磨いた面）
+  bronze: { color: 0xc07840, metalness: 1, roughness: 0.36 }, // 青銅（真鍮より赤み）
+  lightWood: { color: 0xb07a45, metalness: 0, roughness: 0.75, woodGrain: true }, // 明るい木
+  darkWood: { color: 0x7a4a28, metalness: 0, roughness: 0.78, woodGrain: true }, // 濃い木
+};
+
+// 歯車の種類ごとの材質（S2-05）。Record<GearKind, …> なので、種類を足すと書き忘れが型で分かる
+export const GEAR_KIND_MATERIALS: Readonly<
+  Record<GearKind, Readonly<Record<ThemeId, GearMaterialId>>>
+> = {
+  spur: { brass: 'brass', wood: 'lightWood' },
+  helical: { brass: 'brass', wood: 'lightWood' },
+  bevel: { brass: 'brass', wood: 'lightWood' },
+  crossedHelical: { brass: 'brass', wood: 'lightWood' },
+  worm: { brass: 'steel', wood: 'darkWood' },
+  wormWheel: { brass: 'bronze', wood: 'lightWood' },
+};
+
+export function gearLook(theme: ThemeId, kind: GearKind): PartLook {
+  return GEAR_MATERIAL_LOOKS[GEAR_KIND_MATERIALS[kind][theme]];
+}
+
 export interface ThemeLook {
-  readonly gear: PartLook;
+  // 歯車の見た目は種類ごとに gearLook（S2-05）
   readonly shaft: PartLook;
   readonly motor: PartLook;
   readonly floor: number;
@@ -50,7 +79,6 @@ export interface ThemeLook {
 
 export const THEME_LOOKS: Readonly<Record<ThemeId, ThemeLook>> = {
   brass: {
-    gear: { color: 0xc9a24a, metalness: 1, roughness: 0.32 },
     shaft: { color: 0x9aa0a6, metalness: 1, roughness: 0.25 }, // 鋼
     motor: { color: 0x2b2b2e, metalness: 0.3, roughness: 0.5 }, // 黒い塗装
     floor: 0x2a2c30,
@@ -62,7 +90,6 @@ export const THEME_LOOKS: Readonly<Record<ThemeId, ThemeLook>> = {
     ambient: { color: 0xffffff, intensity: 0.15 },
   },
   wood: {
-    gear: { color: 0xb07a45, metalness: 0, roughness: 0.75, woodGrain: true },
     shaft: { color: 0x6b4426, metalness: 0, roughness: 0.8 }, // 濃い木
     motor: { color: 0x3d4a3a, metalness: 0, roughness: 0.7 }, // 濃い緑の塗装
     floor: 0xe8dcc6,
@@ -153,8 +180,28 @@ function createWoodTexture(size: number, anisotropy: number): CanvasTexture {
 
 // テーマに木目のテクスチャを使う部品があるか
 export function usesWoodGrain(theme: ThemeId): boolean {
-  const { gear, shaft, motor } = THEME_LOOKS[theme];
-  return [gear, shaft, motor].some((part) => part.woodGrain === true);
+  const { shaft, motor } = THEME_LOOKS[theme];
+  const gears = GEAR_KIND_LIST.map((kind) => gearLook(theme, kind));
+  return [...gears, shaft, motor].some((part) => part.woodGrain === true);
+}
+
+// 種類ごとの歯車の基の材質。同じ材質の種類は同じ MeshStandardMaterial を共有する
+function gearMaterialsOf(
+  theme: ThemeId,
+  woodTexture: Texture | null,
+): Record<GearKind, MeshStandardMaterial> {
+  const byId = new Map<GearMaterialId, MeshStandardMaterial>();
+  const result = {} as Record<GearKind, MeshStandardMaterial>;
+  for (const kind of GEAR_KIND_LIST) {
+    const id = GEAR_KIND_MATERIALS[kind][theme];
+    let material = byId.get(id);
+    if (material === undefined) {
+      material = materialOf(GEAR_MATERIAL_LOOKS[id], woodTexture);
+      byId.set(id, material);
+    }
+    result[kind] = material;
+  }
+  return result;
 }
 
 function materialOf(look: PartLook, woodTexture: Texture | null): MeshStandardMaterial {
@@ -318,7 +365,7 @@ export function createThemeController(targets: ThemeTargets): ThemeController {
       const woodChanged = applyWoodTexture(theme, profile.woodTextureSize, profile.anisotropy);
       if (applied === null || applied.theme !== theme || woodChanged) {
         targets.setBaseMaterials({
-          gear: materialOf(look.gear, woodTexture),
+          gear: gearMaterialsOf(theme, woodTexture),
           shaft: materialOf(look.shaft, woodTexture),
           motor: materialOf(look.motor, woodTexture),
         });

@@ -37,3 +37,12 @@
 .gs-info-label__ratio {
   color: #c9ced6;
 }
+
+/* ウォームの組のギア比（S2-05） */
+.gs-info-label__worm {
+  color: #ffd27a;
+}
+
+.gs-info-label__worm[hidden] {
+  display: none;
+}

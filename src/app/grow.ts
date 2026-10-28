@@ -22,7 +22,7 @@ export function growSpec(
 }
 
 // 選択中の歯車の候補。選択が無い・歯車でない（シャフト）なら []
-// coaxialKind は同じ軸に作る歯車の種類（S2-01。パレットで種類を選ぶ UI は S2-05。それまで呼び出し側は 'spur'）
+// coaxialKind は同じ軸に作る歯車の種類（S2-01。S2-05 からパレットで選んだ種類 AppState.palette.kind）
 export function candidatesFor(
   scene: Scene,
   selection: string | null,

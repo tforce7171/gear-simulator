@@ -1,12 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { clickToneMix, type MeshVoice, type MotorHum } from '../core/audio-model';
+import { clickToneMix, type MeshKind, type MeshVoice, type MotorHum } from '../core/audio-model';
 import type { LockInfo } from '../core/kinematics/types';
 import type { Vec3 } from '../core/math/vec3';
 import { type AudioFrame, createAudioEngine } from './engine';
 
 // S1-25・S1-26: AudioContext を作る前の振る舞い（node には Web Audio が無いので、作った後は Playwright で確かめる）
 
-function voice(key: string, frequency: number, position: Vec3 = [0, 0, 0]): MeshVoice {
+function voice(
+  key: string,
+  frequency: number,
+  position: Vec3 = [0, 0, 0],
+  kind: MeshKind = 'spur',
+  slide = 0,
+): MeshVoice {
   return {
     key,
     gearId: key,
@@ -15,6 +21,8 @@ function voice(key: string, frequency: number, position: Vec3 = [0, 0, 0]): Mesh
     frequency,
     ...clickToneMix(frequency),
     position,
+    kind,
+    slide,
   };
 }
 
@@ -63,7 +71,17 @@ describe('createAudioEngine（開始前）', () => {
       contextState: 'none',
       muted: true,
       material: 'wood',
-      voices: [{ key: 'a', frequency: 12, click: 1, tone: 0, position: [0, 0, 0] }],
+      voices: [
+        {
+          key: 'a',
+          frequency: 12,
+          click: 1,
+          tone: 0,
+          position: [0, 0, 0],
+          kind: 'spur',
+          slide: 0,
+        },
+      ],
       background: null,
       motors: [],
       lockSounds: { impacts: 0, rattling: [] },
@@ -136,5 +154,19 @@ describe('createAudioEngine（開始前）', () => {
       console.warn = warn;
     }
     expect(engine.state().contextState).toBe('none');
+  });
+});
+
+describe('state の voices の種類（S2-05）', () => {
+  it('kind と slide をそのまま返す', () => {
+    const engine = createAudioEngine();
+    engine.update(
+      frame([voice('w', 1, [0, 0, 0], 'worm', 0.3), voice('h', 20, [1, 0, 0], 'helical')]),
+    );
+    const voices = engine.state().voices;
+    expect(voices.map((v) => [v.key, v.kind, v.slide])).toEqual([
+      ['w', 'worm', 0.3],
+      ['h', 'helical', 0],
+    ]);
   });
 });

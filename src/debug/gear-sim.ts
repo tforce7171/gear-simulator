@@ -105,7 +105,8 @@ export interface GearSimDebug {
   /**
    * 音の状態（S1-25）。contextState は AudioContext を作る前は 'none'（最初のユーザー操作で作る）。
    * voices は今鳴らしているかみ合い（動いている組のうち Layout.meshes の順で最初の 16 組）。
-   * key は meshKey、frequency は歯の通過頻度（Hz、クランプしない）、click・tone はクロスフェードの重み
+   * key は meshKey、frequency は歯の通過頻度（Hz、クランプしない）、click・tone はクロスフェードの重み。
+   * kind はかみ合いの種類（音色を決める）、slide はすべりの雑音の強さ（0〜1。S2-05）
    */
   getAudio(): AudioState;
   /**

@@ -1,7 +1,7 @@
 ---
 id: S2-05
 title: 音・テーマ・保存形式の拡張
-status: todo
+status: done
 depends: [S2-01, S2-02, S2-03, S2-04]
 ---
 
@@ -78,27 +78,27 @@ S2-01〜S2-04 で入れた 4 種類の歯車を、音・テーマ・保存・画
 
 ## テストケース
 ### Vitest
-- [ ] `meshTimbre`: `'helical'` の `click` < `'spur'` の `click`。`'worm'` の `slideNoise` > 0、`'spur'`・`'bevel'`・`'helical'` の `slideNoise` = 0。`'crossedHelical'` の `slideNoise` は `'worm'` より小さく 0 より大きい
-- [ ] `computeMeshVoices`: S2-03 の `worm-basic`（ウォーム 60 rpm、ホイール 30 歯）→ その組の f = 1 Hz、`kind: 'worm'`
-- [ ] `computeMeshVoices`: S2-01 の `helical-pair`（A 20 歯 60 rpm）→ f = 20 Hz、`kind: 'helical'`
-- [ ] `slideNoiseLevel('worm', 0)` = 0、周速が上がると単調に増え、1 を超えない
-- [ ] 材質の表: すべての `GearKind` に、両テーマの材質がある（型と実行時の両方）
-- [ ] 移行: version 1 のファイル（平歯車 3 枚・モーター 1 つ）→ `parseSaveFile` → `ok`、`migratedFrom === 1`、`file.version === 2`、`file.scene` が元のシーンと `toEqual`
-- [ ] 往復: `stage2-showcase` → `serializeSaveFile` → `parseSaveFile` → 元と `toEqual`、`migratedFrom === null`
-- [ ] 検証: version 2 で、ハスバに `hand` がない／ウォームの `teeth: 2`／`'bevel'` の子の `apex === side`／`'skew'` の `axisStep: 0` → いずれも `ok: false`（例外にしない）
-- [ ] version 3 のファイル → `unsupported-version`
+- [x] `meshTimbre`: `'helical'` の `click` < `'spur'` の `click`。`'worm'` の `slideNoise` > 0、`'spur'`・`'bevel'`・`'helical'` の `slideNoise` = 0。`'crossedHelical'` の `slideNoise` は `'worm'` より小さく 0 より大きい
+- [x] `computeMeshVoices`: S2-03 の `worm-basic`（ウォーム 60 rpm、ホイール 30 歯）→ その組の f = 1 Hz、`kind: 'worm'`
+- [x] `computeMeshVoices`: S2-01 の `helical-pair`（A 20 歯 60 rpm）→ f = 20 Hz、`kind: 'helical'`
+- [x] `slideNoiseLevel('worm', 0)` = 0、周速が上がると単調に増え、1 を超えない
+- [x] 材質の表: すべての `GearKind` に、両テーマの材質がある（型と実行時の両方）
+- [x] 移行: version 1 のファイル（平歯車 3 枚・モーター 1 つ）→ `parseSaveFile` → `ok`、`migratedFrom === 1`、`file.version === 2`、`file.scene` が元のシーンと `toEqual`
+- [x] 往復: `stage2-showcase` → `serializeSaveFile` → `parseSaveFile` → 元と `toEqual`、`migratedFrom === null`
+- [x] 検証: version 2 で、ハスバに `hand` がない／ウォームの `teeth: 2`／`'bevel'` の子の `apex === side`／`'skew'` の `axisStep: 0` → いずれも `ok: false`（例外にしない）
+- [x] version 3 のファイル → `unsupported-version`
 ### Playwright（`e2e/stage2.spec.ts`）
-- [ ] 通し: 空のシーン → 縦のシャフトを置く → パレットで「かさ」を選び、同じ軸の候補からかさ歯車 A → A のかさ歯車の候補（`getCandidates()` の `kind: 'bevel'`）から B（横）→ B のシャフトに、パレットで「ウォーム」を選んで同じ軸の候補からウォーム W → W からホイール H → A のシャフトにモーターを付ける → H のシャフトの ω が `A の ω × (±1) / 30`（符号は S2-02・S2-03 の式から計算）→ 保存して再読み込み → 同じシーン → Ctrl+Z で H が消える
-- [ ] `stage2-showcase.json` を読む → `locks` と `interferences` が空、すべてのシャフトの ω が 0 でない
-- [ ] プロパティ: ウォームを選ぶと歯数の入力がない（または無効）。かさ歯車の歯数を 24 にすると、相手のかさ歯車も 24 になる
-- [ ] エクスポート → インポートで `stage2-showcase` が元と等しい。ダウンロードしたファイルの `version === 2`
-- [ ] version 1 のファイルをインポート → 読み込める
-- [ ] `getAudio().voices` に、ウォームの組の音源がある（`kind` を返すよう `getAudio` を広げる）
+- [x] 通し: 空のシーン → 縦のシャフトを置く → パレットで「かさ」を選び、同じ軸の候補からかさ歯車 A → A のかさ歯車の候補（`getCandidates()` の `kind: 'bevel'`）から B（横）→ B のシャフトに、パレットで「ウォーム」を選んで同じ軸の候補からウォーム W → W からホイール H → A のシャフトにモーターを付ける → H のシャフトの ω が `A の ω × (±1) / 30`（符号は S2-02・S2-03 の式から計算）→ 保存して再読み込み → 同じシーン → Ctrl+Z で H が消える
+- [x] `stage2-showcase.json` を読む → `locks` と `interferences` が空、すべてのシャフトの ω が 0 でない
+- [x] プロパティ: ウォームを選ぶと歯数の入力がない（または無効）。かさ歯車の歯数を 24 にすると、相手のかさ歯車も 24 になる
+- [x] エクスポート → インポートで `stage2-showcase` が元と等しい。ダウンロードしたファイルの `version === 2`
+- [x] version 1 のファイルをインポート → 読み込める
+- [x] `getAudio().voices` に、ウォームの組の音源がある（`kind` を返すよう `getAudio` を広げる）
 ### Playwright（見た目、`e2e/visual/stage2.spec.ts`）
-- [ ] `stage2-showcase.json` を真鍮・木製で全体表示 → `screenshots/stage2-showcase-brass.png`、`screenshots/stage2-showcase-wood.png`
-- [ ] ハスバ・かさ・ウォーム・ねじ歯車の拡大を各テーマで（8 枚）→ `screenshots/stage2-<種類>-<テーマ>.png`
-- [ ] 情報表示 ON でウォームの組のギア比が出ている場面 → `screenshots/stage2-info-worm.png`
-- [ ] パレットとプロパティパネルの日本語・英語 → `screenshots/stage2-ui-ja.png`、`screenshots/stage2-ui-en.png`
+- [x] `stage2-showcase.json` を真鍮・木製で全体表示 → `screenshots/stage2-showcase-brass.png`、`screenshots/stage2-showcase-wood.png`
+- [x] ハスバ・かさ・ウォーム・ねじ歯車の拡大を各テーマで（8 枚）→ `screenshots/stage2-<種類>-<テーマ>.png`
+- [x] 情報表示 ON でウォームの組のギア比が出ている場面 → `screenshots/stage2-info-worm.png`
+- [x] パレットとプロパティパネルの日本語・英語 → `screenshots/stage2-ui-ja.png`、`screenshots/stage2-ui-en.png`
 
 ## 人が手で確かめる項目
 - 種類ごとの音色の違いが分かり、どれも耳障りでない。ウォームのすべり音が速さに応じて自然に変わる
@@ -106,6 +106,6 @@ S2-01〜S2-04 で入れた 4 種類の歯車を、音・テーマ・保存・画
 - パレットの種類の名前と、外周の候補の種類が親で決まることが、使っていて分かりやすい
 
 ## 完了の条件
-- [ ] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
-- [ ] design.md と後続のタスク資料に、必要な変更を反映した（§7、§9、§10 の `getAudio`）
-- [ ] `status: done` にしてコミットした
+- [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
+- [x] design.md と後続のタスク資料に、必要な変更を反映した（§7、§9、§10 の `getAudio`）
+- [x] `status: done` にしてコミットした

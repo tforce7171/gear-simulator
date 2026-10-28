@@ -1,6 +1,7 @@
 // プロパティパネルの中身（S1-20、要件 §3.2・§3.3・§5）。選んでいる歯車・シャフトの設定と、そのシャフトの
 // モーターの欄を組み立てる。選択・シーン（Undo を含む）・言語が変わるたびに作り直す。
-// 設定の変更はすべて編集コマンド（setGearTeeth・addMotor・updateMotor・removeMotor）で行い、
+// 歯車は種類の名前と、種類ごとの表示（ハスバのねじれの向き、かさ歯車の注記と向きの反転、ウォームの条数。S2-05）を出す。
+// 設定の変更はすべて編集コマンド（setGearTeeth・flipBevelApex・addMotor・updateMotor・removeMotor）で行い、
 // 1 回の確定を 1 回のコマンド（Undo 1 回）にする。値が変わらない確定ではコマンドを出さない
 import { onLanguageChange, t } from '../app/i18n';
 import type { AppAction, AppState } from '../app/store';
@@ -113,16 +114,42 @@ export function createProperties(deps: PropertiesDeps): Properties {
     return input;
   }
 
-  function gearSection(gear: Gear): HTMLElement {
+  function gearSection(scene: Scene, gear: Gear): HTMLElement {
     const section = h('section', 'gs-prop__section');
     section.append(text('h3', 'gs-prop__heading', 'properties.gear', undefined, 'prop-heading'));
+    const kind = text('span', 'gs-prop__value', `gearKind.${gear.kind}`, undefined, 'prop-kind');
+    kind.dataset.kind = gear.kind;
     section.append(
-      row('properties.kind', text('span', 'gs-prop__value', 'properties.kind.spur')),
+      row('properties.kind', kind),
       row(
         'properties.size',
         text('span', 'gs-prop__value', `properties.size.${gear.size}`, undefined, 'prop-size'),
       ),
     );
+    // 種類ごとの表示（S2-05）
+    if (gear.kind === 'helical') {
+      // ねじれの向きは表示だけ（外周の子は親の逆、同じ軸は右ねじれで決まる）
+      const hand = text(
+        'span',
+        'gs-prop__value',
+        `properties.hand.${gear.hand}`,
+        undefined,
+        'prop-hand',
+      );
+      hand.dataset.hand = gear.hand;
+      section.append(row('properties.hand', hand));
+    }
+    if (gear.kind === 'worm') {
+      // ウォームは 1 条で、歯数（条数）は変えられない（setGearTeeth は notAllowed。S2-03）
+      section.append(
+        row(
+          'properties.threads',
+          text('span', 'gs-prop__value', 'properties.worm.threads', undefined, 'prop-worm-threads'),
+        ),
+        text('span', 'gs-prop__hint', 'properties.worm.note'),
+      );
+      return section;
+    }
     const { minTeeth: min, maxTeeth: max } = GEAR_SIZES[gear.size];
     const setTeeth = (teeth: number): void =>
       command({ type: 'setGearTeeth', gearId: gear.id, teeth });
@@ -137,6 +164,25 @@ export function createProperties(deps: PropertiesDeps): Properties {
     stepper.append(dec, input, inc);
     const range = text('span', 'gs-prop__hint', 'properties.teeth.range', { min, max });
     section.append(row('properties.teeth', stepper), range);
+    if (gear.kind === 'bevel') {
+      // 歯数は木の親子のかさ歯車がまとめて変わる（setGearTeeth。S2-02）。向きの反転は flipBevelApex で、
+      // bevel のシャフトの子（apex は −side で決まる）は notAllowed なのでボタンを無効にする
+      section.append(
+        text('p', 'gs-prop__hint', 'properties.bevel.note', undefined, 'prop-bevel-note'),
+      );
+      const placement = scene.shafts[gear.shaftId]?.placement;
+      const fixed = placement?.kind === 'bevel' && placement.childGearId === gear.id;
+      const flip = button(
+        'gs-prop__toggle',
+        'prop-bevel-flip',
+        t('properties.bevel.flip'),
+        t(fixed ? 'properties.bevel.flip.disabled' : 'properties.bevel.flip.tooltip'),
+      );
+      flip.dataset.apex = String(gear.apex);
+      flip.disabled = fixed;
+      flip.addEventListener('click', () => command({ type: 'flipBevelApex', gearId: gear.id }));
+      section.append(flip);
+    }
     return section;
   }
 
@@ -290,7 +336,7 @@ export function createProperties(deps: PropertiesDeps): Properties {
     const content = h('div', 'gs-prop', 'prop-content');
     const gear = scene.gears[selection];
     if (gear !== undefined) {
-      content.append(gearSection(gear), motorSection(scene, gear.shaftId));
+      content.append(gearSection(scene, gear), motorSection(scene, gear.shaftId));
       return content;
     }
     if (scene.shafts[selection] !== undefined) {

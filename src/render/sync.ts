@@ -13,9 +13,11 @@ import type { MotionState } from '../core/kinematics/types';
 import type { Layout, ShaftLayout } from '../core/layout/types';
 import { axisVector } from '../core/math/axis';
 import { add, scale, type Vec3 } from '../core/math/vec3';
+import { GEAR_KIND_LIST } from '../core/scene/gear-shape';
 import type {
   Gear,
   GearId,
+  GearKind,
   Motor,
   MotorId,
   Scene,
@@ -153,9 +155,9 @@ function pulseLocked(set: MaterialSet, timeSec: number): void {
   for (const emphasis of EMPHASES) set[`locked-${emphasis}`].emissiveIntensity = intensity;
 }
 
-// 部品の種類ごとの基の材質（テーマが決める。S1-24）
+// 部品の種類ごとの基の材質（テーマが決める。S1-24）。歯車は種類ごと（S2-05。同じ材質を共有してよい）
 export interface BaseMaterials {
-  readonly gear: MeshStandardMaterial;
+  readonly gear: Readonly<Record<GearKind, MeshStandardMaterial>>;
   readonly shaft: MeshStandardMaterial;
   readonly motor: MeshStandardMaterial;
 }
@@ -163,6 +165,30 @@ export interface BaseMaterials {
 // 材質の組の全部を捨てる（基の材質も含む。テクスチャは持ち主が捨てる）
 function disposeSet(set: MaterialSet): void {
   for (const material of new Set(Object.values(set))) material.dispose();
+}
+
+type GearMaterialSets = Readonly<Record<GearKind, MaterialSet>>;
+
+// 歯車の種類ごとの材質の組。基の材質が同じ種類は同じ組を共有する
+function gearMaterialSets(
+  base: Readonly<Record<GearKind, MeshStandardMaterial>>,
+): GearMaterialSets {
+  const byBase = new Map<MeshStandardMaterial, MaterialSet>();
+  const result = {} as Record<GearKind, MaterialSet>;
+  for (const kind of GEAR_KIND_LIST) {
+    const material = base[kind];
+    let set = byBase.get(material);
+    if (set === undefined) {
+      set = materialSet(material);
+      byBase.set(material, set);
+    }
+    result[kind] = set;
+  }
+  return result;
+}
+
+function uniqueSets(sets: GearMaterialSets): MaterialSet[] {
+  return [...new Set(Object.values(sets))];
 }
 
 function sameSet(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
@@ -215,8 +241,12 @@ export interface SceneSync {
 export function createSceneSync(cache: GeometryCache = createGeometryCache()): SceneSync {
   const root = new Group();
   // テーマ（S1-24）が setBaseMaterials で差し替えるまでの材質
-  let gearMaterials = materialSet(
-    new MeshStandardMaterial({ color: 0xa0a4aa, metalness: 0.3, roughness: 0.5 }),
+  const defaultGear = new MeshStandardMaterial({ color: 0xa0a4aa, metalness: 0.3, roughness: 0.5 });
+  let gearMaterials = gearMaterialSets(
+    Object.fromEntries(GEAR_KIND_LIST.map((kind) => [kind, defaultGear])) as Record<
+      GearKind,
+      MeshStandardMaterial
+    >,
   );
   let shaftMaterials = materialSet(
     new MeshStandardMaterial({ color: 0x7a7f87, metalness: 0.4, roughness: 0.4 }),
@@ -270,7 +300,10 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
       if (placed === undefined) continue; // 木から外れた歯車は描かない
       let entry = gears.get(gear.id);
       if (entry === undefined) {
-        const body = new Mesh(cache.acquire(gear, gear.size, gear.teeth), gearMaterials.none);
+        const body = new Mesh(
+          cache.acquire(gear, gear.size, gear.teeth),
+          gearMaterials[gear.kind].none,
+        );
         body.scale.z = gearBodyScaleZ(gear);
         // 影（S1-24）: 歯車は影を落とし、受ける。品質が軽量なら renderer 側で影の計算ごと止める
         body.castShadow = true;
@@ -372,7 +405,9 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
   // 作り直した部品にも効くように、sync と setHighlight のたびに全部品の材質を選び直す
   function applyHighlight(): void {
     version++;
-    for (const [id, entry] of gears) entry.body.material = gearMaterials[levelOf(id)];
+    for (const [id, entry] of gears) {
+      entry.body.material = gearMaterials[entry.gear.kind][levelOf(id)];
+    }
     for (const [id, entry] of shafts) entry.object.material = shaftMaterials[levelOf(id)];
     // モーターはシャフトとして選ばれるので、シャフトと同じに光らせる（仮の部品の見た目も同じ）
     for (const entry of motors.values()) {
@@ -438,14 +473,14 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
       for (const [id, entry] of motors) shake(entry.object, entry.base, shakeOf(id, timeSec));
       if (warnings.locked.size > 0) {
         version++; // 震えている
-        pulseLocked(gearMaterials, timeSec);
+        for (const set of uniqueSets(gearMaterials)) pulseLocked(set, timeSec);
         pulseLocked(shaftMaterials, timeSec);
         pulseLocked(motorMaterials, timeSec);
       }
     },
     setBaseMaterials(materials) {
-      const old = [gearMaterials, shaftMaterials, motorMaterials];
-      gearMaterials = materialSet(materials.gear);
+      const old = [...uniqueSets(gearMaterials), shaftMaterials, motorMaterials];
+      gearMaterials = gearMaterialSets(materials.gear);
       shaftMaterials = materialSet(materials.shaft);
       motorMaterials = materialSet(materials.motor);
       applyHighlight();

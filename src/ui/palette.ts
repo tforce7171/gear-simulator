@@ -1,17 +1,23 @@
-// 部品パレットの中身（S1-17）。歯車の大きさの選択と、床へドラッグして置く起点のシャフトの項目。
+// 部品パレットの中身（S1-17）。歯車の大きさの選択、生やす歯車の種類の選択（S2-05）と、床へドラッグして置く起点のシャフトの項目。
 // ドラッグは項目に setPointerCapture して受け、位置（ページ座標）を知らせる。どこで離したか
 // （描画領域の上か）の判断と、置く処理は受け取る側（app/interactions）が行う
 import type { MessageKey } from '../core/i18n';
-import type { SizeKey } from '../core/scene/types';
+import { GEAR_KIND_LIST } from '../core/scene/gear-shape';
+import type { GearKind, SizeKey } from '../core/scene/types';
 import { bindText, h } from './dom';
 import './palette.css';
 
 export const PALETTE_SIZES: readonly SizeKey[] = ['S', 'M', 'L'];
+// 生やす歯車の種類の並び（S2-05）: 平歯車・ハスバ・かさ・ウォーム・ホイール・ねじ歯車
+export const PALETTE_KINDS: readonly GearKind[] = GEAR_KIND_LIST;
 
 export interface PaletteDeps {
   readonly body: HTMLElement; // UiShell.palette.body
   readonly getSize: () => SizeKey;
   readonly setSize: (size: SizeKey) => void;
+  // 同じ軸の候補で作る歯車の種類（S2-05）
+  readonly getKind: () => GearKind;
+  readonly setKind: (kind: GearKind) => void;
   // 起点のシャフトの項目のドラッグ（左ボタン）
   readonly onRootDragStart: (pageX: number, pageY: number) => void;
   readonly onRootDragMove: (pageX: number, pageY: number) => void;
@@ -20,7 +26,7 @@ export interface PaletteDeps {
 }
 
 export interface Palette {
-  // 大きさのボタンの押された状態を、今の値に合わせる（ストアが変わったら呼ぶ）
+  // 大きさ・種類のボタンの押された状態を、今の値に合わせる（ストアが変わったら呼ぶ）
   refresh(): void;
   dispose(): void;
 }
@@ -56,6 +62,32 @@ export function createPalette(deps: PaletteDeps): Palette {
   }
   sizeSection.append(sizeLabel, sizeGroup);
 
+  // 生やす歯車の種類（S2-05）。同じ軸の候補はこの種類で作る（外周などの候補の種類は親で決まる）
+  const kindSection = h('section', 'gs-palette__section');
+  const kindLabel = h('h3', 'gs-palette__label', 'palette-kind-label');
+  kindLabel.id = 'gs-palette-kind-label';
+  text(kindLabel, 'palette.kind');
+  const kindGroup = h('div', 'gs-palette__kinds', 'palette-kind');
+  kindGroup.setAttribute('role', 'radiogroup');
+  kindGroup.setAttribute('aria-labelledby', kindLabel.id);
+  const kindButtons = new Map<GearKind, HTMLButtonElement>();
+  for (const kind of PALETTE_KINDS) {
+    const button = h('button', 'gs-palette__kind', `palette-kind-${kind}`);
+    button.type = 'button';
+    button.setAttribute('role', 'radio');
+    button.dataset.kind = kind;
+    text(button, `gearKind.${kind}`);
+    button.addEventListener('click', () => {
+      deps.setKind(kind);
+      refresh();
+    });
+    kindButtons.set(kind, button);
+    kindGroup.append(button);
+  }
+  const kindHint = h('p', 'gs-palette__hint', 'palette-kind-hint');
+  text(kindHint, 'palette.kind.hint');
+  kindSection.append(kindLabel, kindGroup, kindHint);
+
   // 置く部品
   const partsSection = h('section', 'gs-palette__section');
   const partsLabel = h('h3', 'gs-palette__label');
@@ -71,7 +103,7 @@ export function createPalette(deps: PaletteDeps): Palette {
   rootItem.append(icon, label);
   partsSection.append(partsLabel, rootItem);
 
-  deps.body.append(sizeSection, partsSection);
+  deps.body.append(sizeSection, kindSection, partsSection);
 
   // ドラッグ: 項目にポインターを捕捉し、パネルの外（描画領域の上）に出ても受け取る
   let dragPointer: number | null = null;
@@ -119,6 +151,12 @@ export function createPalette(deps: PaletteDeps): Palette {
       button.setAttribute('aria-checked', String(on));
       button.classList.toggle('is-selected', on);
     }
+    const kind = deps.getKind();
+    for (const [k, button] of kindButtons) {
+      const on = k === kind;
+      button.setAttribute('aria-checked', String(on));
+      button.classList.toggle('is-selected', on);
+    }
   }
   refresh();
 
@@ -127,6 +165,7 @@ export function createPalette(deps: PaletteDeps): Palette {
     dispose() {
       for (const off of unbind) off();
       sizeSection.remove();
+      kindSection.remove();
       partsSection.remove();
     },
   };

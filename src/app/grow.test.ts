@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { applyCommand } from '../core/edit/commands';
+import type { GrowCandidate } from '../core/layout/candidates';
 import { createSequentialIdGenerator } from '../core/scene/ids';
 import type { Scene, SpurGear } from '../core/scene/types';
 import { candidateSpec, candidatesFor, growCommand, growSpec } from './grow';
@@ -93,6 +94,37 @@ describe('growCommand', () => {
       teeth: 30,
       kind: 'spur',
     });
+  });
+});
+
+describe('パレットの種類で同じ軸の候補を作る（S2-05）', () => {
+  for (const kind of ['spur', 'helical', 'bevel', 'worm', 'wormWheel', 'crossedHelical'] as const) {
+    it(`${kind} → 同じ軸の候補はその種類で、growGear の kind も ${kind}`, () => {
+      const list = candidatesFor(oneRoot, 'gear_a', 'M', kind).filter((c) => c.kind === 'coaxial');
+      expect(list.length).toBeGreaterThan(0);
+      for (const c of list) {
+        expect(c.shape.kind).toBe(kind);
+        expect(growCommand(c)).toMatchObject({ mode: 'coaxial', kind });
+      }
+    });
+  }
+
+  it('ウォームは歯数によらず 1 条', () => {
+    const [c] = candidatesFor(oneRoot, 'gear_a', 'M', 'worm').filter((x) => x.kind === 'coaxial');
+    const result = applyCommand(oneRoot, growCommand(c as GrowCandidate), {
+      ids: createSequentialIdGenerator(),
+    });
+    if (!result.ok) throw new Error(result.error.message);
+    const created = Object.values(result.scene.gears).find((g) => g.kind === 'worm');
+    expect(created?.teeth).toBe(1);
+  });
+
+  it('外周の候補の種類は親で決まり、パレットの種類によらない', () => {
+    const perimeter = candidatesFor(oneRoot, 'gear_a', 'M', 'worm').filter(
+      (c) => c.kind === 'perimeter',
+    );
+    expect(perimeter.length).toBeGreaterThan(0);
+    for (const c of perimeter) expect(c.shape.kind).toBe('spur');
   });
 });
 

@@ -164,6 +164,7 @@ export function createInteractions(deps: InteractionsDeps): Interactions {
     scene: Scene;
     selection: string | null;
     size: string;
+    kind: string; // パレットの種類（S2-05）
     list: readonly GrowCandidate[];
     specs: readonly CandidateSpec[];
   } | null = null;
@@ -187,14 +188,15 @@ export function createInteractions(deps: InteractionsDeps): Interactions {
       memo !== null &&
       memo.scene === scene &&
       memo.selection === selection &&
-      memo.size === palette.size
+      memo.size === palette.size &&
+      memo.kind === palette.kind
     ) {
       return memo;
     }
-    // 同じ軸に作る歯車の種類。パレットで種類を選ぶ UI は S2-05 で足す（S2-01）
-    const list = candidatesFor(scene, selection, palette.size, 'spur');
+    // 同じ軸に作る歯車の種類はパレットで選んだもの（S2-05）
+    const list = candidatesFor(scene, selection, palette.size, palette.kind);
     const specs = list.map((c) => candidateSpec(scene, c));
-    candidateMemo = { scene, selection, size: palette.size, list, specs };
+    candidateMemo = { scene, selection, size: palette.size, kind: palette.kind, list, specs };
     return candidateMemo;
   }
 

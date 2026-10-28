@@ -62,7 +62,7 @@
 | [S2-02](stage2/02-bevel.md) | かさ歯車 | S1-31 | done |
 | [S2-03](stage2/03-worm.md) | ウォームギア | S1-31 | done |
 | [S2-04](stage2/04-crossed-helical.md) | ねじ歯車 | S2-01, S2-03 | done |
-| [S2-05](stage2/05-stage2-integration.md) | 音・テーマ・保存形式の拡張 | S2-01〜S2-04 | todo |
+| [S2-05](stage2/05-stage2-integration.md) | 音・テーマ・保存形式の拡張 | S2-01〜S2-04 | done |
 
 ## 段階 3: 同軸・直線の機構
 

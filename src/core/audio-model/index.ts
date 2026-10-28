@@ -1,3 +1,7 @@
+import type { MeshKind } from '../geometry/can-mesh';
+
+export type { MeshKind } from '../geometry/can-mesh';
+
 import type { MotionState } from '../kinematics/types';
 import type { Layout } from '../layout/types';
 import type { Vec3 } from '../math/vec3';
@@ -23,6 +27,8 @@ export const CLICK_JITTER = 0.03;
 export const CLICK_LATENCY = 0.03;
 // 主音量
 export const MASTER_GAIN = 0.5;
+// すべりの雑音が頭打ちになる周速（mm/s。S2-05）。中のウォーム（ピッチ円半径 10 mm）で約 190 rpm
+export const SLIDE_NOISE_FULL_SPEED = 200;
 // ミュートの切り替えで主音量を変える時間（秒）
 export const MUTE_RAMP_SEC = 0.05;
 
@@ -50,9 +56,19 @@ export interface ToneMaterial {
   readonly gain: number; // 連続音の音量
 }
 
+// すべりの雑音（S2-05）: ループするノイズ → 帯域通過フィルタ。強さ 0〜1 に gain を掛ける。
+// 中心の周波数は強さに合わせて frequency × (1 − spread/2 + spread × 強さ) まで動かす（速いほど高く）
+export interface SlideNoiseMaterial {
+  readonly frequency: number; // 帯域の中心（Hz）
+  readonly q: number; // 帯域の鋭さ
+  readonly spread: number; // 強さで中心を動かす幅（frequency に対する比）
+  readonly gain: number; // 強さ 1 のときの音量
+}
+
 export interface AudioMaterialParams {
   readonly click: ClickParams;
   readonly tone: ToneMaterial;
+  readonly slide: SlideNoiseMaterial;
 }
 
 // 材質のパラメータ（S1-25 の資料の表）。時間は秒
@@ -68,6 +84,7 @@ export const MATERIALS: Readonly<Record<AudioMaterialId, AudioMaterialParams>> =
       gain: 0.5,
     },
     tone: { harmonics: [1, 0.6, 0.45, 0.3, 0.2, 0.12], lowpass: 4000, noise: 0.05, gain: 0.25 },
+    slide: { frequency: 2600, q: 4, spread: 0.4, gain: 0.12 },
   },
   wood: {
     click: {
@@ -79,8 +96,59 @@ export const MATERIALS: Readonly<Record<AudioMaterialId, AudioMaterialParams>> =
       gain: 0.6,
     },
     tone: { harmonics: [1, 0.3, 0.1], lowpass: 900, noise: 0.15, gain: 0.2 },
+    slide: { frequency: 900, q: 3, spread: 0.4, gain: 0.14 },
   },
 };
+
+// かみ合いの種類ごとの音色（S2-05）。平歯車を 1 とした倍率で、click はクリックの音量、hum は連続音の音量、
+// slideNoise はすべりの雑音の強さの上限（0〜1）。手で聞いて調整したら資料（S2-05）の表も直す
+export interface MeshTimbre {
+  readonly click: number;
+  readonly hum: number;
+  readonly slideNoise: number;
+}
+
+// ねじ歯車のすべりの雑音は、ウォームのこの倍
+const CROSSED_SLIDE_RATIO = 0.3;
+const WORM_SLIDE = 1;
+// ハスバ・ねじ歯車・ウォームの連続音の倍率（なめらかにかみ合ってうなりが勝つ）
+const SMOOTH_HUM = 1.5;
+
+export const MESH_TIMBRES: Readonly<Record<MeshKind, MeshTimbre>> = {
+  spur: { click: 1, hum: 1, slideNoise: 0 },
+  bevel: { click: 1, hum: 1, slideNoise: 0 },
+  helical: { click: 0.4, hum: SMOOTH_HUM, slideNoise: 0 },
+  crossedHelical: { click: 0.4, hum: SMOOTH_HUM, slideNoise: CROSSED_SLIDE_RATIO * WORM_SLIDE },
+  worm: { click: 0.2, hum: SMOOTH_HUM, slideNoise: WORM_SLIDE },
+};
+
+export const MESH_KINDS = Object.keys(MESH_TIMBRES) as readonly MeshKind[];
+
+export function meshTimbre(kind: MeshKind): MeshTimbre {
+  return MESH_TIMBRES[kind];
+}
+
+// すべりの雑音の強さ（0〜1）。周速（mm/s。向きは問わない）に比例して上がり、SLIDE_NOISE_FULL_SPEED で
+// 種類の上限（meshTimbre の slideNoise）に頭打ちになる
+export function slideNoiseLevel(kind: MeshKind, pitchLineSpeed: number): number {
+  const speed = Math.abs(pitchLineSpeed);
+  if (!(speed > 0)) return 0;
+  return MESH_TIMBRES[kind].slideNoise * Math.min(1, speed / SLIDE_NOISE_FULL_SPEED);
+}
+
+// すべりの雑音の帯域の中心（Hz）と音量。level は slideNoiseLevel
+export function slideNoiseParams(
+  level: number,
+  material: AudioMaterialId,
+): { frequency: number; q: number; gain: number } {
+  const slide = MATERIALS[material].slide;
+  const l = clamp(level, 0, 1);
+  return {
+    frequency: slide.frequency * (1 - slide.spread / 2 + slide.spread * l),
+    q: slide.q,
+    gain: slide.gain * l,
+  };
+}
 
 // かみ合い 1 組の音源のキー。2 つの歯車の ID を文字列順に並べて | でつなぐ
 export function meshKey(a: GearId, b: GearId): string {
@@ -174,6 +242,8 @@ export interface MeshVoice {
   readonly click: number; // clickToneMix の重み
   readonly tone: number;
   readonly position: Vec3; // かみ合いの接点（meshContactPoint。S1-26）
+  readonly kind: MeshKind; // かみ合いの種類（音色を決める。S2-05）
+  readonly slide: number; // すべりの雑音の強さ（slideNoiseLevel。S2-05）
 }
 
 // Layout.meshes の順に、かみ合い 1 組ずつの音源の状態を返す（止まっている組も含む）
@@ -185,6 +255,14 @@ export function computeMeshVoices(scene: Scene, layout: Layout, motion: MotionSt
     if (gear === undefined) continue;
     const omega = motion.omegas[gear.shaftId] ?? 0;
     const frequency = toothPassFrequency(gear.teeth, omega);
+    // 周速は 2 枚のピッチ円の周速の大きいほう（ウォームの組ではウォームの周速がすべりの速さに近い）
+    let speed = 0;
+    for (const id of [mesh.a, mesh.b]) {
+      const g = scene.gears[id];
+      const r = layout.gears[id]?.pitchRadius ?? 0;
+      if (g === undefined) continue;
+      speed = Math.max(speed, r * Math.abs(motion.omegas[g.shaftId] ?? 0));
+    }
     voices.push({
       key: meshKey(mesh.a, mesh.b),
       gearId,
@@ -193,6 +271,8 @@ export function computeMeshVoices(scene: Scene, layout: Layout, motion: MotionSt
       frequency,
       ...clickToneMix(frequency),
       position: meshContactPoint(layout, mesh),
+      kind: mesh.kind,
+      slide: slideNoiseLevel(mesh.kind, speed),
     });
   }
   return voices;

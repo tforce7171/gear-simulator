@@ -13,6 +13,29 @@ export interface GearInfo {
   readonly direction: 1 | -1 | 0; // ω の符号（軸の正の向きから見て、正は反時計回り）。止まっていれば 0
   readonly ratio: number | null; // 基準の速度 ÷ この歯車の速度 の絶対値。決まらなければ null
   readonly referenceMotorId: MotorId | null;
+  // ウォームの組（S2-05）に入っていれば、その組のギア比（ホイールの歯数 : ウォームの条数）。入っていなければ null
+  readonly wormRatio: WormRatio | null;
+}
+
+export interface WormRatio {
+  readonly wheelTeeth: number;
+  readonly threads: number;
+}
+
+// 歯車ごとの、ウォームの組のギア比（Layout.meshes の kind 'worm' の順で最初の組）
+function wormRatios(scene: Scene, layout: Layout): Map<GearId, WormRatio> {
+  const result = new Map<GearId, WormRatio>();
+  for (const mesh of layout.meshes) {
+    if (mesh.kind !== 'worm') continue;
+    const a = scene.gears[mesh.a];
+    const b = scene.gears[mesh.b];
+    if (a === undefined || b === undefined) continue;
+    const worm = a.kind === 'worm' ? a : b;
+    const wheel = worm === a ? b : a;
+    const ratio = { wheelTeeth: wheel.teeth, threads: worm.teeth };
+    for (const id of [mesh.a, mesh.b]) if (!result.has(id)) result.set(id, ratio);
+  }
+  return result;
 }
 
 // ロケールに依らない符号単位の順（決定的にするため）
@@ -40,6 +63,7 @@ export function computeGearInfo(
     referenceOf.set(index, { motorId: motor.id, shaftId: motor.shaftId });
   }
 
+  const worms = wormRatios(scene, layout);
   const result: Record<GearId, GearInfo> = {};
   for (const gear of Object.values(scene.gears)) {
     const omega = motion.omegas[gear.shaftId] ?? 0;
@@ -58,6 +82,7 @@ export function computeGearInfo(
       direction: moving ? (omega > 0 ? 1 : -1) : 0,
       ratio,
       referenceMotorId: reference?.motorId ?? null,
+      wormRatio: worms.get(gear.id) ?? null,
     };
   }
   return result;
@@ -73,6 +98,11 @@ export function formatRpm(rpm: number): string {
 // "3.00 : 1"。決まらなければ "—"
 export function formatRatio(ratio: number | null): string {
   return ratio === null ? '—' : `${ratio.toFixed(2)} : 1`;
+}
+
+// ウォームの組のギア比 "30:1"（S2-05）。null なら ""
+export function formatWormRatio(ratio: WormRatio | null): string {
+  return ratio === null ? '' : `${ratio.wheelTeeth}:${ratio.threads}`;
 }
 
 // 情報を出す歯車（ID の昇順）。ON なら全歯車、OFF なら選択中の歯車だけ（歯車でなければ無し）
