@@ -1,7 +1,7 @@
 ---
 id: S1-10
 title: 生やす候補の列挙
-status: doing
+status: done
 depends: [S1-08, S1-09]
 ---
 

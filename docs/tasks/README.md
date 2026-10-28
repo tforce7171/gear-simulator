@@ -43,7 +43,7 @@
 | [S1-19](stage1/19-handles.md) | 外周の角度の円弧ハンドル、シャフト上の位置のドラッグ | S1-18 | done |
 | [S1-20](stage1/20-property-editing.md) | プロパティの編集（歯数、モーター） | S1-07, S1-16 | done |
 | [S1-21](stage1/21-hand-rotation.md) | 手で回す | S1-07, S1-16 | done |
-| [S1-22](stage1/22-lock-interference-pause.md) | ロックの表示、干渉の警告、一時停止 | S1-07, S1-08, S1-16 | doing |
+| [S1-22](stage1/22-lock-interference-pause.md) | ロックの表示、干渉の警告、一時停止 | S1-07, S1-08, S1-16 | done |
 | [S1-23](stage1/23-info-overlay.md) | 情報表示 | S1-07, S1-15 | done |
 | [S1-24](stage1/24-themes.md) | テーマと質感 | S1-04 | done |
 | [S1-25](stage1/25-audio-basic.md) | 音（基本） | S1-07, S1-24 | done |
