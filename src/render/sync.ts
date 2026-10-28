@@ -15,6 +15,8 @@ import { axisVector } from '../core/math/axis';
 import { add, scale, type Vec3 } from '../core/math/vec3';
 import { GEAR_KIND_LIST } from '../core/scene/gear-shape';
 import type {
+  Anchor,
+  AnchorId,
   Gear,
   GearId,
   GearKind,
@@ -25,6 +27,14 @@ import type {
   ShaftId,
   SizeKey,
 } from '../core/scene/types';
+import {
+  ANCHOR_BASE_SIZE,
+  ANCHOR_BASE_THICKNESS,
+  ANCHOR_FOOT_SIZE,
+  ANCHOR_FOOT_THICKNESS,
+  ANCHOR_PILLAR_RADIUS,
+  anchorFrame,
+} from './anchor';
 import { placeOnAxis } from './frame';
 import { createGeometryCache, type GeometryCache, gearBodyScaleZ } from './gear-geometry';
 import { setPickTarget } from './picking';
@@ -217,6 +227,13 @@ interface MotorEntry {
   base: Quaternion;
 }
 
+// 固定具（S3-01）。台座・支柱・床の足。地面に固定されているので震えない。選べない（当たり判定なし）
+interface AnchorEntry {
+  anchor: Anchor;
+  group: Group;
+  parts: Mesh[];
+}
+
 export interface SceneSync {
   readonly root: Group;
   sync(scene: Scene, layout: Layout): void;
@@ -234,6 +251,7 @@ export interface SceneSync {
   // 部品の形・位置・向き・材質が変わるたびに増える数（影マップを描き直すかの判断に使う。S1-24）
   version(): number;
   gearCount(): number;
+  anchorCount(): number; // 描いている固定具の数（S3-01）
 }
 
 // シーンとレイアウトから Three.js のオブジェクトを同期する。
@@ -268,6 +286,24 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
   const gears = new Map<GearId, GearEntry>();
   const shafts = new Map<ShaftId, ShaftEntry>();
   const motors = new Map<MotorId, MotorEntry>();
+  const anchors = new Map<AnchorId, AnchorEntry>();
+  // 固定具の形（大きさは固定なので共有する。支柱は高さ 1 を scale.y で伸ばす）
+  const anchorBaseGeometry = new BoxGeometry(
+    ANCHOR_BASE_SIZE,
+    ANCHOR_BASE_SIZE,
+    ANCHOR_BASE_THICKNESS,
+  );
+  const anchorPillarGeometry = new CylinderGeometry(
+    ANCHOR_PILLAR_RADIUS,
+    ANCHOR_PILLAR_RADIUS,
+    1,
+    12,
+  );
+  const anchorFootGeometry = new BoxGeometry(
+    ANCHOR_FOOT_SIZE,
+    ANCHOR_FOOT_THICKNESS,
+    ANCHOR_FOOT_SIZE,
+  );
   let lastScene: Scene | undefined;
   let lastLayout: Layout | undefined;
   let version = 0;
@@ -384,6 +420,44 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
     }
   }
 
+  // 固定具は少ないので、シーンかレイアウトが変わるたびに全部置き直す
+  function syncAnchors(scene: Scene, layout: Layout): void {
+    for (const entry of anchors.values()) root.remove(entry.group);
+    anchors.clear();
+    for (const anchor of Object.values(scene.anchors)) {
+      if (anchor.target.kind !== 'shaft') continue;
+      const placed = layout.shafts[anchor.target.id];
+      if (placed === undefined) continue;
+      const motor = Object.values(scene.motors).find((m) => m.shaftId === anchor.target.id);
+      const frame = anchorFrame(
+        placed,
+        motor === undefined ? null : MOTOR_BOX[motor.size],
+        MOTOR_GAP,
+      );
+      const group = new Group();
+      const base = new Mesh(anchorBaseGeometry, shaftMaterials.none);
+      base.castShadow = true;
+      placeOnAxis(base, frame.baseCenter, placed.axis);
+      group.add(base);
+      const parts: Mesh[] = [base];
+      if (frame.pillar !== null) {
+        const { top, bottom } = frame.pillar;
+        const pillar = new Mesh(anchorPillarGeometry, shaftMaterials.none);
+        pillar.castShadow = true;
+        pillar.scale.y = top[1] - bottom[1];
+        pillar.position.set(top[0], (top[1] + bottom[1]) / 2, top[2]);
+        const foot = new Mesh(anchorFootGeometry, shaftMaterials.none);
+        foot.position.set(bottom[0], bottom[1] + ANCHOR_FOOT_THICKNESS / 2, bottom[2]);
+        foot.receiveShadow = true;
+        group.add(pillar, foot);
+        parts.push(pillar, foot);
+      }
+      group.userData.anchorId = anchor.id;
+      root.add(group);
+      anchors.set(anchor.id, { anchor, group, parts });
+    }
+  }
+
   // ids のどれかに当てはまれば効く（モーターは自分とそのシャフト）。
   // 優先順位: 仮の部品の見た目 → ロック → 干渉（どちらも選択・マウスと組み合わせる）→ 選択 → マウス
   function levelOf(...ids: string[]): MaterialLevel {
@@ -413,6 +487,11 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
     for (const entry of motors.values()) {
       entry.object.material = motorMaterials[levelOf(entry.motor.id, entry.motor.shaftId)];
     }
+    // 固定具は固定したシャフトと同じに光らせる（ロックの赤・選択の水色。S3-01）
+    for (const entry of anchors.values()) {
+      const material = shaftMaterials[levelOf(entry.anchor.target.id)];
+      for (const part of entry.parts) part.material = material;
+    }
   }
 
   // ロック中なら軸まわりの小さなゆれ（rad）。描画だけに加える
@@ -436,6 +515,7 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
       syncGears(scene, layout);
       syncShafts(scene, layout);
       syncMotors(scene, layout);
+      syncAnchors(scene, layout);
       lastScene = scene;
       lastLayout = layout;
       applyHighlight();
@@ -488,5 +568,6 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
     },
     version: () => version,
     gearCount: () => gears.size,
+    anchorCount: () => anchors.size,
   };
 }
