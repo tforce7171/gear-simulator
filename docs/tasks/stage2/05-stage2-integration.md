@@ -31,14 +31,14 @@ S2-01〜S2-04 で入れた 4 種類の歯車を、音・テーマ・保存・画
   - 音の材質（`AudioMaterialId`）はテーマで決まるまま（種類では変えない）
 - **保存形式の version 2**（S1-28 の拡張）
   - `CURRENT_SAVE_VERSION = 2`。`MIGRATIONS[1]`（version 1 → 2）を登録する。version 1 のシーンは平歯車と `root`/`mesh`/`detached` だけなので、中身はそのままで `version` だけ 2 にする
-  - version 2 の検証（形は `parseScene`、意味は `validateScene`。S1-28）: 歯車の種類ごとのフィールド（`hand`、`apex`、ウォームの `teeth === 1` など）、配置 `'bevel'`・`'skew'` の整合（親子の種類、`axisStep` が 1 か 2、子の `apex === -side` など）。不正なら S1-28 と同じくエラーの結果を返す（`'bevel'` の分は S2-02 で `validateScene` に入れ済み: `invalidApex`・`invalidAxisStep`・`invalidSide`・`bevelApexMismatch`・`meshKindMismatch`）
+  - version 2 の検証（形は `parseScene`、意味は `validateScene`。S1-28）: 歯車の種類ごとのフィールド（`hand`、`apex`、ウォームの `teeth === 1` など）、配置 `'bevel'`・`'skew'` の整合（親子の種類、`axisStep` が 1 か 2、子の `apex === -side` など）。不正なら S1-28 と同じくエラーの結果を返す（`'bevel'` の分は S2-02 で `validateScene` に入れ済み: `invalidApex`・`invalidAxisStep`・`invalidSide`・`bevelApexMismatch`・`meshKindMismatch`。`'skew'` とウォームの分は S2-03 で入れ済み: `skew` の `axisStep`・`side`（`invalidAxisStep`・`invalidSide`）、親子がウォームとホイール（`meshKindMismatch`）、ウォームの `teeth === 1`（`teethOutOfRange`））
   - 段階 2 の部品を含むシーンを、段階 1 だけのアプリ（version 1 までしか読めない）に読ませると `unsupported-version` になる（version を上げる理由）
-- **パレット**: 「生やす歯車の種類」を選ぶ欄を足す（平歯車・ハスバ・かさ・ウォーム・ホイール・ねじ歯車）。同じ軸の候補はこの種類で作る（S2-01 で足した引数に渡す）。選んでいる種類は、パレットで選んでいる大きさ（S1-17）と同じ所に持つ（シーンには含めず、Undo の対象にしない）。外周の候補の種類は親で決まる（ハスバ → 逆向きのハスバ、かさ → かさ、ウォーム ↔ ホイール、ねじ → ねじ）
+- **パレット**: 「生やす歯車の種類」を選ぶ欄を足す（平歯車・ハスバ・かさ・ウォーム・ホイール・ねじ歯車）。同じ軸の候補はこの種類で作る（S2-01 で足した引数に渡す）。選んでいる種類は、パレットで選んでいる大きさ（S1-17）と同じ所に持つ（シーンには含めず、Undo の対象にしない）。外周の候補の種類は親で決まる（ハスバ → 逆向きのハスバ、かさ → かさ、ウォーム ↔ ホイール、ねじ → ねじ）。ウォーム ↔ ホイールは S2-03 で `getCandidates()` の `kind: 'skew'`（`growGear { mode: 'skew', ... }`）として出し済み。同じ軸の候補で `coaxialKind: 'worm'` を渡すと、歯数によらず 1 条のウォームを区画の幅（中 32）で置く
 - **プロパティパネル**（S1-20 の拡張）
   - 種類の名前を表示する
   - ハスバ: ねじれの向き（左／右）を表示するだけ（編集しない）
   - かさ: 歯数を変えると、かみ合うかさ歯車も同じ歯数になることを注記する。「向きを反転」ボタン（S2-02 のコマンド `flipBevelApex { gearId }`。`bevel` のシャフトの子は `notAllowed` なので、ボタンを無効にする）。歯数の変更は `setGearTeeth` のまま（かさ歯車では木の親子のかさ歯車がまとめて変わる）
-  - ウォーム: 「1 条」を表示し、歯数は編集させない
+  - ウォーム: 「1 条」を表示し、歯数は編集させない（`setGearTeeth` はウォームで `notAllowed` を返す。S2-03）
   - ホイール・ねじ: 歯数を編集できる
 - **情報表示**（S1-23 の拡張）: ウォームの組のギア比を `30:1` のように表示する
 - **国際化**: 種類の名前、ねじれの向き、注記などのキー（日・英）

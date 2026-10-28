@@ -88,6 +88,9 @@ export const HISTORY_LIMIT = 100; // Undo の履歴に残すシーンの数の�
 export const DEFAULT_TEETH = { S: 30, M: 20, L: 16 } as const; // 新しく置く・生やす歯車の歯数（S1-17）
 export const GRID_SNAP = 5; // mm。起点のシャフトの床上の位置と高さの吸着の単位（S1-17）
 export const BEVEL_APEX_CLEARANCE = 2; // mm。かさ歯車が載るシャフトの頂点側の端を、頂点のこの距離だけ手前で切る（S2-02）
+export const WORM_THREADS = 1; // ウォームの条数（固定。右ねじ。S2-03）
+export const WORM_DIAMETER_FACTOR = 10; // ウォームのピッチ円直径 = 10·m（進み角 atan(1/10)。S2-03）
+export const WORM_LENGTH_PITCHES = 5; // ウォームの歯のある部分の長さ = 5·π·m（S2-03）
 ```
 
 各タスクで足す定数（足したタスクがこの一覧の値と合わせる）:
@@ -104,6 +107,9 @@ export const BEVEL_APEX_CLEARANCE = 2; // mm。かさ歯車が載るシャフト
 | `GRID_SNAP` | 5 mm（起点シャフトの床上の位置。高さのハンドルの吸着にも使う） | S1-17 |
 | `HELIX_ANGLE` | 20°（ハスバ歯車のねじれ角。ユーザーは変えられない） | S2-01 |
 | `BEVEL_APEX_CLEARANCE` | 2 mm（かさ歯車のシャフトの頂点側の端と頂点の間） | S2-02 |
+| `WORM_THREADS` | 1（ウォームの条数。右ねじ。ユーザーは変えられない） | S2-03 |
+| `WORM_DIAMETER_FACTOR` | 10（ウォームのピッチ円直径 = 10·m。進み角 γ = atan(1/10) ≈ 5.71°） | S2-03 |
+| `WORM_LENGTH_PITCHES` | 5（ウォームの歯のある部分の長さ = 5·π·m。区画の幅は 4 の倍数に切り上げて 小 16・中 32・大 48） | S2-03 |
 
 音・カメラ・UI だけで使う定数は、各タスクの資料に書く。
 
@@ -147,9 +153,17 @@ type ShaftPlacement =
       readonly axisStep: 1 | 2;      // このシャフトの軸 = 親の軸を x → y → z → x の順に axisStep 回進めた軸
       readonly side: 1 | -1;         // 子が、親の大端の中心から見てこのシャフトの軸の正・負どちら側にあるか
     }
+  // ねじれた位置の 90° でかみ合う歯車（ウォームとホイール。S2-04 のねじ歯車も使う）を載せたシャフト（S2-03）
+  | {
+      readonly kind: 'skew';
+      readonly parentGearId: GearId;
+      readonly childGearId: GearId;
+      readonly axisStep: 1 | 2;      // このシャフトの軸 = 親の軸を x → y → z → x の順に axisStep 回進めた軸
+      readonly side: 1 | -1;         // 子の中心 = 親の中心 + (r_親 + r_子)·side·u（u は 2 本の軸のどちらとも直交する座標軸）
+    }
   // 親が削除されてその場に残ったシャフト。削除時点のワールド座標と向きを持つ
   | { readonly kind: 'detached'; readonly origin: Vec3; readonly axis: Axis };
-// 親から位置と向きを導く配置（mesh・bevel）と、自分で持つ配置（root・detached）。isChildPlacement(p) で分ける（S2-02）
+// 親から位置と向きを導く配置（mesh・bevel・skew）と、自分で持つ配置（root・detached）。isChildPlacement(p) で分ける（S2-02）
 type ChildPlacement = Extract<ShaftPlacement, { parentGearId: GearId }>;
 type FreePlacement = Exclude<ShaftPlacement, ChildPlacement>;
 
@@ -163,7 +177,9 @@ interface GearBase {
 interface SpurGear extends GearBase { readonly kind: 'spur' }
 interface HelicalGear extends GearBase { readonly kind: 'helical'; readonly hand: 'left' | 'right' } // S2-01
 interface BevelGear extends GearBase { readonly kind: 'bevel'; readonly apex: 1 | -1 } // S2-02
-type Gear = SpurGear | HelicalGear | BevelGear; // S2-03 以降で種類を足す
+interface WormGear extends GearBase { readonly kind: 'worm' }       // S2-03。teeth は条数で常に WORM_THREADS（1）
+interface WormWheel extends GearBase { readonly kind: 'wormWheel' } // S2-03
+type Gear = SpurGear | HelicalGear | BevelGear | WormGear | WormWheel; // S2-04 以降で種類を足す
 type GearKind = Gear['kind'];
 // 種類と、形を変える属性（Gear から GearBase のフィールドを除いたもの。S2-01）
 type GearShape = DistributiveOmit<Gear, keyof GearBase>;
@@ -185,14 +201,15 @@ interface Motor {
   | `'spur'`（平歯車） | なし | S1 |
   | `'helical'`（ハスバ歯車） | `hand: 'left' \| 'right'`（ねじれの向き。`'right'` は軸の正の向きに進むほど歯が正の向きに回る。ねじれ角は `HELIX_ANGLE` で固定。モジュールは軸直角モジュール） | S2-01 |
   | `'bevel'`（かさ歯車） | `apex: 1 \| -1`（ピッチ円すいの頂点が、大端のピッチ円の中心から見てシャフトの軸の正・負のどちらにあるか）。交わる角度 90°・歯数比 1:1（ピッチ円すい角 45°）のみ | S2-02 |
-  | `'worm'`・`'wormWheel'` | なし | S2-03 |
+  | `'worm'`（ウォーム）・`'wormWheel'`（ホイール） | なし。ウォームは 1 条・右ねじ（`teeth` は条数で常に `WORM_THREADS`）、ホイールは進み角と同じねじれ角の右ねじれ（歯数の範囲・歯幅は平歯車と同じ） | S2-03 |
   | `'crossedHelical'`（ねじ歯車） | なし | S2-04 |
   | `'internal'`（内歯車） | `webSide: 1 \| -1` | S3-02 |
 
 - **種類ごとの分岐**（S2-01）: 種類で分ける箇所は `switch (gear.kind)` にし、`default` で `assertNever`（`src/core/scene/gear-shape.ts`）を呼ぶ。種類を足すと、直す場所がコンパイルエラーで分かる（S2-01 の時点で `gear-shape.ts` の `gearShape`・`newGearShape`・`meshPartnerShape`・`GEAR_KINDS`、`geometry/can-mesh.ts` の `canMesh`・`meshKindOf`、`geometry/shape-key.ts` の `gearShapeKey`、`scene/parse.ts` の `parseScene`、`render/gear-geometry.ts` の `buildGeometry`）。歯車は `makeGear(base, shape)` で作る。
-  - 新しく置く歯車の形は `newGearShape(kind)`（ハスバ歯車は `'right'`、かさ歯車は `apex: 1`）、外周に生やす子の形は `meshPartnerShape(gearShape(親))`（平歯車は平歯車、ハスバ歯車は逆の `hand`、かさ歯車は `null`＝外周には生やさない。S2-02）。
-  - S2-02 で `'bevel'` を足したときに直した分岐は、上の 9 か所に加えて `kinematics/mesh-coefficients.ts` の `meshCoefficients`（`mesh.kind` で分ける）。配置の種類（`ShaftPlacement['kind']`）で分ける箇所は、`isChildPlacement(p)`（`mesh`・`bevel`）と `root`・`detached` で分ける。
-  - 編集コマンド（S2-01）: `addRootShaft` の `gear.kind?` と `growGear`（coaxial）の `kind?`（省くと `'spur'`）。`growGear`（perimeter）の子の種類は親から決まる。`reattachShaft` はかみ合えない組（`canMesh` が偽）を `notAllowed` にする。
+  - 新しく置く歯車の形は `newGearShape(kind)`（ハスバ歯車は `'right'`、かさ歯車は `apex: 1`）、外周に生やす子の形は `meshPartnerShape(gearShape(親))`（平歯車は平歯車、ハスバ歯車は逆の `hand`、かさ歯車・ウォーム・ホイールは `null`＝外周には生やさない。S2-02、S2-03）。ねじれた位置（`skew`）に生やす子の形は `skewPartnerShape(gearShape(親))`（ウォームにはホイール、ホイールにはウォーム、それ以外は `null`。S2-03。S2-04 でねじ歯車 → ねじ歯車を足す）。
+  - S2-02 で `'bevel'` を足したときに直した分岐は、上の 9 か所に加えて `kinematics/mesh-coefficients.ts` の `meshCoefficients`（`mesh.kind` で分ける）。配置の種類（`ShaftPlacement['kind']`）で分ける箇所は、`isChildPlacement(p)`（`mesh`・`bevel`・`skew`）と `root`・`detached` で分ける。
+  - S2-03 で `'worm'`・`'wormWheel'` を足したときに直した分岐は、上に加えて `gear-shape.ts` の `skewPartnerShape`、`geometry/can-mesh.ts` の `meshGeometryOf`（かみ合う 2 軸の位置関係 `'parallel' | 'bevel' | 'skew'`。`placementKindOf` で木の配置の種類 `mesh`・`bevel`・`skew` に対応させる）、`geometry/dimensions.ts` の `sectionWidth`（区画の幅）・`gearPitchRadius`・`gearEnvelope`（歯車を囲む円柱。干渉と表示の範囲）、`layout/resolve.ts` の `skewPhase`。歯車の中心（`gearCenter`）・シャフトの長さ・同じ軸の候補の面・干渉の円柱・表示の範囲は、歯幅でなくこれらの関数で求める。
+  - 編集コマンド（S2-01）: `addRootShaft` の `gear.kind?` と `growGear`（coaxial）の `kind?`（省くと `'spur'`。`'worm'` は渡した `teeth` によらず 1 条。S2-03）。`growGear`（perimeter）の子の種類は親から決まる。`reattachShaft` はかみ合えない組（`canMesh` が偽）を `notAllowed` にする。
   - 検証（S2-01）: `parseScene` は種類ごとのフィールドを拾い（`'helical'` の `hand` は文字列）、`validateScene` は `hand` の値（`invalidHand`）と、`mesh` の親子がかみ合えること（`meshKindMismatch`）を確かめる。
 - **かさ歯車**（S2-02。幾何は `src/core/geometry/bevel.ts`）:
   - R = 大端のピッチ円半径 `m·z/2`、円すい距離 `R·√2`、歯の幅 b（母線に沿った長さ）= `min(大きさの歯幅, 円すい距離 / 3)`（`bevelToothWidth`）。軸方向には `b·cos45°` を占める。
@@ -200,11 +217,18 @@ interface Motor {
   - **`bevel` の配置**: 子のシャフトの軸 = `stepAxis(親の軸, axisStep)`（`src/core/math/axis.ts`。S2-03 の `'skew'` などでも使う）。子の大端の中心 = `親の大端の中心 + R·side·(子の軸) + R·親の apex·(親の軸)`、子の `apex` = `−side`（親の頂点を向き、2 枚の頂点は一致する）。子の `offset` は 0 として原点を逆算する: `原点 = 子の大端の中心 − (歯幅/2)·(1 + side)·(子の軸)`（`bevelChildFrame`・`bevelChildOrigin`）。`axisStep` 2 通り × `side` 2 通りで親 1 枚につき 4 か所。親の向きが R で変わっても、子は相対の関係を保ってついてくる。
   - 位置は 4 か所の離散なので、外周の角度の円弧ハンドルは出さない。`bevel` の子の歯車には軸方向の矢印も出さない（`mesh` の子と同じ）。
   - かさ歯車は外周（`mesh`）には生やさない（`meshPartnerShape` が `null`）。`mesh` の親子はかさ歯車以外、`bevel` の親子はかさ歯車同士（検証の `meshKindMismatch`）。検証は加えて `apex` が ±1（`invalidApex`）、`axisStep` が 1・2（`invalidAxisStep`。0 は親と同じ軸）、`side` が ±1（`invalidSide`）、子の `apex === −side`（`bevelApexMismatch`）を確かめる。`version` は 1 のまま。
+- **ウォームギア**（S2-03。寸法は `src/core/geometry/worm.ts`、ねじれた位置の幾何は `src/core/geometry/skew.ts`）:
+  - ウォームは 1 条・右ねじ。m はその大きさのモジュール（ホイールの軸直角モジュールと同じ）。軸方向ピッチ `π·m`、ピッチ円半径 `5m`（`WORM_DIAMETER_FACTOR·m/2`）、歯先 `6m`、歯底 `3.75m`、進み角 `γ = atan(1/10)`、歯のある部分の長さ `5πm`。ホイールのピッチ円半径は `m·z/2`、歯幅は大きさの歯幅。
+  - **区画**: ウォームの長さ `5πm` は 4 の倍数にならないので、長さを `AXIAL_SNAP` の倍数に切り上げた **区画の幅** `ceil(5πm/4)·4`（小 16、中 32、大 48。`wormSectionWidth`）を歯幅の代わりに使う。`offset` は区画の負側の面、ねじ山は区画の中央（中心 = `原点 + (offset + 区画の幅/2)·軸`）。シャフトの長さ・同じ軸に並べたときの面も区画の幅で求める。
+  - **`skew` の配置**（ねじれた位置の 90°。S2-04 のねじ歯車も同じものを使う）: 子のシャフトの軸 = `stepAxis(親の軸, axisStep)`、u = 2 本の軸のどちらとも直交する座標軸（`thirdAxis`）として、子の中心 = `親の中心 + (r_親 + r_子)·side·u`（r はピッチ円半径。ウォームは `5m`。`skewChildFrame`）。子の `offset` は 0 として原点を逆算する: `原点 = 子の中心 − (区画の幅/2)·(子の軸)`。`axisStep` 2 通り × `side` 2 通りで親 1 枚につき 4 か所。位置は離散なので外周の角度の円弧ハンドルは出さない。
+  - ウォームとかみ合えるのはホイールだけ、ホイールとかみ合えるのはウォームだけ（同じ大きさ）。`mesh` の親子は平行にかみ合う種類（平歯車・ハスバ歯車）、`bevel` の親子はかさ歯車、`skew` の親子はウォームとホイール（検証の `meshKindMismatch`）。検証は加えて、ウォームの `teeth === 1`（`teethOutOfRange`）、`skew` の `axisStep` が 1・2（`invalidAxisStep`）、`side` が ±1（`invalidSide`）を確かめる。`version` は 1 のまま。
+  - コマンド: `growGear { mode: 'skew', parentGearId, axisStep, side, teeth }`（ウォームにはホイール（`teeth` 歯）、ホイールにはウォーム（1 条）を、同じ大きさ・`offset 0` で新しい `skew` のシャフトに載せる。ほかの親は `notAllowed`）。ウォームの `setGearTeeth` は `notAllowed`。`reattachShaft` は平行にかみ合う種類の親だけ。
 - 歯車の中心は `シャフトの原点 + (offset + 歯幅 / 2) × 軸の単位ベクトル`。`offset` を中心ではなく面の位置にしているのは、歯幅がすべて 4 の倍数なので、大きさの違う歯車を面を接して並べても 4 mm の格子に乗るようにするため。
-- **区画**: 一般には、部品はシャフト上で「区画」（幅は軸方向の長さを 4 の倍数に切り上げた値）を占め、`offset` は区画の負側の面とする。平歯車では区画の幅＝歯幅。かさ歯車は大きさの歯幅の区画を占め、大端は区画の頂点と反対側の面（S2-02。上）。ウォームのように長さが 4 の倍数でない部品は S2-03 で区画との関係を決める。
+- **区画**: 一般には、部品はシャフト上で「区画」（幅は軸方向の長さを 4 の倍数に切り上げた値）を占め、`offset` は区画の負側の面とする。平歯車では区画の幅＝歯幅。かさ歯車は大きさの歯幅の区画を占め、大端は区画の頂点と反対側の面（S2-02。上）。ウォームは長さ `5πm` を 4 の倍数に切り上げた区画を占め、ねじ山は区画の中央（S2-03。上）。
 - `offset` は負の値もとれる（`AXIAL_SNAP` の倍数であればよい）。
 - **向きの違う子**: 段階 2 以降の、親と軸の向きが違う配置（bevel、skew、rack など）は、向きを絶対値で持たず、親の軸からの相対値（`axisStep: 1 | 2` ＝ 親の軸を x→y→z→x の順に何回進めたか）で持つ。向きの計算は `stepAxis(axis, step)`（`src/core/math/axis.ts`。S2-02 で作った）1 つにまとめる。`shaftAxis` は親をたどって `axisStep` を足し合わせる。
 - シャフトの長さの決め方は、部品によって例外がある。かさ歯車が載るシャフトは、頂点側の端を `頂点 − BEVEL_APEX_CLEARANCE·apex·軸`（2 mm 手前）より先へ伸ばさない。同じシャフトの頂点側にほかの部品が載っていれば、その部品の面 + `SHAFT_END_MARGIN` まで伸ばす（S2-02。§5 の `span`）。
+- `skew` のシャフト（S2-03）の原点は、子の中心から区画の幅の半分だけ軸の負の向きに戻した点（子の `offset` は 0）。
 - `mesh` のシャフトの原点は、子の歯車が親の歯車と同じ面に来るように決める（子の `offset` を 0 として置く。かみ合う相手は同じ大きさなので、面がそろえば中心もそろう）。
 - `detached` は、`mesh` だった親が削除されたときに、木から切り離して浮かせた状態。`root` と同じく位置と高さのハンドルを出す。ドラッグして別の歯車の外周候補の上で離すと、`mesh` に付け直せる（S1-19）。
 - シャフトの長さは保存しない。載っている歯車の両端から `SHAFT_END_MARGIN` ずつ伸ばした長さを、レイアウトで求める。
@@ -232,40 +256,45 @@ interface Mesh {
   kind: MeshKind;             // かみ合いの種類（S2-01。meshKindOf）
 }
 
-type MeshKind = 'spur' | 'helical' | 'bevel'; // S2-03 以降で足す
+type MeshKind = 'spur' | 'helical' | 'bevel' | 'worm'; // S2-04 以降で足す
 ```
 
-- **かみ合える組**（S2-01。`src/core/geometry/can-mesh.ts`）: `canMesh(a, b)` は種類・大きさ・形を変える属性だけで判定する（位置は見ない）。同じ大きさで、平歯車同士か、ねじれの向きが逆のハスバ歯車同士か、同じ歯数のかさ歯車同士（S2-02。歯数比 1:1 のみなので歯数も見る。`apex` は問わない）。平歯車とハスバ歯車、同じ向きのハスバ歯車同士はかみ合わない（ねじれの向きが 2 種類しかないので、ハスバ歯車 3 枚の三角形は作れない）。木の親子（`mesh`）も、かみ合える組でなければ検証で弾く。`meshKindOf(gear)` が組のかみ合いの種類を返す。
+- **かみ合える組**（S2-01。`src/core/geometry/can-mesh.ts`）: `canMesh(a, b)` は種類・大きさ・形を変える属性だけで判定する（位置は見ない）。同じ大きさで、平歯車同士か、ねじれの向きが逆のハスバ歯車同士か、同じ歯数のかさ歯車同士（S2-02。歯数比 1:1 のみなので歯数も見る。`apex` は問わない）か、ウォームとホイール（S2-03。`meshKindOf` はどちらも `'worm'`）。平歯車とハスバ歯車、同じ向きのハスバ歯車同士はかみ合わない（ねじれの向きが 2 種類しかないので、ハスバ歯車 3 枚の三角形は作れない）。木の親子（`mesh`）も、かみ合える組でなければ検証で弾く。`meshKindOf(gear)` が組のかみ合いの種類を返す。
 
-- **木構造**: `mesh`・`bevel` のシャフトは親の歯車の位置から決まる。根（`root` / `detached`）から幅優先でたどって位置を求める（`resolve.ts` の `placeChild` が配置の種類ごとに原点・向き・位相を決める。`resolveAddition` も同じものを使う）。
+- **木構造**: `mesh`・`bevel`・`skew` のシャフトは親の歯車の位置から決まる。根（`root` / `detached`）から幅優先でたどって位置を求める（`resolve.ts` の `placeChild` が配置の種類ごとに原点・向き・位相を決める。`resolveAddition` も同じものを使う）。
   - `bevel` のシャフト（S2-02）: §4 のかさ歯車の式（`bevelChildFrame`・`bevelChildOrigin`）。
+  - `skew` のシャフト（S2-03）: §4 のウォームギアの式（`skewChildFrame`、原点 = 子の中心 − 区画の幅/2·軸）。
   - `mesh` のシャフト: 向きは親の歯車の軸。原点 = 親の歯車の負側の面の位置（親のシャフトの原点 + 親の `offset` × 軸）+ `radialDirection(親の軸, angle) × centerDistance(大きさ, 親の歯数, 子の歯数)`。
-  - 位相: 根のシャフトの歯車は 0、`mesh` のシャフトの子の歯車は `meshPhase(親の basePhase, 親の歯数, 子の歯数, angle)`、`bevel` のシャフトの子の歯車は `bevelPhase`（下）、子以外の歯車は 0。
-  - `descendantShafts(scene, shaftId)`（`resolve.ts`）: `shaftId` とその先（mesh・bevel で子孫になる）シャフトの ID を幅優先の順で返す（S1-11 の削除・付け直しの循環の判定、S1-19 の吸着の相手の除外に使う）。シーンに無いシャフトなら空。
-- **シャフトの長さ（`span`）**: シャフトの原点から軸方向の区間。載っている歯車ごとに、両面（`offset` と `offset + 歯幅`）から `SHAFT_END_MARGIN` ずつ伸ばした区間を求め、その最小〜最大をとる（`spanOf`）。歯車が載っていないシャフトは `[−EMPTY_SHAFT_HALF_LENGTH, +EMPTY_SHAFT_HALF_LENGTH]`。
+  - 位相: 根のシャフトの歯車は 0、`mesh` のシャフトの子の歯車は `meshPhase(親の basePhase, 親の歯数, 子の歯数, angle)`、`bevel` のシャフトの子の歯車は `bevelPhase`（下）、`skew` のシャフトの子の歯車は `skewPhase`（下）、子以外の歯車は 0。
+  - `descendantShafts(scene, shaftId)`（`resolve.ts`）: `shaftId` とその先（mesh・bevel・skew で子孫になる）シャフトの ID を幅優先の順で返す（S1-11 の削除・付け直しの循環の判定、S1-19 の吸着の相手の除外に使う）。シーンに無いシャフトなら空。
+- **シャフトの長さ（`span`）**: シャフトの原点から軸方向の区間。載っている歯車ごとに、両面（`offset` と `offset + 区画の幅`。ウォーム以外は区画の幅 = 歯幅）から `SHAFT_END_MARGIN` ずつ伸ばした区間を求め、その最小〜最大をとる（`spanOf`）。歯車が載っていないシャフトは `[−EMPTY_SHAFT_HALF_LENGTH, +EMPTY_SHAFT_HALF_LENGTH]`。
   - かさ歯車（S2-02）は、自分の区間の頂点側の端を `頂点 − BEVEL_APEX_CLEARANCE`（`apex` −1 なら `頂点 + BEVEL_APEX_CLEARANCE`）より先へ伸ばさない（余白込みの端は大端から `歯幅 + SHAFT_END_MARGIN` で、小の 12〜15 歯では頂点を越え、小の 16 歯・中の 12 歯ではちょうど頂点に届くため）。切ったあとの端が、かさ歯車自身の区画の内側に入ってもよい。同じシャフトの頂点側にほかの部品が載っていれば、その部品の区間（面 + `SHAFT_END_MARGIN`）まで伸び、相手のシャフトと交われば干渉として赤く出る。
 - **meshes の並び**: 各組は `a < b`（ID の符号単位の比較）、一覧は `(a, b)` の辞書順。`tree` は `mesh` のシャフトの `parentGearId` と `childGearId` の組。
-- **偶然のかみ合い（contact）**: 木の親子でない、別のシャフトの歯車の組で、`canMesh(a, b)` が真（同じ大きさを含む）で、軸が同じ、歯幅の軸方向の重なりが `COLLISION_EPS` より大きく、軸に垂直な方向の中心距離がピッチ円半径の和と `MESH_DISTANCE_EPS` 以内で一致する組は、木の親子でなくてもかみ合いとして扱う。かさ歯車（S2-02）は、どちらもかさ歯車、同じ大きさ・同じ歯数、軸が直交し、頂点の距離が `MESH_DISTANCE_EPS` 以内の組（頂点が一致すればピッチ円すいは必ず接する）。**位相が合っているかどうかは問わない**（拘束として扱い、干渉にもしない）。三角形のロックなどは、ここから生まれる。かみ合えない組（平歯車とハスバ歯車など）がちょうどの距離にあると、歯先円の円柱が重なるので干渉になる。
+- **偶然のかみ合い（contact）**: 木の親子でない、別のシャフトの歯車の組で、`canMesh(a, b)` が真（同じ大きさを含む）で、軸が同じ、歯幅の軸方向の重なりが `COLLISION_EPS` より大きく、軸に垂直な方向の中心距離がピッチ円半径の和と `MESH_DISTANCE_EPS` 以内で一致する組は、木の親子でなくてもかみ合いとして扱う。かさ歯車（S2-02）は、どちらもかさ歯車、同じ大きさ・同じ歯数、軸が直交し、頂点の距離が `MESH_DISTANCE_EPS` 以内の組（頂点が一致すればピッチ円すいは必ず接する）。ウォームとホイール（S2-03）は、同じ大きさで、軸が直交し、2 つの中心を結ぶ線が両方の軸に直交し（軸方向の成分がどちらも `MESH_DISTANCE_EPS` 以内）、その長さが `r_ウォーム + r_ホイール`（`5m + m·z/2`）と `MESH_DISTANCE_EPS` 以内の組。**位相が合っているかどうかは問わない**（拘束として扱い、干渉にもしない）。三角形のロックなどは、ここから生まれる。かみ合えない組（平歯車とハスバ歯車など）がちょうどの距離にあると、歯先円の円柱が重なるので干渉になる。
 - **ループを作る操作**: 外周の角度ハンドル（S1-19）は、子の歯車が別の歯車とちょうどかみ合う角度に吸着する。これで、ループを意図して作れる。
 - **ループの辻褄**: 編集の結果、contact の距離がずれた組は、単にかみ合いではなくなる（木の辺ではないので位置は変わらない）。重なっていれば干渉として赤く表示する。
 - **位相（basePhase）**: 基準シャフト（§6）の回転角が 0 のときの、歯車の回転のずれ。歯車の回転角 = `basePhase + シャフトの回転角` で、回転角 0 のとき 0 番目の歯の中心線が `u` の向き（2D 輪郭の +x）にある。木の親子では、子の歯が親の歯の谷に入るように決める（S1-03 の `meshPhase`）。
   - 親 A（位相 `φ_A`、歯数 `z_A`）の軸まわりの角度 `α` の方向に子 B（歯数 `z_B`）を置くとき、`f_A = frac((α − φ_A)·z_A / 2π)`（A の歯の並びの中での接点の位置、0〜1）、`φ_B = α + π − (2π / z_B)·(1/2 − f_A)` を `[0, 2π/z_B)` に正規化する。
   - シャフトの回転角が `θ_B = −(z_A / z_B)·θ_A` の関係を保つ限り、かみ合いが保たれる。
   - 位相を比べるときは `2π/z` を法とし、`MESH_PHASE_EPS` 以内なら同じとする（`samePhase`）。偶然のかみ合い（contact）の判定には使わない。
+  - ウォームとホイール（S2-03。`skewPhase` → `wheelPhaseFromWorm`・`wormPhaseFromWheel`）: 接点でウォームのねじ山の中心とホイールの歯溝の中心が重なるようにする。ウォームの位相は、ねじ山が軸方向に進む量と同じに扱う（位相 0 で、ウォームの軸まわりの角度 θ の方向のねじ山の中心は、ウォームの中心から軸方向に `π·m·θ/2π`（π·m を法として）。回転角 φ でねじ山は `π·m·φ/2π` だけ軸の負の向きに移る）。n = ウォームの中心からホイールの中心への単位ベクトル、θ_c = n のウォームの軸まわりの角度、α_c = −n のホイールの軸まわりの角度、s = `(e_W × n)·e_H` として `z·(φ_H − α_c)/2π + 1/2 ≡ s·(θ_c − φ_W)/2π (mod 1)`。時間で微分すると §6 の拘束 `z·ω_H + s·ω_W = 0` と一致するので、回してもずれない。ホイールの歯幅の中央の面はウォームの軸を通るので、ねじれ（中央の断面が平歯車と一致）は位相に効かない。
   - かさ歯車（S2-02。`bevelPhase`）: 2 つの大端のピッチ円の接点 `P = 親の大端の中心 + R·side·(子の軸)` で、親の歯の中心と子の歯溝の中心が重なるようにする。`f_A` = P での親の歯の位置（歯 1 ピッチを 1 とした端数。`toothFraction`）。P での周速の向き `e × (P − 大端の中心)` が親子で同じ（ω の比が +1）なら子の端数 `f_B = f_A + 1/2`、逆（比が −1）なら `f_B = 1/2 − f_A`。`φ_B = (P の子の軸まわりの角度) − (2π/z)·f_B` を `[0, 2π/z)` に正規化する。
-- **シャフトの向き**: `Shaft` は `axis` を持たない。`root`・`detached` は `placement.axis`、`mesh` は親の歯車のシャフトの向き、`bevel` は親の歯車のシャフトの向きを `axisStep` 回進めたもの（S2-02）。`core/scene` の `shaftAxis(scene, shaftId)` で親をたどって求める（循環していれば `null`）。`Layout.shafts[id].axis` も同じ値になる。
-- **干渉の判定**（S1-08。`src/core/layout/collision.ts`）: 歯車は円柱（`gearCollider`。中心・軸・半径 = 歯先円半径・半分の厚み = 歯幅/2。かさ歯車（S2-02）は歯のある円すい台に外接する円柱: 大端の中心から頂点の側へ `b·cos45°` の長さ、半径 `R + m·cos45°`（大端の歯先））、シャフトは線分（`origin + span × 軸`、太さ 0）で近似する。モーターは段階 1 では判定しない（§4）。重なりの深さが `COLLISION_EPS` 以下（触れているだけ）は干渉にしない。円柱 × 円柱は軸が平行なら軸方向の区間と中心間の距離、直交なら残りの軸の座標で切った断面の区間の重なりで正確に判定する。線分 × 円柱は円柱を `COLLISION_EPS` だけ内側に縮めたものに線分の一部が入るか、線分 × 線分は同じ直線の上で `COLLISION_EPS` より長く重なるか、平行でなく両方の内側の点で交わるか。長さ 0 の線分どうしは判定しない。`findInterferences(colliders, exempt)` は全ての組を調べ（軸に平行な外接箱を x の区間で並べる sweep and prune で粗く絞り込み、箱が重なる組だけを詳しく判定する）、`exempt` の組（`meshes` の組。順序は問わない）と、歯車とそれが載ったシャフトの組を除く。結果は `[小さい ID, 大きい ID]` を辞書順（符号単位の比較）に並べ、重複しない。部品 400 個（歯車 200 枚 + シャフト 200 本）で 1 回 1ms 未満。`resolveLayout` は、全ての歯車の円柱と全てのシャフトの線分を渡し、`exempt` に `meshes` の組（contact を含む）を渡して `interferences` を埋める
+- **シャフトの向き**: `Shaft` は `axis` を持たない。`root`・`detached` は `placement.axis`、`mesh` は親の歯車のシャフトの向き、`bevel`・`skew` は親の歯車のシャフトの向きを `axisStep` 回進めたもの（S2-02、S2-03）。`core/scene` の `shaftAxis(scene, shaftId)` で親をたどって求める（循環していれば `null`）。`Layout.shafts[id].axis` も同じ値になる。
+- **干渉の判定**（S1-08。`src/core/layout/collision.ts`）: 歯車は円柱（`gearCollider`。中心・軸・半径 = 歯先円半径・半分の厚み = 歯幅/2。かさ歯車（S2-02）は歯のある円すい台に外接する円柱: 大端の中心から頂点の側へ `b·cos45°` の長さ、半径 `R + m·cos45°`（大端の歯先）。ウォーム（S2-03）は半径 `5m + m`・長さ `5πm`（区画の幅ではなく歯のある部分）の円柱、ホイールは歯先円の円柱（`gearEnvelope`））、シャフトは線分（`origin + span × 軸`、太さ 0）で近似する。モーターは段階 1 では判定しない（§4）。重なりの深さが `COLLISION_EPS` 以下（触れているだけ）は干渉にしない。円柱 × 円柱は軸が平行なら軸方向の区間と中心間の距離、直交なら残りの軸の座標で切った断面の区間の重なりで正確に判定する。線分 × 円柱は円柱を `COLLISION_EPS` だけ内側に縮めたものに線分の一部が入るか、線分 × 線分は同じ直線の上で `COLLISION_EPS` より長く重なるか、平行でなく両方の内側の点で交わるか。長さ 0 の線分どうしは判定しない。`findInterferences(colliders, exempt)` は全ての組を調べ（軸に平行な外接箱を x の区間で並べる sweep and prune で粗く絞り込み、箱が重なる組だけを詳しく判定する）、`exempt` の組（`meshes` の組。順序は問わない）と、歯車とそれが載ったシャフトの組を除く。結果は `[小さい ID, 大きい ID]` を辞書順（符号単位の比較）に並べ、重複しない。部品 400 個（歯車 200 枚 + シャフト 200 本）で 1 回 1ms 未満。`resolveLayout` は、全ての歯車の円柱と全てのシャフトの線分を渡し、`exempt` に `meshes` の組（contact を含む）を渡して `interferences` を埋める
 - **生やす候補**（S1-10。`src/core/layout/candidates.ts` の `listGrowCandidates(scene, gearId, spec)`）: 選んだ歯車について 2 種類を返す。並びは外周（角度の昇順）→ 同じ軸（負の側 → 正の側）。
   - 候補は作る歯車の形 `shape: GearShape` を持つ（S2-01）。
   - **かさ歯車**（`kind: 'bevel'`。S2-02）: 親がかさ歯車なら、外周の代わりに `axisStep` 1 → 2、それぞれ `side` −1 → 1 の 4 か所に、親と同じ大きさ・同じ歯数（`spec.perimeterTeeth` は使わない）・`apex: −side` のかさ歯車を新しい `bevel` のシャフト（子の `offset` 0）に載せる。並びは外周 → かさ歯車 → 同じ軸。`growGear { mode: 'bevel', parentGearId, axisStep, side }` に変換できる。
-  - **外周**（`kind: 'perimeter'`。かさ歯車の親には出さない）: 親と同じ大きさ・`spec.perimeterTeeth` 歯・親とかみ合う形（`meshPartnerShape`。ハスバ歯車なら逆の `hand`）の歯車を、新しい `mesh` のシャフト（子の `offset` 0）に載せる。角度は連続だが、親の軸まわりの `PERIMETER_CANDIDATE_COUNT`（8）方向 `k·π/4` で代表させる（細かい角度は S1-19 の円弧ハンドル）。`center`・`axis`・`basePhase` は仮のシーンのレイアウト（`resolveAddition`）から得る。
-  - **同じ軸**（`kind: 'coaxial'`）: 選んだ歯車のシャフトに載った歯車の並びの両端の外側に、面を接して置く 2 か所（負の側 `offset = 最小の面 − 新しい歯幅`、正の側 `offset = 最大の面`）。大きさ・歯数・種類は `spec.coaxialSize`・`spec.coaxialTeeth`・`spec.coaxialKind`（S2-01。形は `newGearShape`。ハスバ歯車は `'right'`。パレットで種類を選ぶ UI は S2-05 で、それまで app は `'spur'` を渡す）。並びの途中の隙間は候補にしない。
+  - **ねじれた位置**（`kind: 'skew'`。S2-03）: 親がウォームかホイールなら、外周の代わりに `axisStep` 1 → 2、それぞれ `side` −1 → 1 の 4 か所に、相手（`skewPartnerShape`。ウォームにはホイール（`spec.perimeterTeeth` 歯）、ホイールにはウォーム（1 条））を同じ大きさで新しい `skew` のシャフト（子の `offset` 0）に載せる。並びは外周 → かさ歯車 → ねじれた位置 → 同じ軸。`growGear { mode: 'skew', parentGearId, axisStep, side, teeth }` に変換できる。
+  - **外周**（`kind: 'perimeter'`。かさ歯車・ウォーム・ホイールの親には出さない）: 親と同じ大きさ・`spec.perimeterTeeth` 歯・親とかみ合う形（`meshPartnerShape`。ハスバ歯車なら逆の `hand`）の歯車を、新しい `mesh` のシャフト（子の `offset` 0）に載せる。角度は連続だが、親の軸まわりの `PERIMETER_CANDIDATE_COUNT`（8）方向 `k·π/4` で代表させる（細かい角度は S1-19 の円弧ハンドル）。`center`・`axis`・`basePhase` は仮のシーンのレイアウト（`resolveAddition`）から得る。
+  - **同じ軸**（`kind: 'coaxial'`）: 選んだ歯車のシャフトに載った歯車の並びの両端の外側に、面を接して置く 2 か所（負の側 `offset = 最小の面 − 新しい区画の幅`、正の側 `offset = 最大の面`。面は区画の両端で、ウォームは区画の幅。S2-03）。種類が `'worm'` なら歯数によらず 1 条。大きさ・歯数・種類は `spec.coaxialSize`・`spec.coaxialTeeth`・`spec.coaxialKind`（S2-01。形は `newGearShape`。ハスバ歯車は `'right'`。パレットで種類を選ぶ UI は S2-05 で、それまで app は `'spur'` を渡す）。並びの途中の隙間は候補にしない。
   - 絞り込み: 候補を足した仮のシーン（仮の ID `__candidate_gear`・`__candidate_shaft`）で、元のシーンに無かった干渉の組が 1 つでもあれば出さない。仮のシーン全体を `resolveLayout` し直す代わりに、`resolve.ts` の `resolveAddition(scene, layout, shaft, gear)` で、足した歯車のレイアウトと、変わった部品（足した歯車・足したシャフト・同じ軸なら伸びたシャフト）を含む干渉の組だけを求める（それ以外の部品の位置・形・かみ合いは変わらないので、結果は `resolveLayout` の該当部分と一致する。S2-01。歯車 200 枚の木で、候補ごとに全体を解き直すと余裕が無かったため）（既存の干渉は候補を減らさない。contact は干渉ではないので、偶然ちょうどの距離でかみ合う候補は位相によらず出る）。歯数が大きさの範囲外・整数でない、シーンに無い歯車は例外。根からたどれない歯車は空。
   - 戻り値は S1-11 の `growGear` の引数にそのまま変換できる（`perimeter` → `parentGearId`・`angle`・`teeth`、`coaxial` → `shaftId`・`offset`・`size`・`teeth`・`kind`）。歯車 200 枚で 1 回約 40ms。
 - **歯車の中心**: `core/scene` の `gearCenter(シャフトの原点, 軸, gear)` = `シャフトの原点 + (offset + 歯幅/2) × 軸`（§4）。
 - **歯形の 2D 輪郭の向き**（S1-02 の `spurOutline`）: 歯車の中心が原点、**0 番目の歯の中心線が +x 軸に乗る**（輪郭は x 軸について対称）。点は **反時計回り**（符号付き面積が正）に並べ、最後の点で最初の点を繰り返さない。位相 0 は「0 番目の歯がローカルの +x を向いた状態」で、basePhase（S1-03）とシャフトの角度はここからの回転角。
 - **歯車の形状データ**（S1-02 の `buildSpurGeometry`）: 2D 輪郭のローカルの x・y はそのまま、歯幅の方向をローカルの z（−歯幅/2 〜 +歯幅/2、中心が原点）とする。シャフトを通す穴は開けない（シャフトの円柱が歯車を貫いて描かれる）。
 - **かさ歯車の形**（S2-02。描画は `render/gear-geometry.ts` の `buildBevelGeometry`）: ローカルの原点は区画の中心、大端は z = −歯幅/2、頂点は +z。大端の断面は歯数 z の平歯車の 2D 輪郭（簡略化。相当平歯車の歯数は使わない）で、頂点に向かって相似に `1 − b/(R√2)` 倍まで縮めながら、軸方向に `b·cos45°` 押し出す（ピッチ円すいに沿う）。両端（大端の背面と頂点側の面）は平らな面で閉じる。形状データのキーは `(種類, 大きさ, 歯数)` で `apex` を含めず、`apex` −1 の歯車は本体の `scale.z = −1`（`gearBodyScaleZ`。z について鏡映しても z まわりの回転は変わらないので位相はそのまま）で表す。候補の仮の歯車も同じ。
+- **ウォームの形**（S2-03。描画は `render/gear-geometry.ts` の `buildWormGeometry`。形状データのキーは `(種類, 大きさ)`）: ローカルの原点はねじ山の中央（区画の中央）、軸はローカルの z。軸まわりの角度 θ・軸方向の位置 z の点の半径を `wormThreadRadius(z − π·m·θ/2π)`（軸方向断面が圧力角 20° の台形＝ラックの歯形のねじ山を、右ねじのらせんに沿って掃いた形）とした側面を、θ 64 分割 × 軸方向ピッチ 1 つあたり 48 分割で張る。両端は 45° で歯底円まで面取りし（半径を `歯底 + 端までの距離` 以下にする）、歯底円の円板で閉じる。
+- **ホイールの形**（S2-03）: 進み角 γ と同じねじれ角の右ねじれのハスバ歯車（`buildHelicalGeometry(size, teeth, 'right', WORM_LEAD_ANGLE)`。`helicalTwistAt` などはねじれ角を省くと `HELIX_ANGLE`）。のど（ウォームを抱く凹み）は省く。形状データのキーは `(種類, 大きさ, 歯数)`。
 - **ハスバ歯車の形**（S2-01。`src/core/geometry/helical.ts`、描画は `render/gear-geometry.ts` の `buildHelicalGeometry`）: 軸直角断面は平歯車と同じ 2D 輪郭で、ローカルの z の断面を `helicalTwistAt = ±z·tan(HELIX_ANGLE) / r`（r はピッチ円半径、`'right'` が +）だけ回す。歯幅全体のねじれは `Δφ = b·tan β / r`。**歯幅の中央（z = 0）の断面が平歯車の歯形と一致する**ので、`basePhase`・`meshPhase` は平歯車と同じで、位相は中央の断面で合う（逆向きのねじれ同士なので歯幅全体でかみ合う）。中心距離・ピッチ円半径・干渉の円柱も平歯車と同じ。歯幅の方向の分割数は断面の間の回転が `HELICAL_SLICE_ANGLE`（0.02 rad）以下になるように決める（`helicalSliceCount`）。
 
 ## 6. 運動の状態と計算
@@ -280,7 +309,7 @@ interface MotionState {
   backDriven: MotorId[];           // 負けて逆に回されているモーター
 }
 
-type LockReason = 'contradiction' | 'stalemate'; // 段階 2・3 で 'wormBackDrive' | 'anchor' | 'rackEnd' を足す
+type LockReason = 'contradiction' | 'stalemate' | 'wormBackDrive'; // 'wormBackDrive' は S2-03。段階 3 で 'anchor' | 'rackEnd' を足す
 
 interface LockInfo {
   reason: LockReason;
@@ -312,18 +341,28 @@ function initialMotionState(): MotionState; // 全て空
   | かみ合いの種類 | `c_a` | `c_b` | タスク |
   |---|---|---|---|
   | 外歯車同士（`'spur'`・`'helical'`） | `z_a` | `z_b` | S1、S2-01 |
+  | ねじれた位置の組（`'worm'`。S2-04 のねじ歯車も同じ式） | `s·z_a` | `z_b` | S2-03（`s = (e_a × u_ab)·e_b`。e は各シャフトの軸の単位ベクトル、`u_ab` は a の中心から b の中心への単位ベクトルで、a と b を入れ替えても s は変わらない。ウォームの z は条数（1）。中心は `resolveLayout(scene)` から取る。右ねじのウォームと右ねじれのホイールのねじ山の向きから導いた。例: ウォームの軸 x、ホイールの軸 z で中心が −y 側 → s = −1 → `ω_H = ω_W / z`） |
   | かさ歯車（`'bevel'`） | `apex_a·z_a` | `apex_b·z_b` | S2-02（ピッチ点 P での周速の一致 `ω_a·(e_a × (P − c_a)) = ω_b·(e_b × (P − c_b))` から導いた。親の向き・子の軸・side の 24 通りで成り立つことを Vitest で確かめている） |
 
 - **力のつり合い**: モーターのトルクは `τ_i = T_stall · (d_i − ω_i / ω0_i)`（d_i は向き、ω0_i は無負荷角速度）で、ω に対して一次。仮想仕事の原理から `Nᵀ τ(N q) = 0` を解く（q についての一次方程式）。
 - **解が一意でないとき**: 駆動されていない自由度があると、方程式の解が 1 つに決まらない。その場合は、解のうち **ω の二乗和が最小のもの** をとる（N の基底の取り方に結果が左右されない）。モーターがつながっていない連結成分は、これで自然に ω = 0（止まったまま）になる。OFF のモーターは無いものとして扱う。
 - **つり合いの実装**（S1-06。`src/core/kinematics/motor.ts` と `balance.ts`）: シャフトごとに `D_s = Σ T_stall/ω0`、`b_s = Σ T_stall·d`（そのシャフトの ON のモーターの和）とし、シャフトに働くトルクを `b − D ω` とする。成分ごとに `(Nᵀ D N) q = Nᵀ b` を解く（`solveBalance(basis, drives)`）。一意でないときは一般解 `q_p + Z z`（`Z` は `Nᵀ D N` の零空間の基底）について `|N (q_p + Z z)|²` を最小にする `z` を取る。シーン全体は `solveVelocities(scene, graph, { paused? })` で解き、全シャフトの `omegas`、ON のモーターだけの解でのトルク `motorTorques`、成分ごとの `componentQ` を返す。`paused` なら全モーターを OFF とみなす（`motorTorques` は空）。自由度 0 の成分は `ω = 0` で、そこの ON のモーターのトルクは `T_stall·d`。ロックの判定はしない（S1-07）。rpm と rad/s の換算は `rpmToRadPerSec`・`radPerSecToRpm`。
 - **基準シャフトと角度の引き継ぎ**: 連結成分ごとに基準シャフトを 1 本決める（root / detached を優先し、次に ID 順）。N は基準シャフトの行が単位行列になるように作り、q は基準シャフトの角度とする。構成が変わったら、新しい基準シャフトの現在の角度から q を引き継ぐ（S1-05、S1-07）。
-- **かみ合いのグラフ**（S1-05。`src/core/kinematics/graph.ts` の `buildMeshGraph(scene, meshes)`、線形代数は `linalg.ts`）: 頂点はシャフト、辺は `Mesh`（多重辺あり、`source` は問わない）。連結成分ごとに、`Mesh` 1 つにつき 1 行の拘束行列を作り、零空間の基底 N（行 = シャフト、列 = 自由度 `dof`）を求める。`dof = 0` が回転条件の矛盾。一般の自由度では基準シャフトは `dof` 本（`referenceShaftIds`）で、root / detached を先に、次に ID の昇順（ロケールに依らない文字列の比較）に見て、それまでに選んだ行と独立なものを取る。N はその行が単位行列になる。階数の判定は、行列の成分の最大の絶対値 × 1e-9 をしきい値にする。拘束の行の係数は `meshCoefficients` の 1 か所で決める（S2-02。後続の種類はここに足す）。基準シャフトの優先は root / detached が先（`mesh`・`bevel` は後）。速度比は `speedRatio(graph, from, to)`（`ω_to / ω_from`、決まらなければ `null`）。
+- **かみ合いのグラフ**（S1-05。`src/core/kinematics/graph.ts` の `buildMeshGraph(scene, meshes)`、線形代数は `linalg.ts`）: 頂点はシャフト、辺は `Mesh`（多重辺あり、`source` は問わない）。連結成分ごとに、`Mesh` 1 つにつき 1 行の拘束行列を作り、零空間の基底 N（行 = シャフト、列 = 自由度 `dof`）を求める。`dof = 0` が回転条件の矛盾。一般の自由度では基準シャフトは `dof` 本（`referenceShaftIds`）で、root / detached を先に、次に ID の昇順（ロケールに依らない文字列の比較）に見て、それまでに選んだ行と独立なものを取る。N はその行が単位行列になる。階数の判定は、行列の成分の最大の絶対値 × 1e-9 をしきい値にする。拘束の行の係数は `meshCoefficients` の 1 か所で決める（S2-02。後続の種類はここに足す）。基準シャフトの優先は root / detached が先（`mesh`・`bevel`・`skew` は後）。速度比は `speedRatio(graph, from, to)`（`ω_to / ω_from`、決まらなければ `null`）。
 - **ロック**: 次の場合に、その連結成分をロックとし、ω = 0 にする。
   - 零空間が 0 次元なのにモーターがある（回転条件の矛盾）
   - 解の |ω| が `LOCK_OMEGA_EPS` 未満なのに、トルクを出しているモーターがある
-  - 段階 2 以降で、ウォームの逆駆動、ラックの端、固定具との矛盾
+  - ウォームの逆駆動（S2-03。下の「ウォームのセルフロック」）。段階 3 で、ラックの端、固定具との矛盾
   - 実装（S1-07）: 成分ごとに判定する。`contradiction` は自由度 0 の成分に ON のモーターがある（一時停止中は無いとみなす）か、手でつかんでいるとき。`stalemate` は成分に ON のモーターがあり、つり合いの解で成分の全シャフトの `|ω| < LOCK_OMEGA_EPS` のとき（ON のモーターは速度 0 で `|τ| = T_stall > 0` を出すので、「トルクを出しているモーターがある」を満たす）。`LockInfo.shaftIds`・`gearIds` はその成分のシャフトと歯車（ID の昇順）。`locks` は成分の順（先頭のシャフトの ID の昇順）。ロックした成分は `ω = 0` で、他の成分には影響しない
+- **ウォームのセルフロック**（S2-03。`src/core/kinematics/worm-solve.ts`）: ホイール側から駆動しようとすると、強さに関係なくロックする（要件 §5）。ウォームのかみ合いを **一方通行の拘束** として扱う（ウォーム側はホイール側の影響を受けず、ホイール側はウォームの動きに無限の強さで従う）。ウォームのかみ合いを含む連結成分（自由度 1 以上）は、段階 1 のつり合いの代わりに次のとおり解く（`wormSections`・`solveWormSections`）。
+  1. ウォームのかみ合いを除いたかみ合いでつながる部分を「区画」とする
+  2. ウォームのかみ合いを「ウォームの区画 → ホイールの区画」の有向辺とし、閉路に含まれる区画（強連結成分）はまとめて 1 つの区画にする（その中のウォームのかみ合いは通常の双方向の拘束）。区画をトポロジカル順（入ってくる辺の無いもののうち、先頭のシャフトの ID が小さい順）に解く
+  3. 入ってくる辺のない区画は、段階 1 と同じ力のつり合いで解く（区画の拘束の零空間で `solveBalanceAffine`）
+  4. 入ってくる辺のある区画は、上流で決まったウォームの ω から求まるホイールの ω（`c_w·ω_w + c_h·ω_h = 0`）を **規定値** として加え、規定値を満たす解のうち残りの自由度を力のつり合いで決める（ω = ω0 + N' q'。区画内のモーターは従わされ、逆向きなら `backDriven`）
+  - ロックの条件（連結成分全体を ω = 0 にする）: 入ってくる辺のない区画で、自由度 0 なのに ON のモーターがある → `contradiction`、ON のモーターがあり解の ω が全て `LOCK_OMEGA_EPS` 未満 → `stalemate`。入ってくる辺のある区画で、規定値がすべて 0（上流のウォームが止まっている）・ON のモーターがある・解の ω が全て `LOCK_OMEGA_EPS` 未満 → `wormBackDrive`。規定値どうし、または区画の中の拘束と規定値が両立しない（止まったウォームが、別のウォームで回るホイールから逆に回される）→ `wormBackDrive`。連結成分全体の自由度が 0 なら、段階 1 の `contradiction` が先に決まる（閉路のウォームのギア比が合わない場合など）
+  - 手で、入ってくる辺のある区画のシャフトをつかむと、手と上流のウォームの両方が規定値になるので、手の動きに関係なく常に `wormBackDrive` のロック（角度は変えない）。入ってくる辺のない区画をつかんだときは段階 1 の手の扱い（つかんだシャフトの角度から成分全体を決め、モーターは無視する）
+  - 区画ごとに解いた ω も連結成分全体の拘束 `C ω = 0` を満たすので、`q̇` = 基準シャフトの ω として、角度の積分（`θ = N q`）はそのまま使う
+  - 区画の構造（`wormSections`）はグラフの参照ごとに覚える
 - **負けたモーター**（`backDriven`。S1-07）: ON のモーター（一時停止中は無い）のうち、そのシャフトの `ω · direction < −LOCK_OMEGA_EPS` のもの。ID の昇順。ロックした成分のモーターは ω = 0 なので入らない。手で回している成分では、手で求めた ω で同じ式を使う
 - **角度の積分**: 毎フレーム q を積分して `θ = N q` で角度を求める。シャフトごとに積分しないので、かみ合った歯車の位相がずれない。
   - 実装（S1-07）: 成分ごとに、前の状態の基準シャフトの角度を `q` とみなし（前の状態に無ければ 0）、`q += q̇·dt`（`q̇` は S1-06 の `componentQ`。ロックした成分は 0）、全シャフトの角度を `θ = N q` で求め直す。かみ合いの構成が変わったときも同じ式なので、基準シャフトの角度は保たれ、他のシャフトはそれに合わせて付き直る。自由度 0 の成分の角度は前の値のまま（無ければ 0）。角度は `2π` で折り返さない
@@ -380,15 +419,15 @@ interface Settings {
 - **部品の上での左ドラッグ**: 選択中の detached シャフトの本体なら付け直し（S1-19）、それ以外は手で回す（S1-21。`Interactions.pressHand`。`DRAG_THRESHOLD_PX` 以上動いてから回し始め、回している間は候補とハンドルを隠し、カーソルを `grabbing` にする。選択は変えない。マウスを乗せた部品のハイライトは続ける）。選択中の detached シャフトの本体が候補（S1-18）の陰にあるときも、左ボタンは `'app'`（付け直し）にする（S1-19）。
 - `reattachShaft` は、子の歯車の `offset` が 0 になるように、そのシャフト上の全歯車の `offset` を同じ量だけずらす（S1-11）。
 - **編集コマンド**（S1-11。`src/core/edit/commands.ts` の `applyCommand(scene, command, { ids })`）: 入力のシーンを変えずに新しいシーンを返し、変わらない部分（コレクション・部品）は元の参照を使い回す。何も変わらなければ同じシーンの参照を返す。失敗は例外にせず `{ ok: false, error: { code: 'notFound' | 'invalidValue' | 'notAllowed', message } }`。成功の `created` は新しく作った部品の ID（作った順。例: `addRootShaft` は `[シャフト, 歯車]`）。成功したシーンは必ず `validateScene` を通る。コマンドの一覧:
-  - `addRootShaft { axis, origin, gear: { size, teeth } }`、`growGear { mode: 'perimeter', parentGearId, angle, teeth }`（親と同じ大きさ・`offset 0` の歯車と `mesh` のシャフト。かさ歯車の親は `notAllowed`）、`growGear { mode: 'coaxial', shaftId, offset, size, teeth }`、`growGear { mode: 'bevel', parentGearId, axisStep, side }`（S2-02。親と同じ大きさ・同じ歯数・`apex: −side`・`offset 0` のかさ歯車と `bevel` のシャフト。親がかさ歯車でなければ `notAllowed`）
+  - `addRootShaft { axis, origin, gear: { size, teeth } }`、`growGear { mode: 'perimeter', parentGearId, angle, teeth }`（親と同じ大きさ・`offset 0` の歯車と `mesh` のシャフト。かさ歯車の親は `notAllowed`）、`growGear { mode: 'coaxial', shaftId, offset, size, teeth }`、`growGear { mode: 'bevel', parentGearId, axisStep, side }`（S2-02。親と同じ大きさ・同じ歯数・`apex: −side`・`offset 0` のかさ歯車と `bevel` のシャフト。親がかさ歯車でなければ `notAllowed`）、`growGear { mode: 'skew', parentGearId, axisStep, side, teeth }`（S2-03。ウォームにはホイール、ホイールにはウォーム（1 条）を、同じ大きさ・`offset 0` で新しい `skew` のシャフトに。親がウォームでもホイールでもなければ `notAllowed`。外周 `perimeter` はウォーム・ホイールの親で `notAllowed`）
   - `deleteParts { ids }`（複数を 1 回の Undo で。下の削除の規則）、`removeMotor { motorId }`（モーターだけを消す別名）
-  - `setGearTeeth { gearId, teeth }`（かさ歯車では、`bevel` の木の親子でつながったかさ歯車すべてを同じ歯数にする。1 コマンド＝Undo 1 回。S2-02）、`setMeshAngle { shaftId, angle }`（`mesh` だけ。`[0, 2π)` に正規化）、`setGearOffset { gearId, offset }`（`AXIAL_SNAP` の倍数。`mesh`・`bevel` のシャフトの子は `notAllowed`）
+  - `setGearTeeth { gearId, teeth }`（かさ歯車では、`bevel` の木の親子でつながったかさ歯車すべてを同じ歯数にする。1 コマンド＝Undo 1 回。S2-02。ウォームは `notAllowed`。S2-03）、`setMeshAngle { shaftId, angle }`（`mesh` だけ。`[0, 2π)` に正規化）、`setGearOffset { gearId, offset }`（`AXIAL_SNAP` の倍数。`mesh`・`bevel`・`skew` のシャフトの子は `notAllowed`）
   - `flipBevelApex { gearId }`（S2-02。かさ歯車の `apex` を反転する。区画はそのままで大端と頂点が移り、この歯車を親に持つ `bevel` のシャフトはついてくる。`bevel` のシャフトの子（`apex` は `−side` で決まる）と、かさ歯車でない歯車は `notAllowed`。UI のボタンは S2-05）
   - `addMotor { shaftId, size }`（`rpm` は `MOTOR_SIZES[size].defaultRpm`、`direction 1`、`on: true`。1 本に 1 個）、`updateMotor { motorId, patch: { size?, rpm?, direction?, on? } }`（`size` を変えても `rpm` は変えない）
-  - `moveShaft { shaftId, origin }`・`setShaftAxis { shaftId, axis }`（`root`・`detached` だけ。その先の `mesh`・`bevel` は書き換えない）
-  - `reattachShaft { shaftId, childGearId, parentGearId, angle }`（`detached` だけ。大きさが同じで、親がこのシャフトとその先（`descendantShafts`）に無いこと。付け直しは `mesh` だけなので、かさ歯車の組は `notAllowed`。S2-02）
+  - `moveShaft { shaftId, origin }`・`setShaftAxis { shaftId, axis }`（`root`・`detached` だけ。その先の `mesh`・`bevel`・`skew` は書き換えない）
+  - `reattachShaft { shaftId, childGearId, parentGearId, angle }`（`detached` だけ。大きさが同じで、親がこのシャフトとその先（`descendantShafts`）に無いこと。付け直しは `mesh` だけなので、かさ歯車の組（S2-02）とウォーム・ホイール（S2-03）は `notAllowed`）
   - `replaceScene { scene }`（`validateScene` を通らなければ `invalidValue`）
-- **削除の規則**: 歯車を消すと、その歯車を `parentGearId` に持つ `mesh`・`bevel` のシャフトと、その歯車を `childGearId` に持つ自分のシャフトは、消す直前（入力のシーンの `resolveLayout`）の原点と向きで `detached` になる（その先はそのまま）。歯車が 1 枚も残らなくなったシャフトはモーターごと消す。シャフトを消すと載っている歯車とモーターも消える。同じコマンドの中で先に消えた ID は無視し、シーンに無い ID が 1 つでもあれば `notFound`。
+- **削除の規則**: 歯車を消すと、その歯車を `parentGearId` に持つ `mesh`・`bevel`・`skew` のシャフトと、その歯車を `childGearId` に持つ自分のシャフトは、消す直前（入力のシーンの `resolveLayout`）の原点と向きで `detached` になる（その先はそのまま）。歯車が 1 枚も残らなくなったシャフトはモーターごと消す。シャフトを消すと載っている歯車とモーターも消える。同じコマンドの中で先に消えた ID は無視し、シーンに無い ID が 1 つでもあれば `notFound`。
 - **Undo/Redo の履歴**（S1-11。`src/core/edit/history.ts`）: `History { past（古い順）, future（次に Redo するものが先頭）, coalesceKey }`。`execute(state, command, ctx, { coalesceKey? })` は成功し、シーンの参照が変わったときだけ積み（未来は消える。上限 `HISTORY_LIMIT`、古いものから捨てる）、失敗・何も変えないコマンドでは履歴もそのまま。`coalesceKey` を渡すと、直前に積んだときと同じキーなら新しく積まない（ドラッグなど連続した入力を 1 回の Undo にする。UI は操作ごとに別のキーを作る）。Undo・Redo・キーなしの実行でキーは途切れる。
 - **ストアのアクション**（S1-11）: `loadScene`（履歴を空にしてシーンを置き換え、運動を初期化）、`command { command, coalesceKey? }`、`undo`、`redo`。シーンが変わったときは角度を引き継いで `solveMotion` で ω などを求め直す。失敗したコマンドや戻せない Undo は状態を変えず、購読者にも知らせない。新しい部品の ID は `createStore(scene, { ids })` の生成関数（既定はランダム）で作る。
 - シーンの検証エラー（`SceneError`）は、問題の場所を示す `path` を持つ（S1-03 で作り、S1-28 が表示に使う。S1-28 で形の確認の `code` `'invalidShape'` を足した）。`code` の一覧は `src/core/scene/validate.ts` の `SceneErrorCode`。
@@ -537,7 +576,7 @@ interface SaveFile {
 - **見た目の確認**（`e2e/visual/`）: スクリーンショットを `screenshots/<場面名>.png` に保存する（git では無視する）。自動で判定するのは「真っ黒・真っ白でない」（画素の分散がしきい値以上）ことだけ。`e2e/fixtures/visual.ts` の `captureScene(page, name)` を使う（しきい値は `e2e/fixtures/blank.ts` の `BLANK_VARIANCE_THRESHOLD` = 輝度の分散 4）。
   - S1-31 から: 画面の大きさは `test.use({ viewport: VISUAL_VIEWPORT })`（1280×800）にそろえ、撮る前に `prepareCapture(page)` を呼ぶ（Space で一時停止して回転を止め、カメラの動きが終わる（3 フレーム続けて動かない）のを待つ）。一時停止で見るものが消える場面（ロックの赤 `lock-red`、回転の矢印と rpm の `info-overlay-on`）は `prepareCapture(page, { pause: false })`。
   - 段階 1 の場面: `theme-brass`・`theme-wood`（showcase、Home）、`theme-brass-mesh-closeup`・`theme-wood-mesh-closeup`（接点から 60 mm）、`theme-brass-low`、`lock-red`、`interference-warning`、`info-overlay-on`、`ui-ja`・`ui-ja-settings`・`ui-en`・`ui-en-settings`（シーン A で g2 を選んだ状態と設定画面）、`works-list`、`context-menu`。各タスクで撮った `empty-scene`・`two-spur`・`axis-gizmo-*`・`candidates`・`selection-highlight` も残す。
-  - 段階 2 の場面: `helical-closeup`（S2-01。`helical-pair` のかみ合いを接点から 60 mm）、`bevel-closeup`（S2-02。`bevel-pair` のかみ合いの歯の中ほどを 60 mm から）。
+  - 段階 2 の場面: `helical-closeup`（S2-01。`helical-pair` のかみ合いを接点から 60 mm）、`bevel-closeup`（S2-02。`bevel-pair` のかみ合いの歯の中ほどを 60 mm から）、`worm-closeup`（S2-03。`worm-basic` の接点 `[16, 70, 0]` を斜め前から）、`worm-locked`（S2-03。`worm-backdrive` のロック中。`pause: false`）。
 - **通しテスト**（`e2e/flows/`。S1-31）: 主要な操作の流れを、操作は画面（パレット・候補・プロパティパネル・ツールバー・キー・メニュー）から行い、状態は `__gearSim` で確かめる。`loadScene` は準備にだけ使う。共通の操作は `e2e/fixtures/sim.ts`（`fixtureScene`・`openApp`・`getScene` などの読み出し・`gearPoint`（pick がその歯車を返す画面の点）・`clickGear`・`clickPerimeterCandidate`（中心が近い外周の候補）・`deselect`・`setPaused`・`settleCamera`・`nextFrames`・`waitAutosaved`）。新しい spec はこれを使う（S1-30 までの spec は各自の補助関数のまま）。
 - **性能の計測**（S1-31。`pnpm perf`、`scripts/perf.ts`。`pnpm verify` には入れない）: `vite build --mode e2e` → `vite preview --mode e2e --port 4175` を起動し、Playwright の Chromium を画面ありで開く（`--ignore-gpu-blocklist --disable-gpu-vsync --disable-frame-rate-limit`。SwiftShader は使わない）。画面は 1280×800、`devicePixelRatio` は実機の値。`generatePerfScene(count)`（`src/debug/perf-scene.ts`）を読み込み、条件（高品質／軽量・情報表示 ON／OFF・音あり／ミュート、テーマは真鍮）ごとに、キャンバスをクリック（音を開始）→ Home → 眺めるモード → 3 秒待つ → 指定の秒数だけページ内の `requestAnimationFrame` の間隔を記録する。平均 fps・フレーム時間の中央値・p95・p99・最大、実際に描いた回数（`renderer.info.render.frame` の増え方）、`calls`・`triangles`、描き直しの判定 1 回の時間を表で出し、`perf-results/<YYYYMMDD-HHmmss>.json`（git で無視）にも書く。平均 60fps 以上かつ p95 ≤ 16.7 ms で `OK`、それ以外は `BELOW TARGET`。終了コードは結果によらない。引数は `--count <n>`（初期値 200）・`--seconds <n>`（初期値 10）・`--headless`（動くかの確かめ用。数値は参考にならない）。TypeScript は `tsx` で動かす（`page.evaluate` に関数を渡すと tsx が差し込む `__name` がページに無いので、ページで動かす長い処理は文字列で渡す）。
   - `generatePerfScene(count, seed = 1)`: 歯車 count 枚の、干渉もロックもない、すべて回る 1 本の木（根のシャフト 1 本）。10 枚ずつの列（大きさは S・M・L の順、歯数は 20〜40 を seed で決める、±30° の折れ線）を、前の列の先頭のシャフトに重ねた歯車（列ごとに上の層へ。同じシャフトに 2 枚）と間の 1 枚でつなぎ、各列の先頭のシャフトに列の大きさのモーター（初期値の rpm、+1、ON）を付ける。200 枚でかみ合い 180 組、重ねた歯車 19 枚。
@@ -574,7 +613,7 @@ interface GearSimDebug {
   getHandles(): Array<{ kind: 'move' | 'height' | 'arc' | 'axial'; targetId: string; position: Vec3 }>;
   // 今表示している候補（S1-18）。center は仮の歯車の中心のワールド座標。
   // index は一覧の番号で、pick の結果（kind: 'candidate'）の id は String(index)
-  getCandidates(): Array<{ index: number; kind: 'perimeter' | 'bevel' | 'coaxial'; center: Vec3 }>; // 'bevel' は S2-02
+  getCandidates(): Array<{ index: number; kind: 'perimeter' | 'bevel' | 'skew' | 'coaxial'; center: Vec3 }>; // 'bevel' は S2-02、'skew' は S2-03
   getHand(): HandConstraint | null;  // 手で回しているシャフトと目標の角度。回していなければ null（S1-21）
   isPaused(): boolean;               // 全モーターの一時停止中か（S1-22）
   // ロック中・干渉中として表示している部品の ID（どちらも昇順。interfering はロック中を除く。S1-22）
@@ -642,6 +681,7 @@ API はタスクで必要になった時点で足していく。足したらこ�
 | S1-31 | `getRenderStats`（済。`{ frame, calls, triangles, redrawChecks, redrawCheckMs }`。通しテストに要る API は既存のもので足りた） |
 | S2-01 | なし（`getLayout().meshes[].kind` と `getScene().gears[].hand` が増えただけ） |
 | S2-02 | なし（`getCandidates()` の `kind` に `'bevel'`、`getScene()` に `apex` と `'bevel'` の配置、`getLayout().meshes[].kind` に `'bevel'` が増えただけ） |
+| S2-03 | なし（`getCandidates()` の `kind` に `'skew'`、`getScene()` に `'worm'`・`'wormWheel'` と `'skew'` の配置、`getLayout().meshes[].kind` に `'worm'`、`getMotion().locks[].reason` に `'wormBackDrive'` が増えただけ） |
 
 - トーストは `__gearSim` を通さず、Playwright から `page.evaluate` で `/src/ui/toast.ts` を動的 import して呼ぶ（S1-15）。`tsconfig.json` の `paths`（`/src/*` → `./src/*`）で、この形の import にも型が付く。時間で消えることは `page.clock.install()` で開いたあと `pauseAt` で時計を止め、`runFor` で進めて確かめる。
 - 描画領域は S1-15 からページより小さい（ツールバーとパネルの分）。ページ座標で「画面の内側」を確かめるときは、`page.viewportSize()` ではなく `page.locator('canvas').boundingBox()` を使う。

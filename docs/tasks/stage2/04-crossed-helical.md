@@ -33,6 +33,12 @@ depends: [S2-01, S2-03]
 - **表示**: 段階 1 と同じ材質
 - **保存**: シーンの検証で `'crossedHelical'` を受け付ける。`version` は 1 のまま
 - **S2-01 の時点**: 歯車の種類を足すと、`switch (gear.kind)` の `assertNever` でコンパイルエラーになる所（`src/core/scene/gear-shape.ts` の `gearShape`・`newGearShape`・`meshPartnerShape`・`GEAR_KINDS`、`geometry/can-mesh.ts` の `canMesh`・`meshKindOf`、`geometry/shape-key.ts` の `gearShapeKey`、`scene/parse.ts`、`render/gear-geometry.ts` の `buildGeometry`）を直す（design.md §4）。`MeshKind` は `geometry/can-mesh.ts` にある。候補（`GrowCandidate`）は作る歯車の形 `shape: GearShape` を持ち、同じ軸の種類は `GrowSpec.coaxialKind`（app は今 `'spur'` を渡す。`src/app/interactions.ts`）、編集コマンドの種類は `addRootShaft` の `gear.kind?`・`growGear`（coaxial）の `kind?` で渡す。外周に生やす子の形は `meshPartnerShape` で決まる
+- **S2-03 で作ったもの**（そのまま使い、ねじ歯車の組を足すところ）:
+  - 種類に依存しない部分: `src/core/geometry/skew.ts`（`thirdAxis`・`skewChildFrame`・`skewSign`）、`layout/resolve.ts` の `placeChild` の `'skew'`、`layout/candidates.ts` の skew の候補（`kind: 'skew'`。子の形は `gear-shape.ts` の `skewPartnerShape` で決まるので、`'crossedHelical'` → `'crossedHelical'` を足す。歯数は `spec.perimeterTeeth`）、`growGear { mode: 'skew', parentGearId, axisStep, side, teeth }`
+  - 種類ごとの分岐で足す所: `geometry/can-mesh.ts` の `meshGeometryOf`（`'skew'` を返す）・`canMesh`・`meshKindOf`、`geometry/dimensions.ts` の `sectionWidth`・`gearPitchRadius`・`gearEnvelope`（歯幅・`m·z/2`・歯先円）、`layout/resolve.ts` の `skewPhase`（接点で親の歯の中心と子の歯溝の中心を重ねる）、`kinematics/mesh-coefficients.ts` の `meshCoefficients`（`'crossedHelical'` の組も `'worm'` と同じ `s·z_a, z_b`）
+  - contact の判定（`resolve.ts` の `inContact`）は位置関係 `'skew'` の組に共通（軸が直交、中心を結ぶ線が両方の軸に直交、長さがピッチ円半径の和）で、最後に `canMesh` を見る
+  - セルフロックの解き方（`kinematics/worm-solve.ts`）は `mesh.kind === 'worm'` のかみ合いだけを一方通行にする。ねじ歯車の組は双方向のまま（何も足さなくてよい）
+  - ねじり押し出しのねじれ角は、S2-03 で `helicalTwistAt(size, teeth, hand, z, helixAngle?)`・`helicalTotalTwist`・`helicalSliceCount`・`buildHelicalGeometry(size, teeth, hand, helixAngle?)` の省略できる引数にした（省くと `HELIX_ANGLE`。ホイールは `WORM_LEAD_ANGLE`）。`CROSSED_HELIX_ANGLE` を渡せばよい
 - **S2-01 のねじり押し出し**: 角度は `src/core/geometry/helical.ts` の `helicalTwistAt(size, teeth, hand, z)`（`HELIX_ANGLE` を使う）・`helicalSliceCount`、形状データは `src/render/gear-geometry.ts` の `buildHelicalGeometry(size, teeth, hand)`。ねじれ角を引数で受け取る形に広げる
 
 ## 範囲外
