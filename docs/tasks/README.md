@@ -72,7 +72,7 @@
 | [S3-02](stage3/02-internal-gear.md) | 内歯車 | S2-05 | done |
 | [S3-03](stage3/03-planetary.md) | 遊星歯車とキャリア | S3-01, S3-02 | done |
 | [S3-04](stage3/04-rack-pinion.md) | ラック＆ピニオン | S2-05 | done |
-| [S3-05](stage3/05-stage3-integration.md) | 音・テーマ・保存形式の拡張 | S3-01〜S3-04 | todo |
+| [S3-05](stage3/05-stage3-integration.md) | 音・テーマ・保存形式の拡張 | S3-01〜S3-04 | doing |
 
 ## タスク資料のひな形
 

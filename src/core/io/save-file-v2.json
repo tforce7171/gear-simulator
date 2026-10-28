@@ -1,0 +1,160 @@
+{
+  "format": "gear-simulator",
+  "version": 2,
+  "scene": {
+    "shafts": {
+      "shaft_root": {
+        "id": "shaft_root",
+        "placement": {
+          "kind": "root",
+          "origin": [0, 60, 0],
+          "axis": "y"
+        }
+      },
+      "shaft_helical": {
+        "id": "shaft_helical",
+        "placement": {
+          "kind": "mesh",
+          "parentGearId": "gear_helical_a",
+          "childGearId": "gear_helical_b",
+          "angle": 0
+        }
+      },
+      "shaft_spur": {
+        "id": "shaft_spur",
+        "placement": {
+          "kind": "mesh",
+          "parentGearId": "gear_spur_a",
+          "childGearId": "gear_spur_b",
+          "angle": 0.7853981633974483
+        }
+      },
+      "shaft_bevel": {
+        "id": "shaft_bevel",
+        "placement": {
+          "kind": "bevel",
+          "parentGearId": "gear_bevel_a",
+          "childGearId": "gear_bevel_b",
+          "axisStep": 1,
+          "side": -1
+        }
+      },
+      "shaft_wheel": {
+        "id": "shaft_wheel",
+        "placement": {
+          "kind": "skew",
+          "parentGearId": "gear_worm",
+          "childGearId": "gear_wheel",
+          "axisStep": 1,
+          "side": -1
+        }
+      },
+      "shaft_crossed": {
+        "id": "shaft_crossed",
+        "placement": {
+          "kind": "skew",
+          "parentGearId": "gear_crossed_a",
+          "childGearId": "gear_crossed_b",
+          "axisStep": 1,
+          "side": -1
+        }
+      }
+    },
+    "gears": {
+      "gear_bevel_a": {
+        "id": "gear_bevel_a",
+        "shaftId": "shaft_root",
+        "size": "M",
+        "teeth": 20,
+        "offset": 0,
+        "kind": "bevel",
+        "apex": 1
+      },
+      "gear_helical_a": {
+        "id": "gear_helical_a",
+        "shaftId": "shaft_root",
+        "size": "M",
+        "teeth": 20,
+        "offset": -16,
+        "kind": "helical",
+        "hand": "right"
+      },
+      "gear_helical_b": {
+        "id": "gear_helical_b",
+        "shaftId": "shaft_helical",
+        "size": "M",
+        "teeth": 20,
+        "offset": 0,
+        "kind": "helical",
+        "hand": "left"
+      },
+      "gear_spur_a": {
+        "id": "gear_spur_a",
+        "shaftId": "shaft_root",
+        "size": "M",
+        "teeth": 20,
+        "offset": -24,
+        "kind": "spur"
+      },
+      "gear_spur_b": {
+        "id": "gear_spur_b",
+        "shaftId": "shaft_spur",
+        "size": "M",
+        "teeth": 20,
+        "offset": 0,
+        "kind": "spur"
+      },
+      "gear_bevel_b": {
+        "id": "gear_bevel_b",
+        "shaftId": "shaft_bevel",
+        "size": "M",
+        "teeth": 20,
+        "offset": 0,
+        "kind": "bevel",
+        "apex": 1
+      },
+      "gear_worm": {
+        "id": "gear_worm",
+        "shaftId": "shaft_bevel",
+        "size": "M",
+        "teeth": 1,
+        "offset": -64,
+        "kind": "worm"
+      },
+      "gear_wheel": {
+        "id": "gear_wheel",
+        "shaftId": "shaft_wheel",
+        "size": "M",
+        "teeth": 30,
+        "offset": 0,
+        "kind": "wormWheel"
+      },
+      "gear_crossed_a": {
+        "id": "gear_crossed_a",
+        "shaftId": "shaft_wheel",
+        "size": "M",
+        "teeth": 20,
+        "offset": -32,
+        "kind": "crossedHelical"
+      },
+      "gear_crossed_b": {
+        "id": "gear_crossed_b",
+        "shaftId": "shaft_crossed",
+        "size": "M",
+        "teeth": 20,
+        "offset": 0,
+        "kind": "crossedHelical"
+      }
+    },
+    "motors": {
+      "motor_m": {
+        "id": "motor_m",
+        "shaftId": "shaft_root",
+        "size": "M",
+        "rpm": 30,
+        "direction": 1,
+        "on": true
+      }
+    }
+  }
+}

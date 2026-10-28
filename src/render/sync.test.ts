@@ -7,6 +7,7 @@ import { resolveLayout } from '../core/layout/resolve';
 import { GEAR_KIND_LIST } from '../core/scene/gear-shape';
 import type { GearKind, Scene } from '../core/scene/types';
 import { createSceneSync } from './sync';
+import type { PartKind } from './themes';
 
 // すべての種類に同じ材質（S2-05 で歯車の材質は種類ごとになった）
 function allKinds(
@@ -30,6 +31,11 @@ function findTarget(root: Object3D, id: string): Object3D | undefined {
 }
 
 // その部品の、見えている（当たり判定用でない）メッシュの材質
+// キャリア・ラック・固定具の基の材質（S3-05）
+function allParts(material: MeshStandardMaterial): Record<PartKind, MeshStandardMaterial> {
+  return { carrier: material, rack: material, anchor: material };
+}
+
 function materialOf(root: Object3D, id: string): MeshStandardMaterial {
   const target = findTarget(root, id);
   if (target === undefined) throw new Error(`${id} が無い`);
@@ -225,6 +231,7 @@ describe('テーマの材質の差し替え（S1-24）', () => {
     const gear = new MeshStandardMaterial({ color: 0xc9a24a, metalness: 1, roughness: 0.32 });
     sync.setBaseMaterials({
       gear: allKinds(gear),
+      part: allParts(new MeshStandardMaterial()),
       shaft: new MeshStandardMaterial(),
       motor: new MeshStandardMaterial(),
     });
@@ -255,6 +262,7 @@ describe('テーマの材質の差し替え（S1-24）', () => {
     }
     sync.setBaseMaterials({
       gear: allKinds(brass, { worm: steel, wormWheel: bronze }),
+      part: allParts(new MeshStandardMaterial()),
       shaft: new MeshStandardMaterial(),
       motor: new MeshStandardMaterial(),
     });
@@ -266,10 +274,39 @@ describe('テーマの材質の差し替え（S1-24）', () => {
     // 差し替えると、共有している基の材質も 1 回ずつ dispose される
     sync.setBaseMaterials({
       gear: allKinds(new MeshStandardMaterial()),
+      part: allParts(new MeshStandardMaterial()),
       shaft: new MeshStandardMaterial(),
       motor: new MeshStandardMaterial(),
     });
     expect(disposed).toBe(3);
+  });
+
+  it('キャリア・ラック・固定具は部品の表の材質（S3-05）', () => {
+    const showcase = JSON.parse(
+      readFileSync(new URL('../../e2e/fixtures/stage3-showcase.json', import.meta.url), 'utf8'),
+    ) as Scene;
+    const sync = createSceneSync();
+    sync.sync(showcase, resolveLayout(showcase));
+    const steel = new MeshStandardMaterial({ color: 0xb9bec4 });
+    const brass = new MeshStandardMaterial({ color: 0xc9a24a });
+    const iron = new MeshStandardMaterial({ color: 0x26272a });
+    const shaft = new MeshStandardMaterial();
+    sync.setBaseMaterials({
+      gear: allKinds(brass),
+      part: { carrier: steel, rack: brass, anchor: iron },
+      shaft,
+      motor: new MeshStandardMaterial(),
+    });
+    expect(materialOf(sync.root, 'carrier_k')).toBe(steel);
+    expect(materialOf(sync.root, 'rack_r')).toBe(brass);
+    const anchorMaterials: unknown[] = [];
+    sync.root.traverse((o) => {
+      const m = o as Mesh;
+      if (m.isMesh === true && m.material === iron) anchorMaterials.push(m);
+    });
+    // 固定具 1 つ（台座・支柱・足）
+    expect(anchorMaterials.length).toBeGreaterThanOrEqual(1);
+    expect(sync.anchorCount()).toBe(1);
   });
 
   it('歯車とシャフトは影を落とす', () => {

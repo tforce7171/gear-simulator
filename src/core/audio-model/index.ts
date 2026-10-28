@@ -2,12 +2,16 @@ import type { MeshKind } from '../geometry/can-mesh';
 
 export type { MeshKind } from '../geometry/can-mesh';
 
-import type { MotionState } from '../kinematics/types';
+import { GEAR_SIZES } from '../constants';
+import type { LockInfo, MotionState } from '../kinematics/types';
 import type { Layout } from '../layout/types';
+import { gearWorldCenter } from '../layout/world';
+import { axisVector } from '../math/axis';
 import type { Vec3 } from '../math/vec3';
+import { scale, sub } from '../math/vec3';
 import type { GearId, Motor, MotorId, Scene, ShaftId, SizeKey } from '../scene/types';
 import type { AudioMaterialId } from '../theme';
-import { meshContactPoint, motorHumParams } from './spatial';
+import { lockKey, meshContactPoint, motorHumParams } from './spatial';
 
 export * from './spatial';
 
@@ -100,12 +104,17 @@ export const MATERIALS: Readonly<Record<AudioMaterialId, AudioMaterialParams>> =
   },
 };
 
+// 音源の種類（S3-05）: かみ合いの種類（MeshKind）と、ラックとピニオンの組 'rack'
+export type VoiceKind = MeshKind | 'rack';
+
 // かみ合いの種類ごとの音色（S2-05）。平歯車を 1 とした倍率で、click はクリックの音量、hum は連続音の音量、
-// slideNoise はすべりの雑音の強さの上限（0〜1）。手で聞いて調整したら資料（S2-05）の表も直す
+// slideNoise はすべりの雑音の強さの上限（0〜1）、lowpass は連続音のローパスの周波数に掛ける倍率
+// （1 未満でこもる。S3-05 の内歯車）。手で聞いて調整したら資料（S2-05・S3-05）の表も直す
 export interface MeshTimbre {
   readonly click: number;
   readonly hum: number;
   readonly slideNoise: number;
+  readonly lowpass: number;
 }
 
 // ねじ歯車のすべりの雑音は、ウォームのこの倍
@@ -113,26 +122,37 @@ const CROSSED_SLIDE_RATIO = 0.3;
 const WORM_SLIDE = 1;
 // ハスバ・ねじ歯車・ウォームの連続音の倍率（なめらかにかみ合ってうなりが勝つ）
 const SMOOTH_HUM = 1.5;
+// 内歯車の組のこもり（S3-05）: 連続音のローパスを材質の値のこの倍にする（高域を落とす）
+const INTERNAL_LOWPASS = 0.45;
 
-export const MESH_TIMBRES: Readonly<Record<MeshKind, MeshTimbre>> = {
-  spur: { click: 1, hum: 1, slideNoise: 0 },
-  bevel: { click: 1, hum: 1, slideNoise: 0 },
-  helical: { click: 0.4, hum: SMOOTH_HUM, slideNoise: 0 },
-  crossedHelical: { click: 0.4, hum: SMOOTH_HUM, slideNoise: CROSSED_SLIDE_RATIO * WORM_SLIDE },
-  worm: { click: 0.2, hum: SMOOTH_HUM, slideNoise: WORM_SLIDE },
-  // 内歯車の組（S3-02）。いまは平歯車と同じ。こもらせる違いは S3-05 で付ける
-  internal: { click: 1, hum: 1, slideNoise: 0 },
+export const MESH_TIMBRES: Readonly<Record<VoiceKind, MeshTimbre>> = {
+  spur: { click: 1, hum: 1, slideNoise: 0, lowpass: 1 },
+  bevel: { click: 1, hum: 1, slideNoise: 0, lowpass: 1 },
+  helical: { click: 0.4, hum: SMOOTH_HUM, slideNoise: 0, lowpass: 1 },
+  crossedHelical: {
+    click: 0.4,
+    hum: SMOOTH_HUM,
+    slideNoise: CROSSED_SLIDE_RATIO * WORM_SLIDE,
+    lowpass: 1,
+  },
+  worm: { click: 0.2, hum: SMOOTH_HUM, slideNoise: WORM_SLIDE, lowpass: 1 },
+  // 内歯車の組（S3-02）: 平歯車と同じ音色で、うなりを少しこもらせる（S3-05）
+  internal: { click: 1, hum: 1, slideNoise: 0, lowpass: INTERNAL_LOWPASS },
+  // ラックとピニオンの組（S3-05）: 平歯車と同じ
+  rack: { click: 1, hum: 1, slideNoise: 0, lowpass: 1 },
 };
 
-export const MESH_KINDS = Object.keys(MESH_TIMBRES) as readonly MeshKind[];
+export const VOICE_KINDS = Object.keys(MESH_TIMBRES) as readonly VoiceKind[];
+// かみ合いの種類（Layout.meshes の kind）だけ
+export const MESH_KINDS = VOICE_KINDS.filter((k): k is MeshKind => k !== 'rack');
 
-export function meshTimbre(kind: MeshKind): MeshTimbre {
+export function meshTimbre(kind: VoiceKind): MeshTimbre {
   return MESH_TIMBRES[kind];
 }
 
 // すべりの雑音の強さ（0〜1）。周速（mm/s。向きは問わない）に比例して上がり、SLIDE_NOISE_FULL_SPEED で
 // 種類の上限（meshTimbre の slideNoise）に頭打ちになる
-export function slideNoiseLevel(kind: MeshKind, pitchLineSpeed: number): number {
+export function slideNoiseLevel(kind: VoiceKind, pitchLineSpeed: number): number {
   const speed = Math.abs(pitchLineSpeed);
   if (!(speed > 0)) return 0;
   return MESH_TIMBRES[kind].slideNoise * Math.min(1, speed / SLIDE_NOISE_FULL_SPEED);
@@ -160,6 +180,21 @@ export function meshKey(a: GearId, b: GearId): string {
 // 歯の通過頻度（Hz）= z × |ω| / 2π。かみ合う 2 枚のどちらで求めても同じ
 export function toothPassFrequency(teeth: number, omega: number): number {
   return (teeth * Math.abs(omega)) / (2 * Math.PI);
+}
+
+// ラックの組の歯の通過頻度（Hz）= |v| / (π·m)（S3-05）。v はラックの速度（mm/s）、π·m は歯のピッチ（mm）
+export function rackToothPassFrequency(velocity: number, module: number): number {
+  return Math.abs(velocity) / (Math.PI * module);
+}
+
+// 遊星のかみ合いの歯の通過頻度（Hz）= z × |ω − ω_c| / 2π（S3-05）。キャリアに対する相対の回転で数える
+// （ω_c はキャリアのシャフトの角速度）。太陽と遊星、遊星とリングのどちらの歯車で求めても同じ
+export function planetToothPassFrequency(
+  teeth: number,
+  omega: number,
+  carrierOmega: number,
+): number {
+  return toothPassFrequency(teeth, omega - carrierOmega);
 }
 
 // クリックと連続音の重み（それぞれ 0〜1、click² + tone² = 1）
@@ -235,37 +270,45 @@ export function clickParams(material: AudioMaterialId, random: () => number): Cl
 
 // かみ合いごとの音源の状態
 export interface MeshVoice {
-  readonly key: string; // meshKey
-  // クリックの時刻を求める歯車（key の先頭の歯車）とそのシャフト・歯数
+  readonly key: string; // meshKey（ラックの組は meshKey(ピニオン, ラック)。S3-05）
+  // クリックの時刻を求める歯車（key の先頭の歯車。ラックの組はピニオン）とそのシャフト・歯数
   readonly gearId: GearId;
   readonly shaftId: ShaftId;
   readonly teeth: number;
+  // 遊星のかみ合い（S3-05）のキャリアのシャフト。クリックはこのシャフトに対する相対の角度で数える
+  readonly carrierShaftId?: ShaftId;
   readonly frequency: number; // 歯の通過頻度（Hz。クランプしない）
   readonly click: number; // clickToneMix の重み
   readonly tone: number;
   readonly position: Vec3; // かみ合いの接点（meshContactPoint。S1-26）
-  readonly kind: MeshKind; // かみ合いの種類（音色を決める。S2-05）
+  readonly kind: VoiceKind; // かみ合いの種類（音色を決める。S2-05。ラックの組は 'rack'。S3-05）
   readonly slide: number; // すべりの雑音の強さ（slideNoiseLevel。S2-05）
 }
 
-// Layout.meshes の順に、かみ合い 1 組ずつの音源の状態を返す（止まっている組も含む）
+// Layout.meshes の順に、かみ合い 1 組ずつの音源の状態を返し（止まっている組も含む）、続けて Layout.rackMeshes の順に
+// ラックの組（S3-05）を返す。遊星のかみ合い（Mesh.carrierShaftId がある組。S3-03）は歯の通過頻度をキャリアに対する
+// 相対の回転で求め（planetToothPassFrequency）、位置は公転した今の接点。内歯車の組は kind 'internal' のまま返し、
+// 音色（こもり）は MESH_TIMBRES が決める
 export function computeMeshVoices(scene: Scene, layout: Layout, motion: MotionState): MeshVoice[] {
   const voices: MeshVoice[] = [];
   for (const mesh of layout.meshes) {
     const [gearId = mesh.a] = [mesh.a, mesh.b].sort();
     const gear = scene.gears[gearId];
     if (gear === undefined) continue;
+    const carrier = mesh.carrierShaftId;
+    const carrierOmega = carrier === undefined ? 0 : (motion.omegas[carrier] ?? 0);
     const omega = motion.omegas[gear.shaftId] ?? 0;
-    const frequency = toothPassFrequency(gear.teeth, omega);
-    // 周速は 2 枚のピッチ円の周速の大きいほう（ウォームの組ではウォームの周速がすべりの速さに近い）
+    const frequency = planetToothPassFrequency(gear.teeth, omega, carrierOmega);
+    // 周速は 2 枚のピッチ円の周速の大きいほう（ウォームの組ではウォームの周速がすべりの速さに近い）。
+    // 遊星のかみ合いはキャリアに対する相対の周速
     let speed = 0;
     for (const id of [mesh.a, mesh.b]) {
       const g = scene.gears[id];
       const r = layout.gears[id]?.pitchRadius ?? 0;
       if (g === undefined) continue;
-      speed = Math.max(speed, r * Math.abs(motion.omegas[g.shaftId] ?? 0));
+      speed = Math.max(speed, r * Math.abs((motion.omegas[g.shaftId] ?? 0) - carrierOmega));
     }
-    voices.push({
+    const voice: MeshVoice = {
       key: meshKey(mesh.a, mesh.b),
       gearId,
       shaftId: gear.shaftId,
@@ -275,9 +318,47 @@ export function computeMeshVoices(scene: Scene, layout: Layout, motion: MotionSt
       position: meshContactPoint(layout, mesh, motion),
       kind: mesh.kind,
       slide: slideNoiseLevel(mesh.kind, speed),
+    };
+    voices.push(carrier === undefined ? voice : { ...voice, carrierShaftId: carrier });
+  }
+  for (const rm of layout.rackMeshes) {
+    const gear = scene.gears[rm.gear];
+    const rack = scene.racks[rm.rack];
+    const placed = layout.racks[rm.rack];
+    const gearLayout = layout.gears[rm.gear];
+    if (gear === undefined || rack === undefined || placed === undefined) continue;
+    if (gearLayout === undefined) continue;
+    const frequency = rackToothPassFrequency(
+      motion.rackVelocities[rack.id] ?? 0,
+      GEAR_SIZES[rack.size].module,
+    );
+    // 接点はピニオンのピッチ円とピッチ線の接する点（ラックが動いても動かない）: ピニオンの中心 − r·normalSign·normal
+    const position = sub(
+      gearWorldCenter(layout, motion, gear.id),
+      scale(axisVector(placed.normal), gearLayout.pitchRadius * placed.normalSign),
+    );
+    voices.push({
+      key: meshKey(gear.id, rack.id),
+      gearId: gear.id,
+      shaftId: gear.shaftId,
+      teeth: gear.teeth,
+      frequency,
+      ...clickToneMix(frequency),
+      position,
+      kind: 'rack',
+      slide: 0,
     });
   }
   return voices;
+}
+
+// ラックが端に当たった瞬間（S3-05）: 前のフレームの locks に無く、今のフレームにある 'rackEnd' のロック
+// （lockKey の昇順）。続くフレームで同じロックが続いても、もう返さない
+export function rackEndHits(prev: readonly LockInfo[], next: readonly LockInfo[]): LockInfo[] {
+  const before = new Set(prev.map(lockKey));
+  return next
+    .filter((lock) => lock.reason === 'rackEnd' && !before.has(lockKey(lock)))
+    .sort((a, b) => (lockKey(a) < lockKey(b) ? -1 : lockKey(a) > lockKey(b) ? 1 : 0));
 }
 
 // 1 フレームで跨いだ歯の数が多い（f ≥ TONE_MIN_HZ 相当）ときはクリックを予約しない

@@ -31,8 +31,8 @@ describe('meshTimbre', () => {
   });
 
   it("'spur'・'bevel' は段階 1 と同じ（1, 1, 0）", () => {
-    expect(meshTimbre('spur')).toEqual({ click: 1, hum: 1, slideNoise: 0 });
-    expect(meshTimbre('bevel')).toEqual({ click: 1, hum: 1, slideNoise: 0 });
+    expect(meshTimbre('spur')).toEqual({ click: 1, hum: 1, slideNoise: 0, lowpass: 1 });
+    expect(meshTimbre('bevel')).toEqual({ click: 1, hum: 1, slideNoise: 0, lowpass: 1 });
   });
 
   it("'worm' の slideNoise > 0、'spur'・'bevel'・'helical' の slideNoise = 0", () => {

@@ -55,37 +55,16 @@ export function parseScene(raw: unknown): SceneParseResult {
     shape('', 'scene must be an object');
     return { ok: false, errors };
   }
-  for (const collection of ['shafts', 'gears', 'motors'] as const) {
+  // 6 つのコレクションはすべて必須（S3-05 の version 3。古い版のファイルは migrate が anchors・carriers・racks を足す）
+  for (const collection of Object.keys(PREFIX) as Collection[]) {
     if (!isPlainObject(raw[collection])) shape(collection, `${collection} must be an object`);
   }
-  // 固定具（S3-01）。無いシーン（S3-01 より前に保存したもの）は空として読む（暫定。S3-05 で version 3 の移行に置き換える）
-  if (raw.anchors !== undefined && !isPlainObject(raw.anchors)) {
-    shape('anchors', 'anchors must be an object');
-  }
-  // キャリア（S3-03）。無いシーン（S3-03 より前に保存したもの）は空として読む（暫定。S3-05 で version 3 の移行に置き換える）
-  if (raw.carriers !== undefined && !isPlainObject(raw.carriers)) {
-    shape('carriers', 'carriers must be an object');
-  }
-  // ラック（S3-04）。無いシーン（S3-04 より前に保存したもの）は空として読む（暫定。S3-05 で version 3 の移行に置き換える）
-  if (raw.racks !== undefined && !isPlainObject(raw.racks)) {
-    shape('racks', 'racks must be an object');
-  }
   if (errors.length > 0) return { ok: false, errors };
-  const rawAnchors: Raw = isPlainObject(raw.anchors) ? raw.anchors : {};
-  const rawCarriers: Raw = isPlainObject(raw.carriers) ? raw.carriers : {};
-  const rawRacks: Raw = isPlainObject(raw.racks) ? raw.racks : {};
 
   // 部品の共通の形: 通常のオブジェクトで、キーと id が種類の接頭辞を持つ文字列
   const items = (collection: Collection): Array<[string, Raw, string]> => {
     const out: Array<[string, Raw, string]> = [];
-    const source =
-      collection === 'anchors'
-        ? rawAnchors
-        : collection === 'carriers'
-          ? rawCarriers
-          : collection === 'racks'
-            ? rawRacks
-            : (raw[collection] as Raw);
+    const source = raw[collection] as Raw;
     for (const [key, item] of Object.entries(source)) {
       const base = `${collection}.${key}`;
       if (!key.startsWith(PREFIX[collection])) {

@@ -6,6 +6,8 @@ import {
   LOCK_RATTLE_LEVEL,
   LOCK_RATTLE_RELEASE_SEC,
   MATERIALS,
+  RACK_HIT,
+  RACK_HIT_OVERTONE,
 } from '../core/audio-model';
 import type { Vec3 } from '../core/math/vec3';
 import type { AudioMaterialId } from '../core/theme';
@@ -47,6 +49,42 @@ export function playLockImpact(
     g.disconnect();
     setTimeout(() => panner.dispose(), tail * 1000 + 50);
   };
+}
+
+// ラックが端に当たった音（S3-05）: 減衰の速い 2 つの部分音（材質の高さ）＋ 材質のクリック。1 回だけ鳴らす
+export function playRackHit(
+  ctx: BaseAudioContext,
+  destination: AudioNode,
+  noise: AudioBuffer,
+  material: AudioMaterialId,
+  position: Vec3,
+  random: () => number,
+): void {
+  const p = RACK_HIT[material];
+  const panner = createPanner(ctx, destination, position);
+  const time = ctx.currentTime;
+  const decay = p.duration / IMPACT_TAIL_FACTOR;
+  const oscillators = [1, RACK_HIT_OVERTONE].map((ratio, i) => {
+    const o = ctx.createOscillator();
+    o.frequency.value = p.frequency * ratio;
+    const g = ctx.createGain();
+    envelope(g.gain, time, p.level / (i + 1), decay / (i + 1));
+    o.connect(g).connect(panner.node);
+    o.start(time);
+    o.stop(time + p.duration + 0.01);
+    o.onended = () => g.disconnect();
+    return o;
+  });
+  playClick(ctx, panner.node, noise, clickParams(material, random), time, p.clickGain);
+  const tail = Math.max(p.duration, ...MATERIALS[material].click.partials.map((x) => x.decay * 6));
+  const first = oscillators[0];
+  if (first !== undefined) {
+    const ended = first.onended;
+    first.onended = (e) => {
+      if (typeof ended === 'function') ended.call(first, e);
+      setTimeout(() => panner.dispose(), tail * 1000 + 50);
+    };
+  }
 }
 
 export interface LockRattle {

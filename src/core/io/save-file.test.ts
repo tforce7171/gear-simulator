@@ -34,9 +34,9 @@ const sceneA: Scene = {
 };
 
 describe('toSaveFile', () => {
-  it('format・version 2（S2-05）・同じシーンの参照', () => {
+  it('format・version 3（S3-05）・同じシーンの参照', () => {
     const file = toSaveFile(sceneA);
-    expect(file).toEqual({ format: 'gear-simulator', version: 2, scene: sceneA });
+    expect(file).toEqual({ format: 'gear-simulator', version: 3, scene: sceneA });
     expect(file.scene).toBe(sceneA);
   });
 });
@@ -61,7 +61,7 @@ describe('parseSaveFileObject', () => {
   const bad: Array<[string, unknown]> = [
     ['undefined', undefined],
     ["format: 'other'", { format: 'other' }],
-    ['version: 3', { format: 'gear-simulator', version: 3, scene: sceneA }],
+    ['version: 4', { format: 'gear-simulator', version: 4, scene: sceneA }],
     ['scene: { shafts: 1 }', { format: 'gear-simulator', version: 1, scene: { shafts: 1 } }],
     [
       '歯数 81 の歯車',
@@ -313,9 +313,9 @@ describe('migrate', () => {
     expect(result).toEqual({ ok: false, error: { code: 'unsupported-version' } });
   });
 
-  it('移行は 1 → 2 だけで、最新は 2（S2-05）', () => {
-    expect(Object.keys(MIGRATIONS)).toEqual(['1']);
-    expect(CURRENT_SAVE_VERSION).toBe(2);
+  it('移行は 1 → 2（S2-05）と 2 → 3（S3-05）で、最新は 3', () => {
+    expect(Object.keys(MIGRATIONS)).toEqual(['1', '2']);
+    expect(CURRENT_SAVE_VERSION).toBe(3);
   });
 
   it('1 → 2 の移行は中身をそのままにする（version は migrate が書き換える）', () => {
@@ -327,7 +327,12 @@ describe('migrate', () => {
     const step = MIGRATIONS[1];
     expect(step).toBeDefined();
     expect(step?.(raw)).toEqual(raw);
-    expect(migrate(raw)).toEqual({ ok: true, raw: { ...raw, version: 2 }, from: 1 });
+    // 続けて 2 → 3（S3-05）が anchors・carriers・racks を足す
+    expect(migrate(raw)).toEqual({
+      ok: true,
+      raw: { ...raw, version: 3, scene: { ...raw.scene, anchors: {}, carriers: {}, racks: {} } },
+      from: 1,
+    });
   });
 });
 
@@ -382,13 +387,13 @@ describe('version 1 → 2 の移行（S2-05）', () => {
     expect(Object.keys(v1.scene.motors)).toHaveLength(1);
   });
 
-  // 固定具（S3-01）の無いシーンには anchors: {} を補う（暫定。S3-05 で version 3 の移行に置き換える）
-  it('parseSaveFile → ok、migratedFrom === 1、file.version === 2、scene は元のまま（anchors: {} を補う）', () => {
+  // 2 → 3 の移行（S3-05）が anchors・carriers・racks を {} で足す
+  it('parseSaveFile → ok、migratedFrom === 1、file.version === 3、scene は元のまま（anchors などは {}）', () => {
     const result = parseSaveFile(v1Text);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.migratedFrom).toBe(1);
-    expect(result.file.version).toBe(2);
+    expect(result.file.version).toBe(3);
     expect(result.file.scene).toEqual({ ...v1.scene, anchors: {}, carriers: {}, racks: {} });
   });
 
@@ -397,7 +402,7 @@ describe('version 1 → 2 の移行（S2-05）', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.migratedFrom).toBe(1);
-    expect(result.file.version).toBe(2);
+    expect(result.file.version).toBe(3);
     expect(result.file.scene).toEqual({ ...v1.scene, anchors: {}, carriers: {}, racks: {} });
   });
 });
@@ -424,7 +429,7 @@ describe('段階 2 の部品の往復（S2-05）', () => {
     const result = parseSaveFile(text);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.file).toEqual({ format: 'gear-simulator', version: 2, scene: showcase });
+    expect(result.file).toEqual({ format: 'gear-simulator', version: 3, scene: showcase });
     expect(result.migratedFrom).toBeNull();
   });
 });
@@ -471,16 +476,182 @@ describe('version 2 の検証（S2-05）', () => {
     });
   }
 
-  it('version 3 のファイル → unsupported-version', () => {
-    const text = JSON.stringify({ format: 'gear-simulator', version: 3, scene: helical });
+  it('version 4 のファイル → unsupported-version（S3-05 で最新は 3）', () => {
+    const text = JSON.stringify({ format: 'gear-simulator', version: 4, scene: helical });
     expect(parseSaveFile(text)).toEqual({ ok: false, error: { code: 'unsupported-version' } });
   });
 
   it('段階 2 の部品を含む version 2 のファイルは、version 1 までしか読めないアプリでは unsupported-version', () => {
-    const text = serializeSaveFile(toSaveFile(worm as Scene));
-    const raw = JSON.parse(text) as Record<string, unknown>;
-    expect(raw.version).toBe(2);
+    const raw: Record<string, unknown> = { format: 'gear-simulator', version: 2, scene: worm };
     // 段階 1 のアプリ = 移行の登録なし・最新 1
     expect(migrate(raw, {}, 1)).toEqual({ ok: false, error: { code: 'unsupported-version' } });
+  });
+});
+
+// S3-05: 保存形式の version 3（anchors・carriers・racks を必須にし、段階 3 の部品の検証を足した）
+describe('version 2 → 3 の移行（S3-05）', () => {
+  // S2-05 の時点の version 2 のファイル（stage2-showcase。anchors・carriers・racks を持たない）
+  const v2Url = new URL('./save-file-v2.json', import.meta.url);
+  const v2 = readJson(v2Url) as { version: number; scene: Record<string, unknown> };
+
+  it('version 2 のファイル → ok、migratedFrom === 2、version === 3、anchors・carriers・racks が {}、他は元と同じ', () => {
+    expect(v2.version).toBe(2);
+    expect(v2.scene.anchors).toBeUndefined();
+    const result = parseSaveFile(readFileSync(v2Url, 'utf8'));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.migratedFrom).toBe(2);
+    expect(result.file.version).toBe(3);
+    const { anchors, carriers, racks, ...rest } = result.file.scene;
+    expect(anchors).toEqual({});
+    expect(carriers).toEqual({});
+    expect(racks).toEqual({});
+    expect(rest).toEqual(v2.scene);
+  });
+
+  it('version 1 のファイル → version 3 まで順に移行される（migratedFrom === 1）', () => {
+    const v1 = readJson(new URL('./save-file-v1.json', import.meta.url));
+    const result = parseSaveFileObject(v1);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.migratedFrom).toBe(1);
+    expect(result.file.version).toBe(3);
+  });
+
+  it('S3-01〜S3-04 の間に version 2 のまま保存された段階 3 の部品は、移行で残る', () => {
+    const scene = readJson(new URL('../../../e2e/fixtures/planetary-ring-fixed.json', import.meta.url));
+    const result = parseSaveFileObject({ format: 'gear-simulator', version: 2, scene });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.migratedFrom).toBe(2);
+    expect(result.file.scene).toEqual(scene);
+  });
+});
+
+describe('段階 3 の部品の往復（S3-05）', () => {
+  const showcase = readJson(
+    new URL('../../../e2e/fixtures/stage3-showcase.json', import.meta.url),
+  ) as Scene;
+
+  it('stage3-showcase は遊星歯車機構（リングを固定）・内歯車の組・ラック・固定具を含み、モーターは 2 つ', () => {
+    expect(Object.keys(showcase.carriers)).toHaveLength(1);
+    expect(Object.values(showcase.gears).filter((g) => g.kind === 'internal')).toHaveLength(2);
+    expect(Object.keys(showcase.racks)).toHaveLength(1);
+    expect(Object.keys(showcase.anchors)).toHaveLength(1);
+    expect(Object.keys(showcase.motors)).toHaveLength(2);
+  });
+
+  it('保存 → 読み込み → 元と toEqual、migratedFrom === null', () => {
+    const result = parseSaveFile(serializeSaveFile(toSaveFile(showcase)));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.file).toEqual({ format: 'gear-simulator', version: 3, scene: showcase });
+    expect(result.migratedFrom).toBeNull();
+  });
+});
+
+describe('version 3 の検証（S3-05）', () => {
+  const ringFixed = readJson(
+    new URL('../../../e2e/fixtures/planetary-ring-fixed.json', import.meta.url),
+  ) as Scene;
+  const rackBasic = readJson(new URL('../../../e2e/fixtures/rack-basic.json', import.meta.url));
+
+  // scene の点区切りの場所を書き換えた version 3 のファイル（undefined はフィールドを消す）
+  function v3With(scene: unknown, edits: Array<[string, unknown]>): string {
+    const copy = structuredClone(scene) as Record<string, unknown>;
+    for (const [path, value] of edits) {
+      const keys = path.split('.');
+      const last = keys.pop() as string;
+      let target = copy;
+      for (const key of keys) target = target[key] as Record<string, unknown>;
+      if (value === undefined) delete target[last];
+      else target[last] = value;
+    }
+    return JSON.stringify({ format: 'gear-simulator', version: 3, scene: copy });
+  }
+
+  it('書き換える前のフィクスチャはどれも ok', () => {
+    for (const scene of [ringFixed, rackBasic]) {
+      expect(parseSaveFile(v3With(scene, [])).ok).toBe(true);
+    }
+  });
+
+  const cases: Array<[string, unknown, Array<[string, unknown]>, string]> = [
+    ['anchors がない', ringFixed, [['anchors', undefined]], 'anchors'],
+    [
+      '遊星のシャフトにモーターがある',
+      ringFixed,
+      [
+        [
+          'motors.motor_p',
+          { id: 'motor_p', shaftId: 'shaft_p0', size: 'M', rpm: 30, direction: 1, on: true },
+        ],
+      ],
+      'motors.motor_p.shaftId',
+    ],
+    [
+      '遊星のシャフトに固定具がある',
+      ringFixed,
+      [['anchors.anchor_p', { id: 'anchor_p', target: { kind: 'shaft', id: 'shaft_p1' } }]],
+      'anchors.anchor_p.target.id',
+    ],
+    [
+      'concentric が自分自身を親にする（循環）',
+      ringFixed,
+      [['shafts.shaft_k.placement.parentShaftId', 'shaft_k']],
+      'shafts.shaft_k.placement.parentShaftId',
+    ],
+    [
+      'detached のラックの direction と normal が同じ',
+      rackBasic,
+      [
+        [
+          'racks.rack_r.placement',
+          { kind: 'detached', origin: [0, 40, 4], direction: 'x', normal: 'x', normalSign: 1 },
+        ],
+      ],
+      'racks.rack_r.placement.normal',
+    ],
+    [
+      'pinion のラックの axisStep: 3',
+      rackBasic,
+      [['racks.rack_r.placement.axisStep', 3]],
+      'racks.rack_r.placement.axisStep',
+    ],
+    [
+      '(z_s + z_r)/n が整数でない遊星の機構（太陽 20・遊星 12・リング 44・3 個）',
+      ringFixed,
+      [
+        ['gears.gear_s.teeth', 20],
+        ['gears.gear_r.teeth', 44],
+      ],
+      'carriers.carrier_k',
+    ],
+    [
+      '同心でない遊星の機構（リング 46）',
+      ringFixed,
+      [['gears.gear_r.teeth', 46]],
+      'carriers.carrier_k',
+    ],
+  ];
+  for (const [name, scene, edits, path] of cases) {
+    it(`${name} → ok: false（例外にしない）`, () => {
+      const text = v3With(scene, edits);
+      expect(() => parseSaveFile(text)).not.toThrow();
+      const result = parseSaveFile(text);
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.error).toEqual({ code: 'invalid-scene', path });
+    });
+  }
+
+  it('暫定処理の削除: version 3 と書かれていて racks がないファイル → ok: false', () => {
+    const result = parseSaveFile(v3With(rackBasic, [['racks', undefined]]));
+    expect(result).toEqual({ ok: false, error: { code: 'invalid-scene', path: 'racks' } });
+  });
+
+  it('version 4 のファイル → unsupported-version', () => {
+    const text = JSON.stringify({ format: 'gear-simulator', version: 4, scene: ringFixed });
+    expect(parseSaveFile(text)).toEqual({ ok: false, error: { code: 'unsupported-version' } });
   });
 });

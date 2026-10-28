@@ -27,6 +27,8 @@ export interface MeshVoiceSynth {
   click(params: ClickParams, time: number, gain: number): void;
   // すべりの雑音の強さ（0〜1。slideNoiseLevel。S2-05）
   setSlide(level: number): void;
+  // 連続音のローパスに掛ける倍率（1 で材質のまま、1 未満でこもる。内歯車の組。S3-05）
+  setLowpassScale(scale: number): void;
   setMaterial(material: AudioMaterialId): void;
   // 音源の位置（かみ合いの接点。mm）
   setPosition(position: Vec3): void;
@@ -52,6 +54,7 @@ export function createMeshVoiceSynth(
 ): MeshVoiceSynth {
   let material = initialMaterial;
   let level = 0;
+  let lowpassScale = 1;
   const panner: Panner = createPanner(ctx, destination, position);
   const output = ctx.createGain();
   // 入れ替わりでプツッと鳴らないように、0 から 100 ms で上げる
@@ -99,7 +102,11 @@ export function createMeshVoiceSynth(
   const applyMaterial = (): void => {
     const tone = MATERIALS[material].tone;
     osc.setPeriodicWave(periodicWave(ctx, tone.harmonics));
-    toneFilter.frequency.setTargetAtTime(tone.lowpass, ctx.currentTime, PARAM_SMOOTHING);
+    toneFilter.frequency.setTargetAtTime(
+      tone.lowpass * lowpassScale,
+      ctx.currentTime,
+      PARAM_SMOOTHING,
+    );
     gritGain.gain.setTargetAtTime(level * tone.noise, ctx.currentTime, PARAM_SMOOTHING);
     applySlide();
   };
@@ -135,6 +142,12 @@ export function createMeshVoiceSynth(
       if (disposed || next === slideLevel) return;
       slideLevel = next;
       applySlide();
+    },
+    setLowpassScale(next) {
+      if (disposed || next === lowpassScale) return;
+      lowpassScale = next;
+      const lowpass = MATERIALS[material].tone.lowpass * lowpassScale;
+      toneFilter.frequency.setTargetAtTime(lowpass, ctx.currentTime, PARAM_SMOOTHING);
     },
     setMaterial(next) {
       if (disposed || next === material) return;

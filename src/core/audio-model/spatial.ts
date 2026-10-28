@@ -49,6 +49,20 @@ export const LOCK_IMPACT: Readonly<Record<AudioMaterialId, LockImpactParams>> = 
 // 衝撃音の低音の音量（資料に無いので決めた値。implementation-log を参照）
 export const LOCK_IMPACT_LEVEL = 0.6;
 
+// ラックが端に当たった音（S3-05）: ロックの衝撃音より短く高い「カン」「コン」。材質（テーマ）で変える。
+// 低音の代わりに、減衰の速い 2 つの部分音（frequency と その 2.7 倍）＋ 材質のクリック
+export interface RackHitParams {
+  readonly frequency: number; // 低いほうの部分音（Hz）
+  readonly duration: number; // 長さ（秒）
+  readonly level: number; // 部分音の音量
+  readonly clickGain: number; // 材質のクリックに掛ける倍率
+}
+export const RACK_HIT: Readonly<Record<AudioMaterialId, RackHitParams>> = {
+  metal: { frequency: 520, duration: 0.12, level: 0.35, clickGain: 2 },
+  wood: { frequency: 260, duration: 0.05, level: 0.45, clickGain: 1.5 },
+};
+export const RACK_HIT_OVERTONE = 2.7;
+
 // モーターのうなり
 export const MOTOR_HUM_BASE_HZ: Readonly<Record<SizeKey, number>> = { S: 220, M: 140, L: 90 };
 export const MOTOR_HUM_LOWPASS_RATIO = 6; // ローパスの周波数 = 基準 × 6

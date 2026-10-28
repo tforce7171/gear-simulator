@@ -54,6 +54,7 @@ import {
   rackAnchorFrame,
   rackShapeKey,
 } from './rack';
+import type { PartKind } from './themes';
 import {
   lockGlowIntensity,
   lockShakeAngle,
@@ -206,9 +207,11 @@ function pulseLocked(set: MaterialSet, timeSec: number): void {
   for (const emphasis of EMPHASES) set[`locked-${emphasis}`].emissiveIntensity = intensity;
 }
 
-// 部品の種類ごとの基の材質（テーマが決める。S1-24）。歯車は種類ごと（S2-05。同じ材質を共有してよい）
+// 部品の種類ごとの基の材質（テーマが決める。S1-24）。歯車は種類ごと（S2-05。同じ材質を共有してよい）、
+// キャリア・ラック・固定具は part（S3-05。render/themes.ts の PART_KIND_MATERIALS。歯車と共有してよい）
 export interface BaseMaterials {
   readonly gear: Readonly<Record<GearKind, MeshStandardMaterial>>;
+  readonly part: Readonly<Record<PartKind, MeshStandardMaterial>>;
   readonly shaft: MeshStandardMaterial;
   readonly motor: MeshStandardMaterial;
 }
@@ -219,27 +222,32 @@ function disposeSet(set: MaterialSet): void {
 }
 
 type GearMaterialSets = Readonly<Record<GearKind, MaterialSet>>;
+type PartMaterialSets = Readonly<Record<PartKind, MaterialSet>>;
+const PART_KIND_LIST: readonly PartKind[] = ['carrier', 'rack', 'anchor'];
 
-// 歯車の種類ごとの材質の組。基の材質が同じ種類は同じ組を共有する
-function gearMaterialSets(
-  base: Readonly<Record<GearKind, MeshStandardMaterial>>,
-): GearMaterialSets {
+// 歯車と部品（S3-05）の種類ごとの材質の組。基の材質が同じ種類は同じ組を共有する（歯車と部品の間でも）
+function materialSets(
+  gear: Readonly<Record<GearKind, MeshStandardMaterial>>,
+  part: Readonly<Record<PartKind, MeshStandardMaterial>>,
+): { gear: GearMaterialSets; part: PartMaterialSets } {
   const byBase = new Map<MeshStandardMaterial, MaterialSet>();
-  const result = {} as Record<GearKind, MaterialSet>;
-  for (const kind of GEAR_KIND_LIST) {
-    const material = base[kind];
+  const setOf = (material: MeshStandardMaterial): MaterialSet => {
     let set = byBase.get(material);
     if (set === undefined) {
       set = materialSet(material);
       byBase.set(material, set);
     }
-    result[kind] = set;
-  }
-  return result;
+    return set;
+  };
+  const gears = {} as Record<GearKind, MaterialSet>;
+  for (const kind of GEAR_KIND_LIST) gears[kind] = setOf(gear[kind]);
+  const parts = {} as Record<PartKind, MaterialSet>;
+  for (const kind of PART_KIND_LIST) parts[kind] = setOf(part[kind]);
+  return { gear: gears, part: parts };
 }
 
-function uniqueSets(sets: GearMaterialSets): MaterialSet[] {
-  return [...new Set(Object.values(sets))];
+function uniqueSets(gear: GearMaterialSets, part: PartMaterialSets): MaterialSet[] {
+  return [...new Set([...Object.values(gear), ...Object.values(part)])];
 }
 
 function sameSet(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
@@ -322,12 +330,16 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
   const root = new Group();
   // テーマ（S1-24）が setBaseMaterials で差し替えるまでの材質
   const defaultGear = new MeshStandardMaterial({ color: 0xa0a4aa, metalness: 0.3, roughness: 0.5 });
-  let gearMaterials = gearMaterialSets(
+  const defaultPart = new MeshStandardMaterial({ color: 0x7a7f87, metalness: 0.4, roughness: 0.4 });
+  const initialSets = materialSets(
     Object.fromEntries(GEAR_KIND_LIST.map((kind) => [kind, defaultGear])) as Record<
       GearKind,
       MeshStandardMaterial
     >,
+    { carrier: defaultPart, rack: defaultGear, anchor: defaultPart },
   );
+  let gearMaterials = initialSets.gear;
+  let partMaterials = initialSets.part;
   let shaftMaterials = materialSet(
     new MeshStandardMaterial({ color: 0x7a7f87, metalness: 0.4, roughness: 0.4 }),
   );
@@ -458,7 +470,7 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
     for (const rack of Object.values(scene.racks)) {
       const placed = layout.racks[rack.id];
       if (placed === undefined || racks.has(rack.id)) continue;
-      const body = new Mesh(acquireRackGeometry(rack), gearMaterials.spur.none);
+      const body = new Mesh(acquireRackGeometry(rack), partMaterials.rack.none);
       body.castShadow = true;
       body.receiveShadow = true;
       setPickTarget(body, 'rack', rack.id);
@@ -658,16 +670,16 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
     for (const entry of motors.values()) {
       entry.object.material = motorMaterials[levelOf(entry.motor.id, entry.motor.shaftId)];
     }
-    // キャリアは自分とそのシャフトの状態で光らせる（S3-03）
+    // キャリアは自分とそのシャフトの状態で光らせる（S3-03）。材質はキャリアの表（S3-05）
     for (const [id, entry] of carriers) {
-      const material = shaftMaterials[levelOf(id, entry.carrier.shaftId)];
+      const material = partMaterials.carrier[levelOf(id, entry.carrier.shaftId)];
       for (const part of entry.parts) part.material = material;
     }
-    // ラック（S3-04）。材質は平歯車と同じ組（ラックの材質の表は S3-05）
-    for (const [id, entry] of racks) entry.body.material = gearMaterials.spur[levelOf(id)];
-    // 固定具は固定したシャフト（ラック）と同じに光らせる（ロックの赤・選択の水色。S3-01）
+    // ラック（S3-04）。材質はラックの表（S3-05）
+    for (const [id, entry] of racks) entry.body.material = partMaterials.rack[levelOf(id)];
+    // 固定具は固定したシャフト（ラック）と同じに光らせる（ロックの赤・選択の水色。S3-01）。材質は固定具の表（S3-05）
     for (const entry of anchors.values()) {
-      const material = shaftMaterials[levelOf(entry.anchor.target.id)];
+      const material = partMaterials.anchor[levelOf(entry.anchor.target.id)];
       for (const part of entry.parts) part.material = material;
     }
   }
@@ -788,14 +800,16 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
       }
       if (warnings.locked.size > 0) {
         version++; // 震えている
-        for (const set of uniqueSets(gearMaterials)) pulseLocked(set, timeSec);
+        for (const set of uniqueSets(gearMaterials, partMaterials)) pulseLocked(set, timeSec);
         pulseLocked(shaftMaterials, timeSec);
         pulseLocked(motorMaterials, timeSec);
       }
     },
     setBaseMaterials(materials) {
-      const old = [...uniqueSets(gearMaterials), shaftMaterials, motorMaterials];
-      gearMaterials = gearMaterialSets(materials.gear);
+      const old = [...uniqueSets(gearMaterials, partMaterials), shaftMaterials, motorMaterials];
+      const sets = materialSets(materials.gear, materials.part);
+      gearMaterials = sets.gear;
+      partMaterials = sets.part;
       shaftMaterials = materialSet(materials.shaft);
       motorMaterials = materialSet(materials.motor);
       applyHighlight();

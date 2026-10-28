@@ -8,16 +8,17 @@ import {
   lockKey,
   MASTER_GAIN,
   MAX_MOTOR_VOICES,
-  type MeshKind,
   type MeshVoice,
   type MotorHum,
   MUTE_RAMP_SEC,
   meshTimbre,
+  rackEndHits,
   selectVoices,
   shouldScheduleClicks,
   summarizeBackground,
   toneParams,
   toothPassTimes,
+  type VoiceKind,
 } from '../core/audio-model';
 import { MAX_AUDIO_VOICES } from '../core/constants';
 import type { LockInfo } from '../core/kinematics/types';
@@ -25,7 +26,7 @@ import type { Vec3 } from '../core/math/vec3';
 import type { MotorId, ShaftId } from '../core/scene/types';
 import type { AudioMaterialId } from '../core/theme';
 import { type BackgroundSynth, createBackgroundSynth } from './background';
-import { createLockRattle, type LockRattle, playLockImpact } from './lock-sound';
+import { createLockRattle, type LockRattle, playLockImpact, playRackHit } from './lock-sound';
 import { createMeshVoiceSynth, type MeshVoiceSynth } from './mesh-voice';
 import { createMotorHumSynth, type MotorHumSynth } from './motor-hum';
 import { applyListener, type ListenerPose } from './panner';
@@ -42,22 +43,23 @@ export interface AudioState {
   muted: boolean;
   material: AudioMaterialId;
   // 今鳴らしている（鳴らす対象の）かみ合い。frequency は歯の通過頻度（Hz）、position は接点、
-  // kind はかみ合いの種類（音色。S2-05）、slide はすべりの雑音の強さ（0〜1。S2-05）
+  // kind はかみ合いの種類（音色。S2-05。ラックの組は 'rack'。S3-05）、slide はすべりの雑音の強さ（0〜1。S2-05）
   voices: Array<{
     key: string;
     frequency: number;
     click: number;
     tone: number;
     position: Vec3;
-    kind: MeshKind;
+    kind: VoiceKind;
     slide: number;
   }>;
   // 選ばれなかった組をまとめた背景のうなり。無ければ null
   background: { level: number; frequency: number } | null;
   // 今鳴らしているモーターのうなり（motorId の昇順）
   motors: Array<{ motorId: MotorId; frequency: number; strain: number; grind: number }>;
-  // 起動からの衝撃音の回数と、ガタガタ中のロックのキー（昇順）
-  lockSounds: { impacts: number; rattling: string[] };
+  // 起動からの衝撃音の回数と、ガタガタ中のロックのキー（昇順）。rackHits はラックが端に当たった音の回数（S3-05。
+  // 端のロックはロックの衝撃音の代わりにこれを鳴らすので impacts には数えない）
+  lockSounds: { impacts: number; rattling: string[]; rackHits: number };
 }
 
 // 1 フレーム分の入力
@@ -122,6 +124,7 @@ export function createAudioEngine(options: AudioEngineOptions = {}): AudioEngine
   let prevLocks: readonly LockInfo[] = [];
   let rattling: string[] = [];
   let impacts = 0;
+  let rackHits = 0;
   let impactTimes: number[] = [];
   let clock = 0; // update の dt の積算（秒）。衝撃音の回数の制限に使う
 
@@ -155,7 +158,10 @@ export function createAudioEngine(options: AudioEngineOptions = {}): AudioEngine
     graph?.background.set(background);
     const ctx = graph?.ctx;
     for (const voice of active) {
-      const angle = frame.angles[voice.shaftId] ?? 0;
+      // 遊星のかみ合い（S3-05）は、キャリアに対する相対の角度で歯の通過を数える
+      const carrierAngle =
+        voice.carrierShaftId === undefined ? 0 : (frame.angles[voice.carrierShaftId] ?? 0);
+      const angle = (frame.angles[voice.shaftId] ?? 0) - carrierAngle;
       const prev = prevAngles.get(voice.key);
       prevAngles.set(voice.key, angle);
       if (graph === null || ctx === undefined) continue;
@@ -170,6 +176,7 @@ export function createAudioEngine(options: AudioEngineOptions = {}): AudioEngine
       const timbre = meshTimbre(voice.kind);
       const tone = toneParams(voice.frequency, material);
       synth.setTone(tone.frequency, tone.level * timbre.hum);
+      synth.setLowpassScale(timbre.lowpass);
       synth.setSlide(voice.slide);
       if (prev === undefined || voice.click <= 0) continue;
       // 歯の境目を跨いだ時刻をフレームの中で補間し、遅れを足して予約する
@@ -228,10 +235,20 @@ export function createAudioEngine(options: AudioEngineOptions = {}): AudioEngine
   const updateLocks = (frame: AudioFrame): void => {
     const next = frame.locks.map((l) => l.info);
     const { entered } = diffLocks(prevLocks, next);
+    // ラックが端に当たった瞬間（S3-05）は、ロックの衝撃音の代わりに当たる音を 1 回鳴らす（その後はガタガタ）
+    const hits = new Set(rackEndHits(prevLocks, next).map(lockKey));
     prevLocks = next;
     const positions = new Map(frame.locks.map((l) => [lockKey(l.info), l.position]));
     impactTimes = impactTimes.filter((t) => t > clock - LOCK_IMPACT_WINDOW_SEC);
+    for (const key of hits) {
+      rackHits += 1;
+      const position = positions.get(key);
+      if (graph !== null && position !== null && position !== undefined) {
+        playRackHit(graph.ctx, graph.master, graph.noise, material, position, random);
+      }
+    }
     for (const key of entered) {
+      if (hits.has(key)) continue;
       if (!canPlayImpact(impactTimes, clock)) break;
       impactTimes.push(clock);
       impacts += 1;
@@ -334,7 +351,7 @@ export function createAudioEngine(options: AudioEngineOptions = {}): AudioEngine
           strain: m.strain,
           grind: m.grind,
         })),
-        lockSounds: { impacts, rattling: [...rattling] },
+        lockSounds: { impacts, rattling: [...rattling], rackHits },
       };
     },
   };

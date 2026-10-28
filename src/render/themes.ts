@@ -37,16 +37,37 @@ export interface PartLook {
   readonly woodGrain?: boolean; // 木目のテクスチャを貼る
 }
 
-// 歯車の材質（S2-05）。テーマと歯車の種類で決まる（GEAR_KIND_MATERIALS）
-export type GearMaterialId = 'brass' | 'steel' | 'bronze' | 'lightWood' | 'darkWood';
+// 部品の材質（S2-05 で歯車に、S3-05 で歯車以外の部品に使う）。テーマと部品の種類で決まる
+// （歯車は GEAR_KIND_MATERIALS、キャリア・ラック・固定具は PART_KIND_MATERIALS）
+export type MaterialId = 'brass' | 'steel' | 'bronze' | 'lightWood' | 'darkWood' | 'blackIron';
+export type GearMaterialId = MaterialId;
 
-export const GEAR_MATERIAL_LOOKS: Readonly<Record<GearMaterialId, PartLook>> = {
+export const GEAR_MATERIAL_LOOKS: Readonly<Record<MaterialId, PartLook>> = {
   brass: { color: 0xc9a24a, metalness: 1, roughness: 0.32 }, // 真鍮
   steel: { color: 0xb9bec4, metalness: 1, roughness: 0.28 }, // 鋼（銀色。シャフトより明るく磨いた面）
   bronze: { color: 0xc07840, metalness: 1, roughness: 0.36 }, // 青銅（真鍮より赤み）
   lightWood: { color: 0xb07a45, metalness: 0, roughness: 0.75, woodGrain: true }, // 明るい木
   darkWood: { color: 0x7a4a28, metalness: 0, roughness: 0.78, woodGrain: true }, // 濃い木
+  blackIron: { color: 0x26272a, metalness: 0.85, roughness: 0.6 }, // 黒い鉄（S3-05。固定具）
 };
+export const MATERIAL_LOOKS = GEAR_MATERIAL_LOOKS;
+
+// 歯車以外の部品の種類（S3-05）。シャフト・モーターはテーマの ThemeLook のまま
+export type PartKind = 'carrier' | 'rack' | 'anchor';
+export const PART_KINDS: readonly PartKind[] = ['carrier', 'rack', 'anchor'];
+
+// 歯車以外の部品の材質（S3-05）。Record<PartKind, …> なので、種類を足すと書き忘れが型で分かる
+export const PART_KIND_MATERIALS: Readonly<
+  Record<PartKind, Readonly<Record<ThemeId, MaterialId>>>
+> = {
+  carrier: { brass: 'steel', wood: 'darkWood' },
+  rack: { brass: 'brass', wood: 'lightWood' },
+  anchor: { brass: 'blackIron', wood: 'darkWood' }, // 台座・支柱・足
+};
+
+export function partLook(theme: ThemeId, kind: PartKind): PartLook {
+  return GEAR_MATERIAL_LOOKS[PART_KIND_MATERIALS[kind][theme]];
+}
 
 // 歯車の種類ごとの材質（S2-05）。Record<GearKind, …> なので、種類を足すと書き忘れが型で分かる
 export const GEAR_KIND_MATERIALS: Readonly<
@@ -58,7 +79,7 @@ export const GEAR_KIND_MATERIALS: Readonly<
   crossedHelical: { brass: 'brass', wood: 'lightWood' },
   worm: { brass: 'steel', wood: 'darkWood' },
   wormWheel: { brass: 'bronze', wood: 'lightWood' },
-  internal: { brass: 'brass', wood: 'lightWood' }, // S3-02。平歯車と同じ（違いは S3-05）
+  internal: { brass: 'brass', wood: 'lightWood' }, // S3-02（S3-05 の表: 真鍮／明るい木）
 };
 
 export function gearLook(theme: ThemeId, kind: GearKind): PartLook {
@@ -183,26 +204,32 @@ function createWoodTexture(size: number, anisotropy: number): CanvasTexture {
 export function usesWoodGrain(theme: ThemeId): boolean {
   const { shaft, motor } = THEME_LOOKS[theme];
   const gears = GEAR_KIND_LIST.map((kind) => gearLook(theme, kind));
-  return [...gears, shaft, motor].some((part) => part.woodGrain === true);
+  const parts = PART_KINDS.map((kind) => partLook(theme, kind));
+  return [...gears, ...parts, shaft, motor].some((part) => part.woodGrain === true);
 }
 
-// 種類ごとの歯車の基の材質。同じ材質の種類は同じ MeshStandardMaterial を共有する
-function gearMaterialsOf(
+// 種類ごとの歯車・部品の基の材質。同じ材質の種類は同じ MeshStandardMaterial を共有する（歯車と部品の間でも）
+function materialsOf(
   theme: ThemeId,
   woodTexture: Texture | null,
-): Record<GearKind, MeshStandardMaterial> {
-  const byId = new Map<GearMaterialId, MeshStandardMaterial>();
-  const result = {} as Record<GearKind, MeshStandardMaterial>;
-  for (const kind of GEAR_KIND_LIST) {
-    const id = GEAR_KIND_MATERIALS[kind][theme];
+): {
+  gear: Record<GearKind, MeshStandardMaterial>;
+  part: Record<PartKind, MeshStandardMaterial>;
+} {
+  const byId = new Map<MaterialId, MeshStandardMaterial>();
+  const of = (id: MaterialId): MeshStandardMaterial => {
     let material = byId.get(id);
     if (material === undefined) {
       material = materialOf(GEAR_MATERIAL_LOOKS[id], woodTexture);
       byId.set(id, material);
     }
-    result[kind] = material;
-  }
-  return result;
+    return material;
+  };
+  const gear = {} as Record<GearKind, MeshStandardMaterial>;
+  for (const kind of GEAR_KIND_LIST) gear[kind] = of(GEAR_KIND_MATERIALS[kind][theme]);
+  const part = {} as Record<PartKind, MeshStandardMaterial>;
+  for (const kind of PART_KINDS) part[kind] = of(PART_KIND_MATERIALS[kind][theme]);
+  return { gear, part };
 }
 
 function materialOf(look: PartLook, woodTexture: Texture | null): MeshStandardMaterial {
@@ -365,8 +392,10 @@ export function createThemeController(targets: ThemeTargets): ThemeController {
       applyEnvironment(profile.envMapSize);
       const woodChanged = applyWoodTexture(theme, profile.woodTextureSize, profile.anisotropy);
       if (applied === null || applied.theme !== theme || woodChanged) {
+        const { gear, part } = materialsOf(theme, woodTexture);
         targets.setBaseMaterials({
-          gear: gearMaterialsOf(theme, woodTexture),
+          gear,
+          part,
           shaft: materialOf(look.shaft, woodTexture),
           motor: materialOf(look.motor, woodTexture),
         });
