@@ -106,8 +106,23 @@ export interface CrossedHelicalGear extends GearBase {
   readonly kind: 'crossedHelical';
 }
 
+// 内歯車（S3-02）。内側に歯のあるリングで、同じ大きさの平歯車と内側でかみ合う（同じ向きに回る）。
+// ピッチ円半径 R = m·z/2、歯先（内側）R − m、歯底 R + 1.25m、リムの外側 R + 3.25m、歯幅は大きさの歯幅。
+// offset はリング（歯幅の区画）の負側の面。webSide はカップの底（ウェブ）がリングから見て軸の正・負どちら側にあるか
+export interface InternalGear extends GearBase {
+  readonly kind: 'internal';
+  readonly webSide: 1 | -1;
+}
+
 // 種類ごとの判別共用体。種類ごとに分ける箇所は switch (gear.kind) で網羅性を型で確かめる（assertNever）
-export type Gear = SpurGear | HelicalGear | BevelGear | WormGear | WormWheel | CrossedHelicalGear; // 段階 3 で種類を足す
+export type Gear =
+  | SpurGear
+  | HelicalGear
+  | BevelGear
+  | WormGear
+  | WormWheel
+  | CrossedHelicalGear
+  | InternalGear; // S3-02 で内歯車を足した
 export type GearKind = Gear['kind'];
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;

@@ -1,8 +1,15 @@
-import { GEAR_SIZES, PERIMETER_CANDIDATE_COUNT, WORM_THREADS } from '../constants';
-import { sectionWidth } from '../geometry/dimensions';
+import {
+  GEAR_SIZES,
+  INTERNAL_MIN_TEETH,
+  INTERNAL_MIN_TOOTH_DIFF,
+  PERIMETER_CANDIDATE_COUNT,
+  WORM_THREADS,
+} from '../constants';
+import { axialExtent, teethRange } from '../geometry/dimensions';
 import type { Vec3 } from '../math/vec3';
 import {
   gearShape,
+  internalEncloseShape,
   makeGear,
   meshPartnerShape,
   newGearShape,
@@ -74,6 +81,17 @@ export type GrowCandidate =
       basePhase: number;
     }
   | {
+      kind: 'enclose'; // 平歯車の親を囲む内歯車（S3-02）。新しい mesh のシャフト。内歯車の中心は親から angle の向きに R − r
+      parentGearId: GearId;
+      angle: number; // 親の軸まわり（rad）。k·π/4 のうち、干渉の増えない最初の向き
+      size: SizeKey; // 親と同じ
+      teeth: number; // 2 × 親の歯数を max(INTERNAL_MIN_TEETH, 親の歯数 + INTERNAL_MIN_TOOTH_DIFF) 〜 大きさの最大に収めたもの
+      shape: GearShape; // { kind: 'internal', webSide: −1 }
+      center: Vec3;
+      axis: Axis;
+      basePhase: number;
+    }
+  | {
       kind: 'coaxial';
       shaftId: ShaftId;
       offset: number; // 歯幅の負側の面の位置。AXIAL_SNAP の倍数
@@ -112,8 +130,14 @@ export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec)
   const candidates: GrowCandidate[] = [];
   const perimeterShape = meshPartnerShape(gearShape(parent));
   const coaxialShape = newGearShape(spec.coaxialKind);
+  // 内歯車の親（S3-02）の内側の子は、歯数差の条件を満たすように歯数を下げる（大きさの最小を下回るなら出さない）
+  const perimeterTeeth =
+    parent.kind === 'internal'
+      ? Math.min(spec.perimeterTeeth, parent.teeth - INTERNAL_MIN_TOOTH_DIFF)
+      : spec.perimeterTeeth;
+  const perimeterOk = perimeterTeeth >= GEAR_SIZES[parent.size].minTeeth;
 
-  for (let k = 0; perimeterShape !== null && k < PERIMETER_CANDIDATE_COUNT; k++) {
+  for (let k = 0; perimeterShape !== null && perimeterOk && k < PERIMETER_CANDIDATE_COUNT; k++) {
     const angle = (k * 2 * Math.PI) / PERIMETER_CANDIDATE_COUNT;
     const shaft: Shaft = {
       id: tempShaftId,
@@ -124,7 +148,7 @@ export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec)
         id: tempGearId,
         shaftId: tempShaftId,
         size: parent.size,
-        teeth: spec.perimeterTeeth,
+        teeth: perimeterTeeth,
         offset: 0,
       },
       perimeterShape,
@@ -136,12 +160,42 @@ export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec)
       parentGearId: gearId,
       angle,
       size: parent.size,
-      teeth: spec.perimeterTeeth,
+      teeth: perimeterTeeth,
       shape: perimeterShape,
       center: placed.center,
       axis: placed.axis,
       basePhase: placed.basePhase,
     });
+  }
+
+  // 平歯車の親を囲む内歯車（S3-02）: k·π/4 の向きを順に試し、干渉の増えない最初の 1 つ
+  const encloseShape = internalEncloseShape(gearShape(parent));
+  const encloseTeeth = encloseTeethOf(parent);
+  for (let k = 0; encloseShape !== null && encloseTeeth !== null; k++) {
+    if (k >= PERIMETER_CANDIDATE_COUNT) break;
+    const angle = (k * 2 * Math.PI) / PERIMETER_CANDIDATE_COUNT;
+    const shaft: Shaft = {
+      id: tempShaftId,
+      placement: { kind: 'mesh', parentGearId: gearId, childGearId: tempGearId, angle },
+    };
+    const child = makeGear(
+      { id: tempGearId, shaftId: tempShaftId, size: parent.size, teeth: encloseTeeth, offset: 0 },
+      encloseShape,
+    );
+    const placed = tryPlace(shaft, child);
+    if (placed === null) continue;
+    candidates.push({
+      kind: 'enclose',
+      parentGearId: gearId,
+      angle,
+      size: parent.size,
+      teeth: encloseTeeth,
+      shape: encloseShape,
+      center: placed.center,
+      axis: placed.axis,
+      basePhase: placed.basePhase,
+    });
+    break;
   }
 
   // かさ歯車の親: axisStep 1 → 2、それぞれ side −1 → 1 の 4 か所
@@ -225,17 +279,33 @@ export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec)
     }
   }
 
-  // 選んだ歯車のシャフトに載った歯車の並びの、最小と最大の面（区画の両端。ウォームは区画の幅。S2-03）
+  // 選んだ歯車のシャフトに載った歯車の並びの、最小と最大の面（区画の両端。ウォームは区画の幅。S2-03。
+  // 内歯車はウェブまで含めた全体。S3-02）
   let minFace = Number.POSITIVE_INFINITY;
   let maxFace = Number.NEGATIVE_INFINITY;
   for (const g of Object.values(scene.gears)) {
     if (g.shaftId !== parent.shaftId) continue;
-    minFace = Math.min(minFace, g.offset);
-    maxFace = Math.max(maxFace, g.offset + sectionWidth(g));
+    const [lo, hi] = axialExtent(g);
+    minFace = Math.min(minFace, lo);
+    maxFace = Math.max(maxFace, hi);
   }
-  const width = sectionWidth({ kind: spec.coaxialKind, size: spec.coaxialSize });
-  const coaxialTeeth = spec.coaxialKind === 'worm' ? WORM_THREADS : spec.coaxialTeeth;
-  for (const offset of [minFace - width, maxFace]) {
+  // 新しい歯車の歯数は種類の範囲に収める（ウォームは 1 条、内歯車は INTERNAL_MIN_TEETH 以上。S3-02）
+  const coaxialRange = teethRange(spec.coaxialKind, spec.coaxialSize);
+  const coaxialTeeth = Math.min(Math.max(spec.coaxialTeeth, coaxialRange.min), coaxialRange.max);
+  // 新しい歯車が offset からどれだけの範囲を占めるか（内歯車はウェブの側に伸びる）
+  const [extentLo, extentHi] = axialExtent(
+    makeGear(
+      {
+        id: tempGearId,
+        shaftId: parent.shaftId,
+        size: spec.coaxialSize,
+        teeth: coaxialTeeth,
+        offset: 0,
+      },
+      coaxialShape,
+    ),
+  );
+  for (const offset of [minFace - extentHi, maxFace - extentLo]) {
     const child = makeGear(
       {
         id: tempGearId,
@@ -261,6 +331,15 @@ export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec)
   }
 
   return candidates;
+}
+
+// 平歯車を囲む内歯車の歯数（S3-02）。2 × 親の歯数を、max(INTERNAL_MIN_TEETH, 親 + INTERNAL_MIN_TOOTH_DIFF) 以上・
+// 大きさの最大以下に収める。収まらなければ null
+function encloseTeethOf(parent: Gear): number | null {
+  const min = Math.max(INTERNAL_MIN_TEETH, parent.teeth + INTERNAL_MIN_TOOTH_DIFF);
+  const max = GEAR_SIZES[parent.size].maxTeeth;
+  if (min > max) return null;
+  return Math.min(Math.max(2 * parent.teeth, min), max);
 }
 
 function assertTeeth(size: SizeKey, teeth: number): void {

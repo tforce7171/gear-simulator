@@ -40,6 +40,7 @@ export const ja = {
   'gearKind.worm': 'ウォーム',
   'gearKind.wormWheel': 'ウォームホイール',
   'gearKind.crossedHelical': 'ねじ歯車',
+  'gearKind.internal': '内歯車',
   'palette.rootShaft': '起点のシャフト',
   'palette.rootShaft.tooltip':
     '床へドラッグして置く（ドラッグ中に R で向きを変える、Esc でやめる）',

@@ -56,7 +56,7 @@ describe('meshKindOf', () => {
       [{ kind: 'helical', hand: 'left' }, 'helical'],
       [{ kind: 'bevel', apex: 1 }, 'bevel'],
     ];
-    for (const [shape, kind] of shapes) expect(meshKindOf(shape)).toBe(kind);
+    for (const [shape, kind] of shapes) expect(meshKindOf(shape, shape)).toBe(kind);
   });
 });
 

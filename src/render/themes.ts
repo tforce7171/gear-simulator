@@ -58,6 +58,7 @@ export const GEAR_KIND_MATERIALS: Readonly<
   crossedHelical: { brass: 'brass', wood: 'lightWood' },
   worm: { brass: 'steel', wood: 'darkWood' },
   wormWheel: { brass: 'bronze', wood: 'lightWood' },
+  internal: { brass: 'brass', wood: 'lightWood' }, // S3-02。平歯車と同じ（違いは S3-05）
 };
 
 export function gearLook(theme: ThemeId, kind: GearKind): PartLook {

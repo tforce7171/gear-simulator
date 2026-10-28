@@ -1,11 +1,14 @@
 import { AXIAL_SNAP, GEAR_SIZES, MOTOR_RPM_RANGE, MOTOR_SIZES, WORM_THREADS } from '../constants';
 import { canMesh, meshGeometryOf } from '../geometry/can-mesh';
+import { teethRange } from '../geometry/dimensions';
 import { descendantShafts, resolveLayout } from '../layout/resolve';
 import type { Layout } from '../layout/types';
 import type { Vec3 } from '../math/vec3';
 import {
   gearShape,
+  internalEncloseShape,
   isGearKind,
+  isWebSide,
   makeGear,
   meshPartnerShape,
   newGearShape,
@@ -22,6 +25,7 @@ import {
   type Gear,
   type GearId,
   type GearKind,
+  type GearShape,
   isChildPlacement,
   type Motor,
   type MotorId,
@@ -46,8 +50,12 @@ export type Command =
       origin: Vec3;
       gear: { size: SizeKey; teeth: number; kind?: GearKind };
     }
-  // 子の種類は親から決まる（平歯車は平歯車、ハスバ歯車は逆の hand。S2-01）。かさ歯車の親は notAllowed
+  // 子の種類は親から決まる（平歯車は平歯車、ハスバ歯車は逆の hand。S2-01）。かさ歯車の親は notAllowed。
+  // 内歯車の親（S3-02）は内側に平歯車を生やす。歯数差が INTERNAL_MIN_TOOTH_DIFF 未満なら notAllowed
   | { type: 'growGear'; mode: 'perimeter'; parentGearId: GearId; angle: number; teeth: number }
+  // 平歯車の親を囲む内歯車（S3-02。webSide −1、offset 0）と mesh のシャフト。内歯車の中心は親の中心から angle の向きに R − r。
+  // 平歯車以外の親、歯数差が足りない組は notAllowed
+  | { type: 'growGear'; mode: 'enclose'; parentGearId: GearId; angle: number; teeth: number }
   // かさ歯車の親とかみ合う、同じ大きさ・同じ歯数のかさ歯車（apex −side、offset 0）と bevel のシャフト（S2-02）
   | {
       type: 'growGear';
@@ -82,6 +90,8 @@ export type Command =
   | { type: 'setGearTeeth'; gearId: GearId; teeth: number }
   // かさ歯車の apex を反転する（S2-02）。bevel の配置の子（apex は −side で決まる）は notAllowed
   | { type: 'flipBevelApex'; gearId: GearId }
+  // 内歯車のウェブの向きを変える（S3-02。区画（offset）はそのまま。UI は S3-05）
+  | { type: 'setWebSide'; gearId: GearId; webSide: 1 | -1 }
   | { type: 'setMeshAngle'; shaftId: ShaftId; angle: number }
   | { type: 'setGearOffset'; gearId: GearId; offset: number }
   | { type: 'addMotor'; shaftId: ShaftId; size: SizeKey }
@@ -158,13 +168,11 @@ function copyVec3(v: Vec3): Vec3 {
   return [v[0], v[1], v[2]];
 }
 
-function teethError(size: SizeKey, teeth: number): Failure | null {
-  const { minTeeth, maxTeeth } = GEAR_SIZES[size];
-  if (!Number.isInteger(teeth) || teeth < minTeeth || teeth > maxTeeth) {
-    return fail(
-      'invalidValue',
-      `teeth ${teeth} out of range [${minTeeth}, ${maxTeeth}] for size ${size}`,
-    );
+// 歯数が種類と大きさの範囲（teethRange。内歯車は INTERNAL_MIN_TEETH から。S3-02）に入る整数か
+function teethError(size: SizeKey, teeth: number, kind: GearKind = 'spur'): Failure | null {
+  const { min, max } = teethRange(kind, size);
+  if (!Number.isInteger(teeth) || teeth < min || teeth > max) {
+    return fail('invalidValue', `teeth ${teeth} out of range [${min}, ${max}] for ${kind} ${size}`);
   }
   return null;
 }
@@ -202,6 +210,8 @@ export function applyCommand(scene: Scene, command: Command, ctx: CommandContext
           return growBevel(scene, command, ctx);
         case 'skew':
           return growSkew(scene, command, ctx);
+        case 'enclose':
+          return growEnclose(scene, command, ctx);
         default:
           return growCoaxial(scene, command, ctx);
       }
@@ -211,6 +221,8 @@ export function applyCommand(scene: Scene, command: Command, ctx: CommandContext
       return setGearTeeth(scene, command);
     case 'flipBevelApex':
       return flipBevelApex(scene, command);
+    case 'setWebSide':
+      return setWebSide(scene, command);
     case 'setMeshAngle':
       return setMeshAngle(scene, command);
     case 'setGearOffset':
@@ -251,7 +263,7 @@ function addRootShaft(
   if (!isSizeKey(c.gear.size)) return fail('invalidValue', `invalid size ${String(c.gear.size)}`);
   const kind = c.gear.kind ?? 'spur';
   if (!isGearKind(kind)) return fail('invalidValue', `invalid gear kind ${String(kind)}`);
-  const bad = kind === 'worm' ? null : teethError(c.gear.size, c.gear.teeth);
+  const bad = kind === 'worm' ? null : teethError(c.gear.size, c.gear.teeth, kind);
   if (bad) return bad;
   const teeth = kind === 'worm' ? WORM_THREADS : c.gear.teeth;
   const shaftId = ctx.ids('shaft');
@@ -290,6 +302,46 @@ function growPerimeter(
   if (shape === null) {
     return fail('notAllowed', `gear ${parent.id} (${parent.kind}) cannot grow a perimeter gear`);
   }
+  return growMeshChild(scene, parent, c.angle, c.teeth, shape, ctx);
+}
+
+// 平歯車の親を囲む内歯車（webSide −1、offset 0）と mesh のシャフトを作る（S3-02）
+function growEnclose(
+  scene: Scene,
+  c: Extract<Command, { type: 'growGear'; mode: 'enclose' }>,
+  ctx: CommandContext,
+): CommandResult {
+  const parent = scene.gears[c.parentGearId];
+  if (parent === undefined) return fail('notFound', `gear ${c.parentGearId} not found`);
+  if (!Number.isFinite(c.angle)) return fail('invalidValue', 'angle must be finite');
+  const shape = internalEncloseShape(gearShape(parent));
+  if (shape === null) {
+    return fail('notAllowed', `gear ${parent.id} (${parent.kind}) cannot be enclosed`);
+  }
+  const bad = teethError(parent.size, c.teeth, shape.kind);
+  if (bad) return bad;
+  return growMeshChild(scene, parent, c.angle, c.teeth, shape, ctx);
+}
+
+// 親と同じ大きさの歯車 shape（offset 0）と、それを子に持つ mesh のシャフト。かみ合えない組（内歯車の歯数差。S3-02）は notAllowed
+function growMeshChild(
+  scene: Scene,
+  parent: Gear,
+  angle: number,
+  teeth: number,
+  shape: GearShape,
+  ctx: CommandContext,
+): CommandResult {
+  const probe = makeGear(
+    { id: '__probe', shaftId: '__probe', size: parent.size, teeth, offset: 0 },
+    shape,
+  );
+  if (!canMesh(probe, parent)) {
+    return fail(
+      'notAllowed',
+      `a ${shape.kind} gear of ${teeth} teeth cannot mesh with ${parent.id}`,
+    );
+  }
   const shaftId = ctx.ids('shaft');
   const gearId = ctx.ids('gear');
   const shaft: Shaft = {
@@ -298,13 +350,10 @@ function growPerimeter(
       kind: 'mesh',
       parentGearId: parent.id,
       childGearId: gearId,
-      angle: normalizeAngle(c.angle),
+      angle: normalizeAngle(angle),
     },
   };
-  const gear = makeGear(
-    { id: gearId, shaftId, size: parent.size, teeth: c.teeth, offset: 0 },
-    shape,
-  );
+  const gear = makeGear({ id: gearId, shaftId, size: parent.size, teeth, offset: 0 }, shape);
   return done(
     {
       shafts: withEntry(scene.shafts, shaftId, shaft),
@@ -414,7 +463,7 @@ function growCoaxial(
   if (!isSizeKey(c.size)) return fail('invalidValue', `invalid size ${String(c.size)}`);
   const kind = c.kind ?? 'spur';
   if (!isGearKind(kind)) return fail('invalidValue', `invalid gear kind ${String(kind)}`);
-  const bad = kind === 'worm' ? null : teethError(c.size, c.teeth);
+  const bad = kind === 'worm' ? null : teethError(c.size, c.teeth, kind);
   if (bad) return bad;
   if (!isSnapped(c.offset)) return snapError(c.offset);
   const teeth = kind === 'worm' ? WORM_THREADS : c.teeth;
@@ -531,11 +580,17 @@ function setGearTeeth(scene: Scene, c: Extract<Command, { type: 'setGearTeeth' }
       `worm ${gear.id} has ${WORM_THREADS} thread and its teeth cannot change`,
     );
   }
-  const bad = teethError(gear.size, c.teeth);
+  const bad = teethError(gear.size, c.teeth, gear.kind);
   if (bad) return bad;
   if (gear.teeth === c.teeth) return done(scene);
   if (gear.kind !== 'bevel') {
-    return done({ ...scene, gears: withEntry(scene.gears, gear.id, { ...gear, teeth: c.teeth }) });
+    const next = { ...gear, teeth: c.teeth };
+    // 木の親子（mesh の配置）が、内歯車の歯数差の条件を満たさなくなる変更は拒否する（S3-02）
+    const broken = brokenMeshPartner(scene, next);
+    if (broken !== null) {
+      return fail('notAllowed', `gear ${gear.id} with ${c.teeth} teeth cannot mesh with ${broken}`);
+    }
+    return done({ ...scene, gears: withEntry(scene.gears, gear.id, next) });
   }
   // かさ歯車は歯数比 1:1 のみなので、木の親子（bevel の配置）でつながったかさ歯車すべてを同じ歯数にする（S2-02）
   const gears: Record<GearId, Gear> = { ...scene.gears };
@@ -544,6 +599,41 @@ function setGearTeeth(scene: Scene, c: Extract<Command, { type: 'setGearTeeth' }
     if (g !== undefined && g.teeth !== c.teeth) gears[id] = { ...g, teeth: c.teeth };
   }
   return done({ ...scene, gears });
+}
+
+// gear（変更後）と mesh の配置の親子になっている歯車のうち、かみ合えなくなったもの（canMesh が偽）の ID。無ければ null
+function brokenMeshPartner(scene: Scene, gear: Gear): GearId | null {
+  for (const shaft of Object.values(scene.shafts)) {
+    const p = shaft.placement;
+    if (p.kind !== 'mesh') continue;
+    const partnerId =
+      p.parentGearId === gear.id
+        ? p.childGearId
+        : p.childGearId === gear.id
+          ? p.parentGearId
+          : null;
+    if (partnerId === null) continue;
+    const partner = scene.gears[partnerId];
+    if (partner !== undefined && !canMesh(gear, partner)) return partnerId;
+  }
+  return null;
+}
+
+// 内歯車のウェブの向きを変える（S3-02）。区画（offset）はそのままで、ウェブとつなぎの筒が反対の面に移る
+function setWebSide(scene: Scene, c: Extract<Command, { type: 'setWebSide' }>): CommandResult {
+  const gear = scene.gears[c.gearId];
+  if (gear === undefined) return fail('notFound', `gear ${c.gearId} not found`);
+  if (gear.kind !== 'internal') {
+    return fail('notAllowed', `gear ${gear.id} is not an internal gear`);
+  }
+  if (!isWebSide(c.webSide)) {
+    return fail('invalidValue', `webSide must be 1 or -1: ${String(c.webSide)}`);
+  }
+  if (gear.webSide === c.webSide) return done(scene);
+  return done({
+    ...scene,
+    gears: withEntry(scene.gears, gear.id, { ...gear, webSide: c.webSide }),
+  });
 }
 
 // gearId と、bevel の配置の親子（どちらの向きにも）でつながった歯車の ID

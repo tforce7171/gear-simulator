@@ -4,7 +4,8 @@ import type { GearShape, SizeKey } from '../scene/types';
 // 形状データ（BufferGeometry）を共有するためのキー（design.md §7）。
 // (種類, 大きさ, 歯数, 形を変える属性)。ハスバ歯車では hand を含める。
 // かさ歯車の apex は描画の向き（ローカルの z の反転）で表すので含めない（S2-02）。
-// ウォームは (種類, 大きさ)、ホイールは (種類, 大きさ, 歯数)（S2-03）。ねじ歯車は (種類, 大きさ, 歯数)（S2-04）
+// ウォームは (種類, 大きさ)、ホイールは (種類, 大きさ, 歯数)（S2-03）。ねじ歯車は (種類, 大きさ, 歯数)（S2-04）。
+// 内歯車は (種類, 大きさ, 歯数)。webSide は描画の向きで表す（S3-02）
 export function gearShapeKey(shape: GearShape, size: SizeKey, teeth: number): string {
   switch (shape.kind) {
     case 'spur':
@@ -21,6 +22,9 @@ export function gearShapeKey(shape: GearShape, size: SizeKey, teeth: number): st
     case 'crossedHelical':
       // ねじれ角・向きは固定（S2-04）
       return `crossedHelical:${size}:${teeth}`;
+    case 'internal':
+      // webSide は描画の向き（ローカルの z の反転）で表すので含めない（S3-02）
+      return `internal:${size}:${teeth}`;
     default:
       return assertNever(shape);
   }

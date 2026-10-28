@@ -1,5 +1,6 @@
 import { COLLISION_EPS, GEAR_SIZES } from '../constants';
 import { canMesh } from '../geometry/can-mesh';
+import { centerDistance } from '../geometry/dimensions';
 import { axisVector } from '../math/axis';
 import { dot, sub, type Vec3 } from '../math/vec3';
 import type { GearId, Scene, ShaftId } from '../scene/types';
@@ -14,7 +15,7 @@ export function meshSnapTargets(
   scene: Scene,
   layout: Layout,
   shaftId: ShaftId,
-): Array<{ gearId: GearId; center: Vec3; pitchRadius: number }> {
+): Array<{ gearId: GearId; center: Vec3; pitchRadius: number; meshDistance: number }> {
   const placement = scene.shafts[shaftId]?.placement;
   if (placement?.kind !== 'mesh') return [];
   const child = scene.gears[placement.childGearId];
@@ -23,7 +24,12 @@ export function meshSnapTargets(
   const moving = new Set(descendantShafts(scene, shaftId));
   const w = axisVector(childLayout.axis);
   const faceWidth = GEAR_SIZES[child.size].faceWidth;
-  const targets: Array<{ gearId: GearId; center: Vec3; pitchRadius: number }> = [];
+  const targets: Array<{
+    gearId: GearId;
+    center: Vec3;
+    pitchRadius: number;
+    meshDistance: number;
+  }> = [];
   for (const gear of Object.values(scene.gears)) {
     if (gear.id === placement.parentGearId || moving.has(gear.shaftId)) continue;
     if (!canMesh(gear, child)) continue;
@@ -31,7 +37,12 @@ export function meshSnapTargets(
     if (g === undefined || g.axis !== childLayout.axis) continue;
     const axial = dot(sub(g.center, childLayout.center), w);
     if (faceWidth - Math.abs(axial) <= COLLISION_EPS) continue;
-    targets.push({ gearId: gear.id, center: g.center, pitchRadius: g.pitchRadius });
+    targets.push({
+      gearId: gear.id,
+      center: g.center,
+      pitchRadius: g.pitchRadius,
+      meshDistance: centerDistance(gear, child), // 内歯車の組は R − r（S3-02）
+    });
   }
   return targets.sort((a, b) => (a.gearId < b.gearId ? -1 : a.gearId > b.gearId ? 1 : 0));
 }

@@ -12,7 +12,8 @@ export function outsideRadius(size: SizeKey, teeth: number): number {
   return pitchRadius(size, teeth) + GEAR_SIZES[size].module;
 }
 
-export function centerDistance(size: SizeKey, teethA: number, teethB: number): number {
+// 外歯車同士の中心距離 r_a + r_b（種類によって変わる中心距離は dimensions.ts の centerDistance。S3-02）
+export function spurCenterDistance(size: SizeKey, teethA: number, teethB: number): number {
   return pitchRadius(size, teethA) + pitchRadius(size, teethB);
 }
 

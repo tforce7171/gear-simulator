@@ -120,6 +120,8 @@ export const MESH_TIMBRES: Readonly<Record<MeshKind, MeshTimbre>> = {
   helical: { click: 0.4, hum: SMOOTH_HUM, slideNoise: 0 },
   crossedHelical: { click: 0.4, hum: SMOOTH_HUM, slideNoise: CROSSED_SLIDE_RATIO * WORM_SLIDE },
   worm: { click: 0.2, hum: SMOOTH_HUM, slideNoise: WORM_SLIDE },
+  // 内歯車の組（S3-02）。いまは平歯車と同じ。こもらせる違いは S3-05 で付ける
+  internal: { click: 1, hum: 1, slideNoise: 0 },
 };
 
 export const MESH_KINDS = Object.keys(MESH_TIMBRES) as readonly MeshKind[];
