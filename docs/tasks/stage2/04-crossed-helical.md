@@ -32,6 +32,8 @@ depends: [S2-01, S2-03]
 - **干渉判定**: 歯先円の円柱で近似する。かみ合っている組は除く
 - **表示**: 段階 1 と同じ材質
 - **保存**: シーンの検証で `'crossedHelical'` を受け付ける。`version` は 1 のまま
+- **S2-01 の時点**: 歯車の種類を足すと、`switch (gear.kind)` の `assertNever` でコンパイルエラーになる所（`src/core/scene/gear-shape.ts` の `gearShape`・`newGearShape`・`meshPartnerShape`・`GEAR_KINDS`、`geometry/can-mesh.ts` の `canMesh`・`meshKindOf`、`geometry/shape-key.ts` の `gearShapeKey`、`scene/parse.ts`、`render/gear-geometry.ts` の `buildGeometry`）を直す（design.md §4）。`MeshKind` は `geometry/can-mesh.ts` にある。候補（`GrowCandidate`）は作る歯車の形 `shape: GearShape` を持ち、同じ軸の種類は `GrowSpec.coaxialKind`（app は今 `'spur'` を渡す。`src/app/interactions.ts`）、編集コマンドの種類は `addRootShaft` の `gear.kind?`・`growGear`（coaxial）の `kind?` で渡す。外周に生やす子の形は `meshPartnerShape` で決まる
+- **S2-01 のねじり押し出し**: 角度は `src/core/geometry/helical.ts` の `helicalTwistAt(size, teeth, hand, z)`（`HELIX_ANGLE` を使う）・`helicalSliceCount`、形状データは `src/render/gear-geometry.ts` の `buildHelicalGeometry(size, teeth, hand)`。ねじれ角を引数で受け取る形に広げる
 
 ## 範囲外
 - 90° 以外の軸の角度（範囲外（拡張候補））

@@ -1,15 +1,13 @@
 import { assertNever } from '../scene/gear-shape';
-import type { GearShape, SizeKey } from '../scene/types';
+import type { Gear, GearShape } from '../scene/types';
 
 // かみ合える歯車の組（S2-01。design.md §5）。位置は見ず、種類・大きさ・形を変える属性だけで決める
 
 // かみ合いの種類。S2-02 以降で足す
 export type MeshKind = 'spur' | 'helical';
 
-type MeshablePart = GearShape & { readonly size: SizeKey };
-
 // 平歯車同士、ねじれの向きが逆のハスバ歯車同士（どちらも同じ大きさ）だけがかみ合う
-export function canMesh(a: MeshablePart, b: MeshablePart): boolean {
+export function canMesh(a: Gear, b: Gear): boolean {
   if (a.size !== b.size) return false;
   switch (a.kind) {
     case 'spur':
