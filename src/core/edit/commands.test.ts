@@ -797,3 +797,193 @@ describe('ハスバ歯車（S2-01）', () => {
     expect(errorCode(apply(sameHand.scene, reattach(leftGear)))).toBe('notAllowed');
   });
 });
+
+describe('かさ歯車（S2-02）', () => {
+  const ROOT_BEVEL: Command = {
+    type: 'addRootShaft',
+    axis: 'y',
+    origin: [0, 35, 0],
+    gear: { size: 'M', teeth: 20, kind: 'bevel' },
+  };
+
+  // gear_1（起点、apex 1）と、その bevel の子 gear_2（axisStep 2、side −1）
+  function bevelPair(): { scene: Scene; ctx: CommandContext } {
+    const ctx: CommandContext = { ids: createSequentialIdGenerator() };
+    let scene = ok(applyCommand(emptyScene(), ROOT_BEVEL, ctx)).scene;
+    scene = ok(
+      applyCommand(
+        scene,
+        { type: 'growGear', mode: 'bevel', parentGearId: 'gear_1', axisStep: 2, side: -1 },
+        ctx,
+      ),
+    ).scene;
+    return { scene, ctx };
+  }
+
+  it('addRootShaft で kind bevel → apex 1。growGear bevel → 同じ大きさ・歯数、apex −side、offset 0、bevel のシャフト', () => {
+    const { scene } = bevelPair();
+    expect(scene.gears.gear_1).toMatchObject({ kind: 'bevel', apex: 1 });
+    expect(scene.gears.gear_2).toEqual({
+      id: 'gear_2',
+      kind: 'bevel',
+      apex: 1,
+      shaftId: 'shaft_2',
+      size: 'M',
+      teeth: 20,
+      offset: 0,
+    });
+    expect(scene.shafts.shaft_2?.placement).toEqual({
+      kind: 'bevel',
+      parentGearId: 'gear_1',
+      childGearId: 'gear_2',
+      axisStep: 2,
+      side: -1,
+    });
+    expect(validateScene(scene)).toEqual({ ok: true });
+    const side1 = ok(
+      apply(scene, {
+        type: 'growGear',
+        mode: 'bevel',
+        parentGearId: 'gear_1',
+        axisStep: 1,
+        side: 1,
+      }),
+    );
+    expect(side1.scene.gears[side1.created[1] as string]).toMatchObject({ apex: -1 });
+  });
+
+  it('growGear bevel: 親がかさ歯車でない → notAllowed、axisStep・side が不正 → invalidValue、親が無い → notFound', () => {
+    const { scene } = basic();
+    expect(
+      errorCode(
+        apply(scene, {
+          type: 'growGear',
+          mode: 'bevel',
+          parentGearId: 'gear_1',
+          axisStep: 1,
+          side: 1,
+        }),
+      ),
+    ).toBe('notAllowed');
+    const pair = bevelPair().scene;
+    const bad = (patch: Record<string, unknown>) =>
+      ({
+        type: 'growGear',
+        mode: 'bevel',
+        parentGearId: 'gear_1',
+        axisStep: 1,
+        side: 1,
+        ...patch,
+      }) as Command;
+    expect(errorCode(apply(pair, bad({ axisStep: 0 })))).toBe('invalidValue');
+    expect(errorCode(apply(pair, bad({ side: 0 })))).toBe('invalidValue');
+    expect(errorCode(apply(pair, bad({ parentGearId: 'gear_x' })))).toBe('notFound');
+  });
+
+  it('growGear perimeter: かさ歯車の親 → notAllowed', () => {
+    const { scene } = bevelPair();
+    expect(
+      errorCode(
+        apply(scene, {
+          type: 'growGear',
+          mode: 'perimeter',
+          parentGearId: 'gear_1',
+          angle: 0,
+          teeth: 20,
+        }),
+      ),
+    ).toBe('notAllowed');
+  });
+
+  it('setGearTeeth: bevel の木の親子でつながったかさ歯車すべてが同じ歯数になる（同じ軸の平歯車は変わらない）', () => {
+    const { scene: pair, ctx } = bevelPair();
+    let scene = ok(
+      applyCommand(
+        pair,
+        { type: 'growGear', mode: 'bevel', parentGearId: 'gear_2', axisStep: 1, side: 1 },
+        ctx,
+      ),
+    ).scene; // gear_3
+    scene = ok(
+      applyCommand(
+        scene,
+        { type: 'growGear', mode: 'coaxial', shaftId: 'shaft_2', offset: -8, size: 'M', teeth: 30 },
+        ctx,
+      ),
+    ).scene; // gear_4（平歯車）
+    const result = ok(apply(scene, { type: 'setGearTeeth', gearId: 'gear_3', teeth: 16 }));
+    expect(result.scene.gears.gear_1?.teeth).toBe(16);
+    expect(result.scene.gears.gear_2?.teeth).toBe(16);
+    expect(result.scene.gears.gear_3?.teeth).toBe(16);
+    expect(result.scene.gears.gear_4?.teeth).toBe(30);
+    expect(validateScene(result.scene)).toEqual({ ok: true });
+    // 範囲外は invalidValue
+    expect(errorCode(apply(scene, { type: 'setGearTeeth', gearId: 'gear_1', teeth: 61 }))).toBe(
+      'invalidValue',
+    );
+  });
+
+  it('flipBevelApex: 起点のかさ歯車は反転する（子はついてくる）。子・平歯車は notAllowed、無い歯車は notFound', () => {
+    const { scene } = bevelPair();
+    const flipped = ok(apply(scene, { type: 'flipBevelApex', gearId: 'gear_1' }));
+    expect(flipped.scene.gears.gear_1).toMatchObject({ apex: -1 });
+    expect(flipped.scene.gears.gear_2).toBe(scene.gears.gear_2);
+    expect(validateScene(flipped.scene)).toEqual({ ok: true });
+    const back = ok(apply(flipped.scene, { type: 'flipBevelApex', gearId: 'gear_1' }));
+    expect(back.scene.gears.gear_1).toMatchObject({ apex: 1 });
+    expect(errorCode(apply(scene, { type: 'flipBevelApex', gearId: 'gear_2' }))).toBe('notAllowed');
+    expect(errorCode(apply(basic().scene, { type: 'flipBevelApex', gearId: 'gear_1' }))).toBe(
+      'notAllowed',
+    );
+    expect(errorCode(apply(scene, { type: 'flipBevelApex', gearId: 'gear_x' }))).toBe('notFound');
+  });
+
+  it('bevel の子の setGearOffset・bevel のシャフトの moveShaft は notAllowed。親を消すと子のシャフトは detached', () => {
+    const { scene } = bevelPair();
+    expect(errorCode(apply(scene, { type: 'setGearOffset', gearId: 'gear_2', offset: 4 }))).toBe(
+      'notAllowed',
+    );
+    expect(
+      errorCode(apply(scene, { type: 'moveShaft', shaftId: 'shaft_2', origin: [0, 0, 0] })),
+    ).toBe('notAllowed');
+    expect(errorCode(apply(scene, { type: 'setMeshAngle', shaftId: 'shaft_2', angle: 1 }))).toBe(
+      'notAllowed',
+    );
+    const before = resolveLayout(scene).shafts.shaft_2;
+    const deleted = ok(apply(scene, { type: 'deleteParts', ids: ['gear_1'] })).scene;
+    expect(deleted.shafts.shaft_2?.placement).toEqual({
+      kind: 'detached',
+      origin: before?.origin,
+      axis: 'x',
+    });
+    expect(validateScene(deleted)).toEqual({ ok: true });
+  });
+
+  it('reattachShaft: かさ歯車の組は付け直せない（notAllowed）', () => {
+    const { scene: pair, ctx } = bevelPair();
+    let scene = ok(
+      applyCommand(
+        pair,
+        {
+          type: 'addRootShaft',
+          axis: 'y',
+          origin: [200, 35, 0],
+          gear: { size: 'M', teeth: 20, kind: 'bevel' },
+        },
+        ctx,
+      ),
+    ).scene; // gear_3
+    scene = ok(applyCommand(scene, { type: 'deleteParts', ids: ['gear_1'] }, ctx)).scene;
+    expect(
+      errorCode(
+        apply(scene, {
+          type: 'reattachShaft',
+          shaftId: 'shaft_2',
+          childGearId: 'gear_2',
+          parentGearId: 'gear_3',
+          angle: 0,
+        }),
+      ),
+    ).toBe('notAllowed');
+  });
+});

@@ -1,6 +1,7 @@
 import type { Mesh } from '../layout/types';
-import type { GearId, Scene, ShaftId } from '../scene/types';
+import { type GearId, isChildPlacement, type Scene, type ShaftId } from '../scene/types';
 import { type Matrix, nullSpaceWithFreeColumns } from './linalg';
+import { meshCoefficients } from './mesh-coefficients';
 
 // かみ合いのグラフと、シャフトの角速度の拘束の零空間（design.md §6）
 
@@ -23,12 +24,6 @@ function compareIds(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
-// 1 つのかみ合いの拘束の行の係数（ω_shaft(a) と ω_shaft(b) にかかる係数）。
-// 段階 2・3 で内歯車（z_a·ω_a − z_b·ω_b = 0）などを足すときはここを分ける
-function meshConstraint(teethA: number, teethB: number): readonly [number, number] {
-  return [teethA, teethB]; // 外歯車どうし: z_a·ω_a + z_b·ω_b = 0
-}
-
 interface ResolvedMesh {
   readonly mesh: Mesh;
   readonly shaftA: ShaftId;
@@ -49,13 +44,17 @@ function resolveMesh(scene: Scene, mesh: Mesh): ResolvedMesh {
   if (a.shaftId === b.shaftId) {
     throw new Error(`同じシャフトの歯車どうしのかみ合い: ${mesh.a}, ${mesh.b}`);
   }
-  const [coefA, coefB] = meshConstraint(a.teeth, b.teeth);
+  // 拘束の行の係数（ω_shaft(a) と ω_shaft(b) にかかる係数）は、種類ごとに meshCoefficients の 1 か所で決める
+  const { a: coefA, b: coefB } = meshCoefficients(mesh, scene);
   return { mesh, shaftA: a.shaftId, shaftB: b.shaftId, coefA, coefB };
 }
 
 // 基準シャフトに選ぶ順: root か detached を先に、次に ID の昇順
 function referencePriority(scene: Scene, shaftIds: readonly ShaftId[]): ShaftId[] {
-  const preferred = (id: ShaftId): number => (scene.shafts[id]?.placement.kind === 'mesh' ? 1 : 0);
+  const preferred = (id: ShaftId): number => {
+    const p = scene.shafts[id]?.placement;
+    return p !== undefined && isChildPlacement(p) ? 1 : 0;
+  };
   return [...shaftIds].sort((x, y) => preferred(x) - preferred(y) || compareIds(x, y));
 }
 

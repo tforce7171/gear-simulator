@@ -29,8 +29,25 @@ export type ShaftPlacement =
       readonly childGearId: GearId; // このシャフト上の、親とかみ合う歯車
       readonly angle: number; // 親の軸まわりの角度（rad）
     }
+  // 親のかさ歯車とかみ合うかさ歯車を載せたシャフト（S2-02）。軸の向きは親の軸を axisStep 回進めたもの。
+  // 子の大端の中心 = 親の大端の中心 + R·side·(このシャフトの軸) + R·親の apex·(親の軸)。子の apex は −side
+  | {
+      readonly kind: 'bevel';
+      readonly parentGearId: GearId; // 親のかさ歯車
+      readonly childGearId: GearId; // このシャフト上の、親とかみ合うかさ歯車
+      readonly axisStep: 1 | 2; // このシャフトの軸 = 親の軸を x → y → z → x の順に axisStep 回進めた軸
+      readonly side: 1 | -1; // 子が、親の大端の中心から見てこのシャフトの軸の正・負どちら側にあるか
+    }
   // 親が削除されてその場に残ったシャフト。削除時点のワールド座標と向きを持つ
   | { readonly kind: 'detached'; readonly origin: Vec3; readonly axis: Axis };
+
+// 親の歯車から位置と向きを導く配置（mesh・bevel）。root・detached は自分で位置と向きを持つ
+export type ChildPlacement = Extract<ShaftPlacement, { readonly parentGearId: GearId }>;
+export type FreePlacement = Exclude<ShaftPlacement, ChildPlacement>;
+
+export function isChildPlacement(p: ShaftPlacement): p is ChildPlacement {
+  return p.kind === 'mesh' || p.kind === 'bevel';
+}
 
 export type Hand = 'left' | 'right'; // ハスバ歯車のねじれの向き（S2-01）
 
@@ -53,8 +70,15 @@ export interface HelicalGear extends GearBase {
   readonly hand: Hand;
 }
 
+// かさ歯車（S2-02）。交わる角度は 90°、歯数比 1:1（ピッチ円すい角 45°）のみ。
+// apex はピッチ円すいの頂点が、大端のピッチ円の中心から見てシャフトの軸の正・負のどちらにあるか
+export interface BevelGear extends GearBase {
+  readonly kind: 'bevel';
+  readonly apex: 1 | -1;
+}
+
 // 種類ごとの判別共用体。種類ごとに分ける箇所は switch (gear.kind) で網羅性を型で確かめる（assertNever）
-export type Gear = SpurGear | HelicalGear; // S2-02 以降で種類を足す
+export type Gear = SpurGear | HelicalGear | BevelGear; // S2-03 以降で種類を足す
 export type GearKind = Gear['kind'];
 
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;

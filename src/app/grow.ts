@@ -6,7 +6,7 @@ import type { CandidateSpec } from '../render/candidates';
 
 // 歯車を生やす（S1-18）。純粋関数のみ。選んだ歯車の候補を列挙し、候補を編集コマンドに変換する
 
-export type CandidateKind = GrowCandidate['kind']; // 'perimeter' | 'coaxial'（S1-10）
+export type CandidateKind = GrowCandidate['kind']; // 'perimeter' | 'bevel' | 'coaxial'（S1-10、S2-02）
 
 // 生やす歯車の大きさと歯数。外周は親と同じ大きさ（同じ大きさ同士しかかみ合わない）、
 // 同じ軸はパレットで選んでいる大きさ。歯数はどちらも DEFAULT_TEETH[大きさ]
@@ -15,7 +15,7 @@ export function growSpec(
   kind: CandidateKind,
   paletteSize: SizeKey,
 ): { size: SizeKey; teeth: number } {
-  const size = kind === 'perimeter' ? parent.size : paletteSize;
+  const size = kind === 'coaxial' ? paletteSize : parent.size;
   return { size, teeth: DEFAULT_TEETH[size] };
 }
 
@@ -50,6 +50,15 @@ export function growCommand(candidate: GrowCandidate): Command {
       teeth: candidate.teeth,
     };
   }
+  if (candidate.kind === 'bevel') {
+    return {
+      type: 'growGear',
+      mode: 'bevel',
+      parentGearId: candidate.parentGearId,
+      axisStep: candidate.axisStep,
+      side: candidate.side,
+    };
+  }
   return {
     type: 'growGear',
     mode: 'coaxial',
@@ -81,11 +90,16 @@ export function candidateSpec(scene: Scene, candidate: GrowCandidate): Candidate
   }
   const parent = scene.gears[candidate.parentGearId];
   if (parent === undefined) throw new Error(`candidateSpec: no gear ${candidate.parentGearId}`);
+  // 外周は −(親の歯数 / 子の歯数)。かさ歯車（S2-02）は apex_親·z·ω_親 + apex_子·z·ω_子 = 0、apex_子 = −side から 親の apex × side
+  const followRatio =
+    candidate.kind === 'bevel'
+      ? (parent.kind === 'bevel' ? parent.apex : 1) * candidate.side
+      : -parent.teeth / candidate.teeth;
   return {
     ...common,
     phase: candidate.basePhase,
     followShaftId: parent.shaftId,
-    followRatio: -parent.teeth / candidate.teeth,
+    followRatio,
     withShaft: true,
   };
 }

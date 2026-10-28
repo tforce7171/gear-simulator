@@ -8,7 +8,13 @@ import type { Layout } from '../core/layout/types';
 import { axisVector, radialDirection } from '../core/math/axis';
 import { add, dot, length, scale, type Vec3 } from '../core/math/vec3';
 import { createSequentialIdGenerator } from '../core/scene/ids';
-import type { Axis, GearId, Scene, ShaftId } from '../core/scene/types';
+import {
+  type Axis,
+  type GearId,
+  isChildPlacement,
+  type Scene,
+  type ShaftId,
+} from '../core/scene/types';
 import {
   ARC_MESH_SNAP,
   angleAroundAxis,
@@ -142,7 +148,7 @@ function axialHandleAngle(scene: Scene, gearId: GearId): number {
 // - root・detached のシャフト（またはその上の歯車）: 位置（原点の真下の床）と高さ（その上の縦の線の先。
 //   部品と重ならないよう、部品の最も低い所の下）
 // - mesh のシャフト（またはその上の歯車）: 外周の角度の円弧（親の軸まわり、子の歯車の外側）
-// - 歯車で、mesh のシャフトの childGearId でないもの: シャフト上の位置の矢印（歯先円の少し外）
+// - 歯車で、mesh・bevel のシャフトの childGearId でないもの: シャフト上の位置の矢印（歯先円の少し外）
 export function listHandles(scene: Scene, layout: Layout, selection: string | null): HandleSpec[] {
   const shaftId = selectedShaftId(scene, selection);
   if (shaftId === null) return [];
@@ -159,7 +165,8 @@ export function listHandles(scene: Scene, layout: Layout, selection: string | nu
       { kind: 'move', targetId: shaftId, position: [x, 0, z] },
       { kind: 'height', targetId: shaftId, position: [x, heightY, z] },
     );
-  } else {
+  } else if (p.kind === 'mesh') {
+    // bevel のシャフト（S2-02）は 4 か所の離散なので、円弧のハンドルを出さない
     const parent = layout.gears[p.parentGearId];
     const child = scene.gears[p.childGearId];
     const childLayout = layout.gears[p.childGearId];
@@ -177,7 +184,7 @@ export function listHandles(scene: Scene, layout: Layout, selection: string | nu
   }
   const gear = selection === null ? undefined : scene.gears[selection];
   const gearLayout = gear === undefined ? undefined : layout.gears[gear.id];
-  const isChild = p.kind === 'mesh' && gear !== undefined && p.childGearId === gear.id;
+  const isChild = isChildPlacement(p) && gear !== undefined && p.childGearId === gear.id;
   if (gear !== undefined && gearLayout !== undefined && !isChild) {
     handles.push(
       framed('axial', gear.id, {
@@ -378,7 +385,7 @@ export function handleMovedParts(scene: Scene, handle: HandleSpec): Set<string> 
   const ids = new Set<string>([handle.targetId]);
   for (const shaft of Object.values(scene.shafts)) {
     const p = shaft.placement;
-    if (p.kind !== 'mesh' || p.parentGearId !== handle.targetId) continue;
+    if (!isChildPlacement(p) || p.parentGearId !== handle.targetId) continue;
     for (const id of movedParts(scene, shaft.id)) ids.add(id);
   }
   return ids;

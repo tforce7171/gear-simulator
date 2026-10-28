@@ -114,6 +114,15 @@ export function parseScene(raw: unknown): SceneParseResult {
         childGearId: str(p, 'childGearId', base, key),
         angle: num(p, 'angle', base, key),
       };
+    } else if (p.kind === 'bevel') {
+      // bevel も軸を持たない（親の軸から axisStep で導く。S2-02）。axisStep が 1・2、side が ±1 かは validateScene が確かめる
+      placement = {
+        kind: 'bevel',
+        parentGearId: str(p, 'parentGearId', base, key),
+        childGearId: str(p, 'childGearId', base, key),
+        axisStep: num(p, 'axisStep', base, key) as 1 | 2,
+        side: num(p, 'side', base, key) as 1 | -1,
+      };
     } else {
       shape(`${base}.kind`, `invalid placement kind "${String(p.kind)}"`, key);
       continue;
@@ -143,6 +152,10 @@ export function parseScene(raw: unknown): SceneParseResult {
         break;
       case 'helical':
         gears.push([key, { ...common, kind, hand: str(item, 'hand', base, key) as Hand }]);
+        break;
+      case 'bevel':
+        // apex が ±1 かは validateScene が確かめる（S2-02）
+        gears.push([key, { ...common, kind, apex: num(item, 'apex', base, key) as 1 | -1 }]);
         break;
       default:
         assertNever(kind);

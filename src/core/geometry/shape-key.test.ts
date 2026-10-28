@@ -24,4 +24,10 @@ describe('gearShapeKey', () => {
     expect(left).not.toBe(right);
     expect(right).not.toBe(gearShapeKey(spur, 'M', 20));
   });
+
+  it('かさ歯車のキーは apex を含めない（S2-02）', () => {
+    expect(gearShapeKey({ kind: 'bevel', apex: 1 }, 'M', 20)).toBe('bevel:M:20');
+    expect(gearShapeKey({ kind: 'bevel', apex: -1 }, 'M', 20)).toBe('bevel:M:20');
+    expect(gearShapeKey({ kind: 'bevel', apex: 1 }, 'M', 20)).not.toBe(gearShapeKey(spur, 'M', 20));
+  });
 });

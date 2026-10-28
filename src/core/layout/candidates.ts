@@ -18,6 +18,7 @@ import { resolveAddition, resolveLayout } from './resolve';
 // 外周の候補（新しい mesh のシャフトを作る。親の軸まわりの 8 方向）と、
 // 同じ軸の候補（選んだ歯車のシャフトに通す。歯車の並びの両端の外側）を返す。
 // 外周の子は親とかみ合う形（ハスバ歯車なら逆の hand）、同じ軸は spec.coaxialKind の歯車（S2-01）。
+// かさ歯車の親（S2-02）は外周の代わりに、直交する 2 軸 × 2 方向の 4 か所のかさ歯車（新しい bevel のシャフト）を返す。
 // 候補を足した仮のシーン（resolveAddition で、全体を解き直さずに求める）で新しく増えた干渉の組があるものは除く
 
 export interface GrowSpec {
@@ -38,6 +39,18 @@ export type GrowCandidate =
       center: Vec3; // 新しい歯車の中心（仮の表示用）
       axis: Axis;
       basePhase: number; // 新しい歯車の位相（仮の表示を正しくかみ合わせて見せる用）
+    }
+  | {
+      kind: 'bevel'; // かさ歯車の親とかみ合う、直交する軸のかさ歯車（S2-02）
+      parentGearId: GearId;
+      axisStep: 1 | 2; // 新しいシャフトの軸 = 親の軸を axisStep 回進めた軸
+      side: 1 | -1;
+      size: SizeKey; // 親と同じ
+      teeth: number; // 親と同じ（歯数比 1:1）
+      shape: GearShape; // { kind: 'bevel', apex: −side }
+      center: Vec3;
+      axis: Axis;
+      basePhase: number;
     }
   | {
       kind: 'coaxial';
@@ -79,7 +92,7 @@ export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec)
   const perimeterShape = meshPartnerShape(gearShape(parent));
   const coaxialShape = newGearShape(spec.coaxialKind);
 
-  for (let k = 0; k < PERIMETER_CANDIDATE_COUNT; k++) {
+  for (let k = 0; perimeterShape !== null && k < PERIMETER_CANDIDATE_COUNT; k++) {
     const angle = (k * 2 * Math.PI) / PERIMETER_CANDIDATE_COUNT;
     const shaft: Shaft = {
       id: tempShaftId,
@@ -108,6 +121,49 @@ export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec)
       axis: placed.axis,
       basePhase: placed.basePhase,
     });
+  }
+
+  // かさ歯車の親: axisStep 1 → 2、それぞれ side −1 → 1 の 4 か所
+  if (parent.kind === 'bevel') {
+    for (const axisStep of [1, 2] as const) {
+      for (const side of [-1, 1] as const) {
+        const shaft: Shaft = {
+          id: tempShaftId,
+          placement: {
+            kind: 'bevel',
+            parentGearId: gearId,
+            childGearId: tempGearId,
+            axisStep,
+            side,
+          },
+        };
+        const shape: GearShape = { kind: 'bevel', apex: side === 1 ? -1 : 1 };
+        const child = makeGear(
+          {
+            id: tempGearId,
+            shaftId: tempShaftId,
+            size: parent.size,
+            teeth: parent.teeth,
+            offset: 0,
+          },
+          shape,
+        );
+        const placed = tryPlace(shaft, child);
+        if (placed === null) continue;
+        candidates.push({
+          kind: 'bevel',
+          parentGearId: gearId,
+          axisStep,
+          side,
+          size: parent.size,
+          teeth: parent.teeth,
+          shape,
+          center: placed.center,
+          axis: placed.axis,
+          basePhase: placed.basePhase,
+        });
+      }
+    }
   }
 
   // 選んだ歯車のシャフトに載った歯車の並びの、最小と最大の面
