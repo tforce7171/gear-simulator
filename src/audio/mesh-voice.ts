@@ -1,9 +1,15 @@
-import { type ClickParams, MATERIALS, VOICE_FADE_SEC } from '../core/audio-model';
+import {
+  type ClickParams,
+  MATERIALS,
+  slideNoiseParams,
+  VOICE_FADE_SEC,
+} from '../core/audio-model';
 import type { Vec3 } from '../core/math/vec3';
 import type { AudioMaterialId } from '../core/theme';
 import { createPanner, type Panner } from './panner';
 
 // かみ合い 1 組分の合成（S1-25）: 連続音（倍音の発振器 → ローパス）＋ざらつきのノイズと、予約するクリック。
+// ウォーム・ねじ歯車の組（S2-05）は、すべりの雑音（ループするノイズ → 帯域を絞ったフィルタ）を足す。
 // 出力は PannerNode で 3D に置く（S1-26）。作るときに 100 ms でフェードインする
 
 // 連続音の高さ・音量を追いかける時定数（秒）。値を飛ばさずに滑らかに変えてプツッと鳴らさない
@@ -24,6 +30,8 @@ export interface MeshVoiceSynth {
   setTone(frequency: number, level: number): void;
   // time（コンテキストの時刻）にクリックを 1 回鳴らす。gain はクロスフェードの重み
   click(params: ClickParams, time: number, gain: number): void;
+  // すべりの雑音の強さ（0〜1。slideNoiseLevel。S2-05）
+  setSlide(level: number): void;
   setMaterial(material: AudioMaterialId): void;
   // 音源の位置（かみ合いの接点。mm）
   setPosition(position: Vec3): void;
@@ -75,16 +83,39 @@ export function createMeshVoiceSynth(
   gritGain.gain.value = 0;
   grit.connect(gritFilter).connect(gritGain).connect(output);
 
+  // すべりの雑音（S2-05）: ノイズ → 帯域を絞ったフィルタ → 音量。強さ 0 の組では音量 0 のまま
+  let slideLevel = 0;
+  const slide = ctx.createBufferSource();
+  slide.buffer = noise;
+  slide.loop = true;
+  const slideFilter = ctx.createBiquadFilter();
+  slideFilter.type = 'bandpass';
+  const slideGain = ctx.createGain();
+  slideGain.gain.value = 0;
+  slide.connect(slideFilter).connect(slideGain).connect(output);
+  const applySlide = (): void => {
+    const p = slideNoiseParams(slideLevel, material);
+    const now = ctx.currentTime;
+    slideFilter.frequency.setTargetAtTime(p.frequency, now, PARAM_SMOOTHING);
+    slideFilter.Q.setTargetAtTime(p.q, now, PARAM_SMOOTHING);
+    slideGain.gain.setTargetAtTime(p.gain, now, PARAM_SMOOTHING);
+  };
+
   const applyMaterial = (): void => {
     const tone = MATERIALS[material].tone;
     osc.setPeriodicWave(periodicWave(ctx, tone.harmonics));
     toneFilter.frequency.setTargetAtTime(tone.lowpass, ctx.currentTime, PARAM_SMOOTHING);
     gritGain.gain.setTargetAtTime(level * tone.noise, ctx.currentTime, PARAM_SMOOTHING);
+    applySlide();
   };
+  const initialSlide = slideNoiseParams(0, material);
+  slideFilter.frequency.value = initialSlide.frequency;
+  slideFilter.Q.value = initialSlide.q;
   toneFilter.frequency.value = MATERIALS[material].tone.lowpass;
   applyMaterial();
   osc.start();
   grit.start(0, Math.random() * noise.duration);
+  slide.start(0, Math.random() * noise.duration);
 
   let disposed = false;
   return {
@@ -105,6 +136,11 @@ export function createMeshVoiceSynth(
       if (disposed) return;
       playClick(ctx, output, noise, params, time, gain);
     },
+    setSlide(next) {
+      if (disposed || next === slideLevel) return;
+      slideLevel = next;
+      applySlide();
+    },
     setMaterial(next) {
       if (disposed || next === material) return;
       material = next;
@@ -123,6 +159,7 @@ export function createMeshVoiceSynth(
       output.gain.linearRampToValueAtTime(0, now + RELEASE_SEC);
       osc.stop(now + RELEASE_SEC + 0.01);
       grit.stop(now + RELEASE_SEC + 0.01);
+      slide.stop(now + RELEASE_SEC + 0.01);
       osc.onended = () => {
         output.disconnect();
         panner.dispose();

@@ -8,9 +8,11 @@ import {
   lockKey,
   MASTER_GAIN,
   MAX_MOTOR_VOICES,
+  type MeshKind,
   type MeshVoice,
   type MotorHum,
   MUTE_RAMP_SEC,
+  meshTimbre,
   selectVoices,
   shouldScheduleClicks,
   summarizeBackground,
@@ -39,8 +41,17 @@ export interface AudioState {
   contextState: 'none' | AudioContextState; // 作る前は 'none'
   muted: boolean;
   material: AudioMaterialId;
-  // 今鳴らしている（鳴らす対象の）かみ合い。frequency は歯の通過頻度（Hz）、position は接点
-  voices: Array<{ key: string; frequency: number; click: number; tone: number; position: Vec3 }>;
+  // 今鳴らしている（鳴らす対象の）かみ合い。frequency は歯の通過頻度（Hz）、position は接点、
+  // kind はかみ合いの種類（音色。S2-05）、slide はすべりの雑音の強さ（0〜1。S2-05）
+  voices: Array<{
+    key: string;
+    frequency: number;
+    click: number;
+    tone: number;
+    position: Vec3;
+    kind: MeshKind;
+    slide: number;
+  }>;
   // 選ばれなかった組をまとめた背景のうなり。無ければ null
   background: { level: number; frequency: number } | null;
   // 今鳴らしているモーターのうなり（motorId の昇順）
@@ -155,8 +166,11 @@ export function createAudioEngine(options: AudioEngineOptions = {}): AudioEngine
       } else {
         synth.setPosition(voice.position);
       }
+      // 種類ごとの音色（S2-05）: 連続音とクリックの音量に倍率を掛け、すべりの雑音を足す
+      const timbre = meshTimbre(voice.kind);
       const tone = toneParams(voice.frequency, material);
-      synth.setTone(tone.frequency, tone.level);
+      synth.setTone(tone.frequency, tone.level * timbre.hum);
+      synth.setSlide(voice.slide);
       if (prev === undefined || voice.click <= 0) continue;
       // 歯の境目を跨いだ時刻をフレームの中で補間し、遅れを足して予約する
       const times = toothPassTimes(prev, angle, voice.teeth, frame.dt);
@@ -164,7 +178,7 @@ export function createAudioEngine(options: AudioEngineOptions = {}): AudioEngine
       const now = ctx.currentTime;
       for (const t of times) {
         const time = Math.max(now, now - frame.dt + t + CLICK_LATENCY);
-        synth.click(clickParams(material, random), time, voice.click);
+        synth.click(clickParams(material, random), time, voice.click * timbre.click);
       }
     }
   };
@@ -310,6 +324,8 @@ export function createAudioEngine(options: AudioEngineOptions = {}): AudioEngine
           click: v.click,
           tone: v.tone,
           position: v.position,
+          kind: v.kind,
+          slide: v.slide,
         })),
         background: background === null ? null : { ...background },
         motors: activeMotors.map((m) => ({
