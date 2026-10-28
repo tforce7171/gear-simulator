@@ -1,8 +1,15 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { resolveLayout } from '../layout/resolve';
 import type { Layout, Mesh } from '../layout/types';
 import type { Gear, Motor, Scene, Shaft } from '../scene/types';
-import { computeGearInfo, formatRatio, formatRpm, visibleInfoGearIds } from './info';
+import {
+  computeGearInfo,
+  formatRatio,
+  formatRpm,
+  formatWormRatio,
+  visibleInfoGearIds,
+} from './info';
 import { initialMotionState, solveMotion } from './motion';
 
 // S1-23: 情報表示の値
@@ -266,5 +273,27 @@ describe('visibleInfoGearIds', () => {
     const all = ['gear_g1', 'gear_g2', 'gear_g3'];
     expect(visibleInfoGearIds(scene, null, true)).toEqual(all);
     expect(visibleInfoGearIds(scene, 'shaft_s2', true)).toEqual(all);
+  });
+});
+
+describe('ウォームの組のギア比（S2-05）', () => {
+  function fixture(name: string): Scene {
+    const url = new URL(`../../../e2e/fixtures/${name}.json`, import.meta.url);
+    return JSON.parse(readFileSync(url, 'utf8')) as Scene;
+  }
+
+  it('worm-basic（ホイール 30 歯・1 条）→ ウォームにもホイールにも 30:1', () => {
+    const scene = fixture('worm-basic');
+    const info = infoOf(scene);
+    expect(info.gear_w?.wormRatio).toEqual({ wheelTeeth: 30, threads: 1 });
+    expect(info.gear_h?.wormRatio).toEqual({ wheelTeeth: 30, threads: 1 });
+    expect(formatWormRatio({ wheelTeeth: 30, threads: 1 })).toBe('30:1');
+  });
+
+  it('ウォームの組でない歯車は null', () => {
+    const info = infoOf(fixture('helical-pair'));
+    expect(info.gear_a?.wormRatio).toBeNull();
+    expect(info.gear_b?.wormRatio).toBeNull();
+    expect(formatWormRatio(null)).toBe('');
   });
 });

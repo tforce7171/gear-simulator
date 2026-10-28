@@ -260,6 +260,24 @@ describe('パレットと、作った部品の選択（S1-17）', () => {
     expect(listener).toHaveBeenCalledTimes(1);
   });
 
+  it('パレットの種類の初期値は平歯車。setPaletteKind で変わり、同じ値なら知らせない。シーン・履歴は変えない（S2-05）', () => {
+    const store = createStore(emptyScene());
+    expect(store.getState().palette).toEqual({ size: 'M', kind: 'spur' });
+    const listener = vi.fn();
+    store.subscribe(listener);
+    const before = store.getState();
+    store.dispatch({ type: 'setPaletteKind', kind: 'worm' });
+    expect(store.getState().palette).toEqual({ size: 'M', kind: 'worm' });
+    expect(store.getState().scene).toBe(before.scene);
+    expect(store.getState().history).toBe(before.history);
+    store.dispatch({ type: 'setPaletteKind', kind: 'worm' });
+    expect(listener).toHaveBeenCalledTimes(1);
+    // Undo の対象にしない・loadScene でも保つ
+    store.dispatch({ type: 'undo' });
+    store.dispatch({ type: 'loadScene', scene: emptyScene() });
+    expect(store.getState().palette.kind).toBe('worm');
+  });
+
   it('selectCreated なら最後に作った部品（起点では歯車）を選び、Undo 1 回で両方消えて選択も外れる', () => {
     const store = createStore(emptyScene(), { ids: createSequentialIdGenerator() });
     store.dispatch({

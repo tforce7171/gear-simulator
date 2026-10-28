@@ -30,6 +30,16 @@ export const en = {
   'palette.size.L': 'Large',
   'palette.size.L.tooltip': 'Large (module 3)',
   'palette.parts': 'Parts to place',
+  // Gear type to add (S2-05)
+  'palette.kind': 'Gear type to add',
+  'palette.kind.hint':
+    'Same-shaft candidates use this type. Candidates around a gear follow the gear they mesh with',
+  'gearKind.spur': 'Spur gear',
+  'gearKind.helical': 'Helical gear',
+  'gearKind.bevel': 'Bevel gear',
+  'gearKind.worm': 'Worm',
+  'gearKind.wormWheel': 'Worm wheel',
+  'gearKind.crossedHelical': 'Crossed helical gear',
   'palette.rootShaft': 'Base shaft',
   'palette.rootShaft.tooltip':
     'Drag onto the floor to place (R to change the direction, Esc to cancel)',
@@ -39,7 +49,18 @@ export const en = {
   'properties.gear': 'Gear',
   'properties.shaft': 'Shaft',
   'properties.kind': 'Type',
-  'properties.kind.spur': 'Spur gear',
+  // Per-type display (S2-05)
+  'properties.hand': 'Helix hand',
+  'properties.hand.left': 'Left-hand',
+  'properties.hand.right': 'Right-hand',
+  'properties.bevel.note': 'Changing the teeth also changes the meshing bevel gears to match',
+  'properties.bevel.flip': 'Flip direction',
+  'properties.bevel.flip.tooltip': 'Turn the teeth (the apex side) the other way',
+  'properties.bevel.flip.disabled':
+    'Its direction follows the meshing bevel gear, so it cannot be flipped',
+  'properties.threads': 'Starts',
+  'properties.worm.threads': 'Single-start',
+  'properties.worm.note': 'The number of starts of a worm cannot be changed',
   'properties.size': 'Size',
   'properties.size.S': 'Small',
   'properties.size.M': 'Medium',
@@ -76,6 +97,7 @@ export const en = {
   'toast.close': 'Close',
   // Info overlay (S1-23). Heading of the second line of the label
   'info.ratio': 'Ratio',
+  'info.wormRatio': 'Worm ratio',
   // Pause indicator (S1-22)
   'sim.paused': 'Paused (Space to resume)',
   // Axis gizmo (S1-14)

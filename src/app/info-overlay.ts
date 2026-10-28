@@ -87,7 +87,7 @@ export function createInfoOverlay(deps: InfoOverlayDeps): InfoOverlay {
       const gear = state.scene.gears[id];
       const gearLayout = layout.gears[id];
       if (item === undefined || gear === undefined || gearLayout === undefined) continue;
-      values.set(id, { rpm: item.rpm, ratio: item.ratio });
+      values.set(id, { rpm: item.rpm, ratio: item.ratio, wormRatio: item.wormRatio });
       if (item.direction === 0) continue;
       specs.push(deps.arrowSpec(gear, gearLayout, item.direction));
       nextArrows.push({ gearId: id, direction: item.direction });

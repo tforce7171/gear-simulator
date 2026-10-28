@@ -12,7 +12,7 @@ import type { HandConstraint, MotionState } from '../core/kinematics/types';
 import { resolveLayout } from '../core/layout/resolve';
 import type { Layout } from '../core/layout/types';
 import { createRandomIdGenerator, type IdGenerator } from '../core/scene/ids';
-import type { Scene, SizeKey } from '../core/scene/types';
+import type { GearKind, Scene, SizeKey } from '../core/scene/types';
 import { defaultSettings, type Settings } from '../core/settings';
 import { pruneSelection } from './selection';
 
@@ -39,12 +39,13 @@ export interface SimState {
 
 export const DEFAULT_SIM: SimState = { paused: false, hand: null };
 
-// 部品パレットで選んでいるもの（design.md §7 の AppState.palette。S1-17）。S2-05 で種類を足す
+// 部品パレットで選んでいるもの（design.md §7 の AppState.palette。S1-17・S2-05）。シーンに含めず、Undo の対象にしない
 export interface PaletteState {
   readonly size: SizeKey; // 起点を置く・同じ軸に生やす歯車の大きさ
+  readonly kind: GearKind; // 同じ軸に生やす歯車の種類（S2-05）。外周・かさ・ねじれた位置の候補の種類は親で決まる
 }
 
-export const DEFAULT_PALETTE: PaletteState = { size: 'M' };
+export const DEFAULT_PALETTE: PaletteState = { size: 'M', kind: 'spur' };
 
 // アプリの状態（design.md §7）。欄は使うタスクで足していく
 export interface AppState {
@@ -87,6 +88,8 @@ export type AppAction =
   | { readonly type: 'select'; readonly id: string | null }
   // パレットで選ぶ歯車の大きさ（S1-17）
   | { readonly type: 'setPaletteSize'; readonly size: SizeKey }
+  // パレットで選ぶ、同じ軸に生やす歯車の種類（S2-05）
+  | { readonly type: 'setPaletteKind'; readonly kind: GearKind }
   // 全モーターの一時停止を切り替える（S1-22）。シーンと履歴は変えない
   | { readonly type: 'togglePause' }
   // いま開いている作品を置き換える（S1-27。保存・開く・名前の変更・削除で使う）。シーンと履歴は変えない
@@ -183,6 +186,10 @@ function reduce(state: AppState, action: AppAction, ids: IdGenerator): AppState 
       return state.palette.size === action.size
         ? state
         : { ...state, palette: { ...state.palette, size: action.size } };
+    case 'setPaletteKind':
+      return state.palette.kind === action.kind
+        ? state
+        : { ...state, palette: { ...state.palette, kind: action.kind } };
     case 'togglePause': {
       const paused = !state.sim.paused;
       // 運動はすぐに解き直す（次のフレームを待たずに ω が 0 になる・戻る）。角度は引き継ぐ

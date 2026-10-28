@@ -1,7 +1,8 @@
 // 情報表示のラベル（S1-23、要件 §7.3）。歯車の中心を投影した位置の少し上に、2 行
-// （"20.0 rpm" / "ギア比 3.00 : 1"）を DOM で重ねる。ポインターは下の canvas に通す
+// （"20.0 rpm" / "ギア比 3.00 : 1"）を DOM で重ねる。ウォームの組の歯車には 3 行目に
+// "ウォーム比 30:1"（S2-05）を出す。ポインターは下の canvas に通す
 import { onLanguageChange, t } from '../app/i18n';
-import { formatRatio, formatRpm } from '../core/kinematics/info';
+import { formatRatio, formatRpm, formatWormRatio, type WormRatio } from '../core/kinematics/info';
 import type { GearId } from '../core/scene/types';
 import { h } from './dom';
 import './info-labels.css';
@@ -9,6 +10,7 @@ import './info-labels.css';
 export interface InfoLabelValues {
   readonly rpm: number;
   readonly ratio: number | null;
+  readonly wormRatio?: WormRatio | null; // ウォームの組のギア比（S2-05）
 }
 
 export interface InfoLabels {
@@ -23,12 +25,23 @@ interface Label {
   readonly el: HTMLElement;
   readonly rpm: HTMLElement;
   readonly ratio: HTMLElement;
+  readonly worm: HTMLElement;
   values: InfoLabelValues;
 }
 
 function render(label: Label): void {
   label.rpm.textContent = formatRpm(label.values.rpm);
   label.ratio.textContent = `${t('info.ratio')} ${formatRatio(label.values.ratio)}`;
+  const worm = label.values.wormRatio ?? null;
+  label.worm.hidden = worm === null;
+  label.worm.textContent = worm === null ? '' : `${t('info.wormRatio')} ${formatWormRatio(worm)}`;
+}
+
+function sameWorm(a: WormRatio | null | undefined, b: WormRatio | null | undefined): boolean {
+  return (
+    (a?.wheelTeeth ?? null) === (b?.wheelTeeth ?? null) &&
+    (a?.threads ?? null) === (b?.threads ?? null)
+  );
 }
 
 // host は描画領域（position が static でない要素）
@@ -55,11 +68,16 @@ export function createInfoLabels(host: HTMLElement): InfoLabels {
           el.hidden = true; // 位置が決まるまで隠す
           const rpm = h('div', 'gs-info-label__rpm');
           const ratio = h('div', 'gs-info-label__ratio');
-          el.append(rpm, ratio);
+          const worm = h('div', 'gs-info-label__worm', 'info-label-worm');
+          el.append(rpm, ratio, worm);
           layer.append(el);
-          label = { el, rpm, ratio, values: value };
+          label = { el, rpm, ratio, worm, values: value };
           labels.set(id, label);
-        } else if (label.values.rpm === value.rpm && label.values.ratio === value.ratio) {
+        } else if (
+          label.values.rpm === value.rpm &&
+          label.values.ratio === value.ratio &&
+          sameWorm(label.values.wormRatio, value.wormRatio)
+        ) {
           continue;
         }
         label.values = value;

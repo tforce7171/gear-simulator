@@ -266,11 +266,13 @@ cameraInput.onDragStart(() => {
 });
 // R: 起点を置くドラッグ中は仮の部品の向き、それ以外は選んだ起点（detached）のシャフトの向き（S1-17）
 keyboard.bind({ key: 'r' }, { onDown: () => interactions.rotate() });
-// 部品パレット（S1-17）: 歯車の大きさと、床へドラッグして置く起点のシャフト
+// 部品パレット（S1-17）: 歯車の大きさ、生やす歯車の種類（S2-05）と、床へドラッグして置く起点のシャフト
 const palette = createPalette({
   body: shell.palette.body,
   getSize: () => store.getState().palette.size,
   setSize: (size) => store.dispatch({ type: 'setPaletteSize', size }),
+  getKind: () => store.getState().palette.kind,
+  setKind: (kind) => store.dispatch({ type: 'setPaletteKind', kind }),
   onRootDragStart: (x, y) => interactions.beginRootDrag(x, y),
   onRootDragMove: (x, y) => interactions.moveRootDrag(x, y),
   onRootDragEnd: (x, y) => interactions.endRootDrag(x, y),

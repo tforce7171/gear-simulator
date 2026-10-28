@@ -41,7 +41,45 @@
   background: #3a4a60;
 }
 
+/* 生やす歯車の種類（S2-05）: 2 列に並べる */
+.gs-palette__kinds {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+.gs-palette__kind {
+  min-width: 0;
+  min-height: 28px;
+  padding: 2px 4px;
+  border: 1px solid var(--gs-button-border);
+  border-radius: 4px;
+  background: var(--gs-button-bg);
+  color: var(--gs-text);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.gs-palette__kind:hover {
+  background: #404651;
+}
+
+.gs-palette__kind.is-selected {
+  border-color: #7aa2d6;
+  background: #3a4a60;
+}
+
+.gs-palette__hint {
+  margin: 6px 0 0;
+  color: var(--gs-text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
 .gs-palette__size:focus-visible,
+.gs-palette__kind:focus-visible,
 .gs-palette__item:focus-visible {
   outline: 2px solid #7aa2d6;
   outline-offset: 1px;

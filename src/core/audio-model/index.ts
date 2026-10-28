@@ -1,6 +1,7 @@
 import type { MeshKind } from '../geometry/can-mesh';
 
 export type { MeshKind } from '../geometry/can-mesh';
+
 import type { MotionState } from '../kinematics/types';
 import type { Layout } from '../layout/types';
 import type { Vec3 } from '../math/vec3';

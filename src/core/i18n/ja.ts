@@ -31,6 +31,15 @@ export const ja = {
   'palette.size.L': '大',
   'palette.size.L.tooltip': '大（モジュール 3）',
   'palette.parts': '置く部品',
+  // 生やす歯車の種類（S2-05）
+  'palette.kind': '生やす歯車の種類',
+  'palette.kind.hint': '同じ軸の候補をこの種類で作ります。外周の候補の種類は相手の歯車で決まります',
+  'gearKind.spur': '平歯車',
+  'gearKind.helical': 'ハスバ歯車',
+  'gearKind.bevel': 'かさ歯車',
+  'gearKind.worm': 'ウォーム',
+  'gearKind.wormWheel': 'ウォームホイール',
+  'gearKind.crossedHelical': 'ねじ歯車',
   'palette.rootShaft': '起点のシャフト',
   'palette.rootShaft.tooltip':
     '床へドラッグして置く（ドラッグ中に R で向きを変える、Esc でやめる）',
@@ -40,7 +49,17 @@ export const ja = {
   'properties.gear': '歯車',
   'properties.shaft': 'シャフト',
   'properties.kind': '種類',
-  'properties.kind.spur': '平歯車',
+  // 種類ごとの表示（S2-05）
+  'properties.hand': 'ねじれの向き',
+  'properties.hand.left': '左ねじれ',
+  'properties.hand.right': '右ねじれ',
+  'properties.bevel.note': '歯数を変えると、かみ合うかさ歯車も同じ歯数になります',
+  'properties.bevel.flip': '向きを反転',
+  'properties.bevel.flip.tooltip': '歯の向き（頂点の側）を反対にする',
+  'properties.bevel.flip.disabled': '相手のかさ歯車に合わせた向きなので、反転できません',
+  'properties.threads': '条数',
+  'properties.worm.threads': '1 条',
+  'properties.worm.note': 'ウォームの条数は変えられません',
   'properties.size': '大きさ',
   'properties.size.S': '小',
   'properties.size.M': '中',
@@ -78,6 +97,7 @@ export const ja = {
   'toast.close': '閉じる',
   // 情報表示（S1-23）。ラベルの 2 行目の見出し
   'info.ratio': 'ギア比',
+  'info.wormRatio': 'ウォーム比',
   // 一時停止中の表示（S1-22）
   'sim.paused': '一時停止中（Space で再開）',
   // 軸の目印（S1-14）。球の title と aria-label

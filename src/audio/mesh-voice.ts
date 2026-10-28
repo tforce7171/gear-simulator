@@ -1,9 +1,4 @@
-import {
-  type ClickParams,
-  MATERIALS,
-  slideNoiseParams,
-  VOICE_FADE_SEC,
-} from '../core/audio-model';
+import { type ClickParams, MATERIALS, slideNoiseParams, VOICE_FADE_SEC } from '../core/audio-model';
 import type { Vec3 } from '../core/math/vec3';
 import type { AudioMaterialId } from '../core/theme';
 import { createPanner, type Panner } from './panner';
