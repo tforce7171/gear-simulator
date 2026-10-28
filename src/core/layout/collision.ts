@@ -101,6 +101,25 @@ export function findInterferences(
   return [...found.values()].sort((p, q) => compare(p[0], q[0]) || compare(p[1], q[1]));
 }
 
+// subject と others の各部品の組のうち、干渉するものの相手の ID（others の順）。
+// findInterferences と同じ判定（外接箱の絞り込み、同じ ID と歯車とそれが載ったシャフトの組を除く）を、1 つの部品について行う。
+// skip が真の相手は調べない（かみ合う組など）
+export function interferingWith(
+  subject: Collider,
+  others: readonly Collider[],
+  skip: (other: Collider) => boolean,
+): string[] {
+  const box = boundingBox(subject);
+  const hits: string[] = [];
+  for (const other of others) {
+    if (other.id === subject.id || onOwnShaft(subject, other) || onOwnShaft(other, subject))
+      continue;
+    if (skip(other) || !boxesOverlap(box, boundingBox(other))) continue;
+    if (collides(subject, other)) hits.push(other.id);
+  }
+  return hits;
+}
+
 interface Box {
   readonly min: Vec3;
   readonly max: Vec3;

@@ -12,13 +12,13 @@ import type {
   ShaftId,
   SizeKey,
 } from '../scene/types';
-import { resolveLayout } from './resolve';
+import { resolveAddition, resolveLayout } from './resolve';
 
 // 生やす候補の列挙（要件 §6、design.md §5）。選んだ歯車について、
 // 外周の候補（新しい mesh のシャフトを作る。親の軸まわりの 8 方向）と、
 // 同じ軸の候補（選んだ歯車のシャフトに通す。歯車の並びの両端の外側）を返す。
 // 外周の子は親とかみ合う形（ハスバ歯車なら逆の hand）、同じ軸は spec.coaxialKind の歯車（S2-01）。
-// 候補を足した仮のシーンを resolveLayout し、新しく増えた干渉の組があるものは除く
+// 候補を足した仮のシーン（resolveAddition で、全体を解き直さずに求める）で新しく増えた干渉の組があるものは除く
 
 export interface GrowSpec {
   perimeterTeeth: number; // 外周の新しい歯車の歯数（大きさは親と同じ）
@@ -63,14 +63,16 @@ export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec)
   const tempGearId = unusedId(scene.gears, '__candidate_gear');
   const tempShaftId = unusedId(scene.shafts, '__candidate_shaft');
 
-  // 仮のシーンを resolveLayout し、新しく増えた干渉の組が無ければ新しい歯車のレイアウトを返す。
-  // 新しい組は必ず新しい部品か伸びたシャフトを含む（それ以外の部品の位置と形は変わらないため）
-  const tryPlace = (tentative: Scene) => {
-    const result = resolveLayout(tentative);
+  // 仮のシーン（選んだシーンに歯車と、外周ならシャフトを足したもの）で、新しく増えた干渉の組が無ければ
+  // 新しい歯車のレイアウトを返す。新しい組は必ず新しい部品か伸びたシャフトを含む（それ以外の部品の位置と形は変わらないため）
+  // ので、それらを含む組だけを resolveAddition で求める（全体を resolveLayout し直すと、候補ごとに全ての組を調べ直して遅い）
+  const tryPlace = (shaft: Shaft | null, gear: Gear) => {
+    const result = resolveAddition(scene, layout, shaft, gear);
+    if (result === null) return null;
     for (const [a, b] of result.interferences) {
       if (!baseInterferences.has(pairKey(a, b))) return null;
     }
-    return result.gears[tempGearId] ?? null;
+    return result.gear;
   };
 
   const candidates: GrowCandidate[] = [];
@@ -93,7 +95,7 @@ export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec)
       },
       perimeterShape,
     );
-    const placed = tryPlace(withParts(scene, shaft, child));
+    const placed = tryPlace(shaft, child);
     if (placed === null) continue;
     candidates.push({
       kind: 'perimeter',
@@ -128,7 +130,7 @@ export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec)
       },
       coaxialShape,
     );
-    const placed = tryPlace(withParts(scene, null, child));
+    const placed = tryPlace(null, child);
     if (placed === null) continue;
     candidates.push({
       kind: 'coaxial',
@@ -157,15 +159,6 @@ function unusedId(existing: Readonly<Record<string, unknown>>, base: string): st
   let id = base;
   for (let i = 1; Object.hasOwn(existing, id); i++) id = `${base}_${i}`;
   return id;
-}
-
-// 入力のシーンは変えずに、部品を足した新しいシーンを作る
-function withParts(scene: Scene, shaft: Shaft | null, gear: Gear): Scene {
-  return {
-    shafts: shaft === null ? scene.shafts : { ...scene.shafts, [shaft.id]: shaft },
-    gears: { ...scene.gears, [gear.id]: gear },
-    motors: scene.motors,
-  };
 }
 
 function pairKey(a: string, b: string): string {

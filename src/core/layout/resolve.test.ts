@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { EMPTY_SHAFT_HALF_LENGTH, SHAFT_END_MARGIN } from '../constants';
 import { samePhase } from '../geometry/mesh';
 import type { Axis, Gear, Scene, Shaft, SizeKey } from '../scene/types';
-import { descendantShafts, resolveLayout } from './resolve';
+import { descendantShafts, resolveAddition, resolveLayout } from './resolve';
 
 // テスト用の小さな組み立て
 function root(id: string, origin: [number, number, number], axis: Axis = 'y'): Shaft {
@@ -398,6 +398,100 @@ describe('resolveLayout: キャッシュ', () => {
     const other = resolveLayout(structuredClone(s));
     expect(other).not.toBe(first);
     expect(other).toEqual(first);
+  });
+});
+
+describe('resolveAddition: 全体を解き直した結果と一致する', () => {
+  // 干渉・contact・ハスバ歯車・detached を含むシーン。axis 'y' の起点 A（20 歯）の周りに子を並べ、
+  // 同じ軸にも 2 枚。B と C は A に近すぎて干渉する（既存の干渉の組がある）
+  const helical = (g: Gear, hand: 'left' | 'right'): Gear => ({ ...g, kind: 'helical', hand });
+  const base = scene(
+    [
+      root('sa', [0, 0, 0]),
+      meshShaft('sb', 'ga', 'gb', 0),
+      meshShaft('sc', 'ga', 'gc', Math.PI / 2),
+      root('sd', [0, 0, 20]),
+      detached('se', [30, 0, 0], 'y'),
+      root('sf', [-60, 0, 0], 'x'),
+      meshShaft('sg', 'ga2', 'gg', Math.PI),
+      root('sh', [0, 0, -40]),
+      meshShaft('si', 'gh', 'gi', 0),
+    ],
+    [
+      gear('ga', 'sa', 20),
+      gear('ga2', 'sa', 20, 4),
+      gear('gb', 'sb', 12),
+      gear('gc', 'sc', 30),
+      gear('gd', 'sd', 20),
+      gear('ge', 'se', 16, 2),
+      gear('gf', 'sf', 24, 0, 'M'),
+      gear('gg', 'sg', 14),
+      helical(gear('gh', 'sh', 16), 'right'),
+      helical(gear('gi', 'si', 16), 'left'),
+    ],
+  );
+  const layout = resolveLayout(base);
+
+  function expectSame(shaft: Shaft | null, added: Gear): void {
+    const tentative: Scene = {
+      shafts: shaft === null ? base.shafts : { ...base.shafts, [shaft.id]: shaft },
+      gears: { ...base.gears, [added.id]: added },
+      motors: base.motors,
+    };
+    const full = resolveLayout(tentative);
+    const result = resolveAddition(base, layout, shaft, added);
+    const fullGear = full.gears[added.id];
+    if (fullGear === undefined) {
+      expect(result).toBeNull();
+      return;
+    }
+    expect(result).not.toBeNull();
+    expectVec(result?.gear.center, fullGear.center);
+    expect(result?.gear.axis).toBe(fullGear.axis);
+    expect(result?.gear.pitchRadius).toBeCloseTo(fullGear.pitchRadius, 9);
+    expect(result?.gear.basePhase).toBeCloseTo(fullGear.basePhase, 9);
+    // 変わった部品（足した歯車・足したシャフト・伸びたシャフト）を含む組だけが、全体の結果と一致する
+    const changed = new Set([added.id, shaft?.id ?? added.shaftId]);
+    const expected = full.interferences.filter(([a, b]) => changed.has(a) || changed.has(b));
+    expect(result?.interferences).toEqual(expected);
+  }
+
+  const candidatesFor = (parentId: string, kinds: Gear[]) => {
+    const cases: Array<[Shaft | null, Gear]> = [];
+    const parent = base.gears[parentId] as Gear;
+    for (const shape of kinds) {
+      for (let k = 0; k < 8; k++) {
+        const child: Gear = { ...shape, id: 'gnew', shaftId: 'snew', size: parent.size, offset: 0 };
+        cases.push([meshShaft('snew', parentId, 'gnew', (k * Math.PI) / 4), child]);
+      }
+      for (const offset of [-12, -4, 0, 2, 8, 12]) {
+        cases.push([null, { ...shape, id: 'gnew', shaftId: parent.shaftId, offset }]);
+      }
+    }
+    return cases;
+  };
+
+  it('前提: 既存の干渉と contact がある', () => {
+    expect(layout.interferences.length).toBeGreaterThan(0);
+    expect(layout.meshes.some((m) => m.source === 'contact')).toBe(true);
+  });
+
+  it('外周（8 方向）と同じ軸（両端・重なり）の、平歯車とハスバ歯車（両方の hand）', () => {
+    const shapes: Gear[] = [
+      gear('x', 'x', 12),
+      gear('x', 'x', 20),
+      helical(gear('x', 'x', 16), 'left'),
+      helical(gear('x', 'x', 16), 'right'),
+    ];
+    for (const parentId of ['ga', 'ga2', 'gb', 'gc', 'gd', 'ge', 'gf', 'gg', 'gh', 'gi']) {
+      for (const [shaft, added] of candidatesFor(parentId, shapes)) expectSame(shaft, added);
+    }
+  });
+
+  it('根から届かない親（親の歯車が別のシャフトに載っていない）では null', () => {
+    const orphan = meshShaft('snew', 'missing', 'gnew', 0);
+    expect(resolveAddition(base, layout, orphan, gear('gnew', 'snew', 12))).toBeNull();
+    expect(resolveAddition(base, layout, null, gear('gnew', 'missing_shaft', 12))).toBeNull();
   });
 });
 
