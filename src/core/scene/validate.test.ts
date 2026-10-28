@@ -315,3 +315,93 @@ describe('ハスバ歯車（S2-01）', () => {
     expect(errorsOf(withGear(base, bad)).map((e) => e.code)).toEqual(['invalidKind']);
   });
 });
+
+describe('かさ歯車（S2-02）', () => {
+  const bevelRoot: Gear = { ...rootGear, kind: 'bevel', apex: 1, size: 'M', teeth: 20 };
+  const bevelChild: Gear = { ...childGear, kind: 'bevel', apex: 1, size: 'M', teeth: 20 };
+  const bevelShaft: Shaft = {
+    id: 'shaft_2',
+    placement: {
+      kind: 'bevel',
+      parentGearId: 'gear_1',
+      childGearId: 'gear_2',
+      axisStep: 2,
+      side: -1,
+    },
+  };
+  const pair: Scene = {
+    shafts: { shaft_1: rootShaft, shaft_2: bevelShaft },
+    gears: { gear_1: bevelRoot, gear_2: bevelChild },
+    motors: {},
+  };
+  const withPlacement = (patch: Record<string, unknown>): Scene => ({
+    ...pair,
+    shafts: {
+      ...pair.shafts,
+      shaft_2: { ...bevelShaft, placement: { ...bevelShaft.placement, ...patch } } as Shaft,
+    },
+  });
+
+  it("'bevel' の歯車と配置を受け付ける", () => {
+    expect(validateScene(pair)).toEqual({ ok: true });
+  });
+
+  it('apex が 1・-1 でない → invalidApex', () => {
+    const bad = { ...bevelRoot, apex: 0 } as unknown as Gear;
+    expect(errorsOf(withGear(base, bad)).map((e) => [e.code, e.path])).toEqual([
+      ['invalidApex', 'gears.gear_1.apex'],
+    ]);
+  });
+
+  it('子の apex が −side でない → bevelApexMismatch', () => {
+    const scene = withGear(pair, { ...bevelChild, apex: -1 } as Gear);
+    expect(errorsOf(scene).map((e) => [e.code, e.path])).toEqual([
+      ['bevelApexMismatch', 'gears.gear_2.apex'],
+    ]);
+  });
+
+  it('axisStep が 1・2 でない（0 = 親と同じ軸）→ invalidAxisStep、side が ±1 でない → invalidSide', () => {
+    expect(errorsOf(withPlacement({ axisStep: 0 })).map((e) => [e.code, e.path])).toEqual([
+      ['invalidAxisStep', 'shafts.shaft_2.placement.axisStep'],
+    ]);
+    expect(errorsOf(withPlacement({ side: 0 })).map((e) => [e.code, e.path])).toEqual([
+      ['invalidSide', 'shafts.shaft_2.placement.side'],
+    ]);
+  });
+
+  it('歯数が違う・平歯車の親 → meshKindMismatch。かさ歯車を mesh でつなぐ → meshKindMismatch', () => {
+    expect(
+      errorsOf(withGear(pair, { ...bevelChild, teeth: 24 } as Gear)).map((e) => e.code),
+    ).toEqual(['meshKindMismatch']);
+    const spurParent = withGear(pair, { ...rootGear, size: 'M', teeth: 20 });
+    expect(errorsOf(spurParent).map((e) => e.code)).toEqual(['meshKindMismatch']);
+    const meshed: Scene = {
+      ...pair,
+      shafts: { shaft_1: rootShaft, shaft_2: { ...meshShaft } },
+    };
+    expect(errorsOf(meshed).map((e) => e.code)).toEqual(['meshKindMismatch']);
+  });
+
+  it('子の offset が 0 でない → meshChildOffset、bevel の循環 → meshCycle', () => {
+    expect(
+      errorsOf(withGear(pair, { ...bevelChild, offset: 4 } as Gear)).map((e) => e.code),
+    ).toEqual(['meshChildOffset']);
+    const cycle: Scene = {
+      ...pair,
+      shafts: {
+        shaft_1: {
+          id: 'shaft_1',
+          placement: {
+            kind: 'bevel',
+            parentGearId: 'gear_2',
+            childGearId: 'gear_1',
+            axisStep: 1,
+            side: -1,
+          },
+        },
+        shaft_2: bevelShaft,
+      },
+    };
+    expect(errorsOf(cycle).map((e) => e.code)).toContain('meshCycle');
+  });
+});

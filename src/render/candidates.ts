@@ -4,7 +4,7 @@ import type { MotionState } from '../core/kinematics/types';
 import type { Vec3 } from '../core/math/vec3';
 import type { Axis, GearShape, ShaftId, SizeKey } from '../core/scene/types';
 import { placeOnAxis } from './frame';
-import type { GeometryCache } from './gear-geometry';
+import { type GeometryCache, gearBodyScaleZ } from './gear-geometry';
 import { setPickTarget } from './picking';
 
 // 生やす候補の仮の歯車の表示（S1-18）。形状データは本物の歯車と同じ共有のもの（GeometryCache）を使い、
@@ -86,6 +86,7 @@ export function createCandidateView(cache: GeometryCache): CandidateView {
     const group = new Group();
     const body = new Mesh(cache.acquire(spec.shape, spec.size, spec.teeth), normal);
     body.renderOrder = CANDIDATE_RENDER_ORDER;
+    body.scale.z = gearBodyScaleZ(spec.shape);
     body.rotation.z = spec.phase;
     group.add(body);
     let shaft: Mesh | null = null;

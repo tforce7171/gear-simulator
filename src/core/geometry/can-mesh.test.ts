@@ -54,7 +54,27 @@ describe('meshKindOf', () => {
       [{ kind: 'spur' }, 'spur'],
       [{ kind: 'helical', hand: 'right' }, 'helical'],
       [{ kind: 'helical', hand: 'left' }, 'helical'],
+      [{ kind: 'bevel', apex: 1 }, 'bevel'],
     ];
     for (const [shape, kind] of shapes) expect(meshKindOf(shape)).toBe(kind);
+  });
+});
+
+describe('canMesh: かさ歯車（S2-02）', () => {
+  function bevel(teeth = 20, apex: 1 | -1 = 1, size: SizeKey = 'M'): Gear {
+    return { id: 'gear_b', kind: 'bevel', apex, shaftId: 'shaft_x', size, teeth, offset: 0 };
+  }
+
+  it('同じ大きさ・同じ歯数のかさ歯車同士 → 真（apex は問わない）', () => {
+    expect(canMesh(bevel(20, 1), bevel(20, 1))).toBe(true);
+    expect(canMesh(bevel(20, 1), bevel(20, -1))).toBe(true);
+  });
+
+  it('歯数・大きさが違う、平歯車・ハスバ歯車とは → 偽', () => {
+    expect(canMesh(bevel(20), bevel(24))).toBe(false);
+    expect(canMesh(bevel(20, 1, 'M'), bevel(20, 1, 'S'))).toBe(false);
+    expect(canMesh(bevel(), spur())).toBe(false);
+    expect(canMesh(spur(), bevel())).toBe(false);
+    expect(canMesh(helical('right'), bevel())).toBe(false);
   });
 });

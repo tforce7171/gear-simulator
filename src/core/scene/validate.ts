@@ -1,7 +1,7 @@
 import { AXIAL_SNAP, GEAR_SIZES, MOTOR_RPM_RANGE } from '../constants';
-import { canMesh } from '../geometry/can-mesh';
-import { isGearKind, isHand } from './gear-shape';
-import type { Scene, ShaftId, ShaftPlacement } from './types';
+import { canMesh, meshKindOf } from '../geometry/can-mesh';
+import { isApex, isGearKind, isHand } from './gear-shape';
+import { isChildPlacement, type Scene, type ShaftId, type ShaftPlacement } from './types';
 
 // シーンの検証（design.md §4・§9）。不正なら理由の一覧を返す（例外にしない）。
 // 保存形式の読み込み（S1-28）もここを通すので、型の上ではありえない値（文字列の軸など）も調べる。
@@ -34,6 +34,10 @@ export type SceneErrorCode =
   | 'meshSizeMismatch'
   | 'meshKindMismatch' // 親と子の種類・形がかみ合わない（S2-01）
   | 'invalidHand' // ハスバ歯車の hand が 'left' でも 'right' でもない（S2-01）
+  | 'invalidApex' // かさ歯車の apex が 1 でも -1 でもない（S2-02）
+  | 'invalidAxisStep' // bevel の配置の axisStep が 1 でも 2 でもない（S2-02）
+  | 'invalidSide' // bevel の配置の side が 1 でも -1 でもない（S2-02）
+  | 'bevelApexMismatch' // bevel の配置の子の apex が −side でない（S2-02）
   | 'meshCycle';
 
 const AXES: readonly unknown[] = ['x', 'y', 'z'];
@@ -80,9 +84,23 @@ export function validateScene(scene: Scene): { ok: true } | { ok: false; errors:
       if (origin.length !== 3 || !origin.every(isFiniteNumber)) {
         push('notFinite', key, `${base}.origin`, 'origin must be 3 finite numbers');
       }
-    } else if (p.kind === 'mesh') {
-      if (!isFiniteNumber(p.angle)) {
+    } else if (p.kind === 'mesh' || p.kind === 'bevel') {
+      if (p.kind === 'mesh' && !isFiniteNumber(p.angle)) {
         push('notFinite', key, `${base}.angle`, 'angle must be finite');
+      }
+      if (p.kind === 'bevel') {
+        // 軸は親の軸を 1 回か 2 回進めたもの（0 回＝親と同じ軸は、かさ歯車ではかみ合わない）
+        if (p.axisStep !== 1 && p.axisStep !== 2) {
+          push(
+            'invalidAxisStep',
+            key,
+            `${base}.axisStep`,
+            `axisStep must be 1 or 2: ${String(p.axisStep)}`,
+          );
+        }
+        if (p.side !== 1 && p.side !== -1) {
+          push('invalidSide', key, `${base}.side`, `side must be 1 or -1: ${String(p.side)}`);
+        }
       }
       const child = scene.gears[p.childGearId];
       const parent = scene.gears[p.parentGearId];
@@ -128,13 +146,28 @@ export function validateScene(scene: Scene): { ok: true } | { ok: false; errors:
         parent !== undefined &&
         isGearKind(child.kind) &&
         isGearKind(parent.kind) &&
-        !canMesh(child, parent)
+        (!canMesh(child, parent) || (meshKindOf(parent) === 'bevel') !== (p.kind === 'bevel'))
       ) {
+        // かみ合えない組か、配置の種類がかみ合いの種類に合わない（かさ歯車は bevel、それ以外は mesh。S2-02）
         push(
           'meshKindMismatch',
           p.childGearId,
           `gears.${p.childGearId}.kind`,
-          `child gear "${p.childGearId}" cannot mesh with parent "${p.parentGearId}"`,
+          `child gear "${p.childGearId}" cannot mesh with parent "${p.parentGearId}" by ${p.kind}`,
+        );
+      } else if (
+        p.kind === 'bevel' &&
+        child?.kind === 'bevel' &&
+        isApex(child.apex) &&
+        (p.side === 1 || p.side === -1) &&
+        child.apex !== -p.side
+      ) {
+        // 子は親の頂点を向く（S2-02）
+        push(
+          'bevelApexMismatch',
+          p.childGearId,
+          `gears.${p.childGearId}.apex`,
+          `child bevel gear "${p.childGearId}" must have apex ${-p.side}`,
         );
       }
     } else {
@@ -154,6 +187,8 @@ export function validateScene(scene: Scene): { ok: true } | { ok: false; errors:
       push('invalidKind', key, `${base}.kind`, `invalid gear kind "${String(gear.kind)}"`);
     } else if (gear.kind === 'helical' && !isHand(gear.hand)) {
       push('invalidHand', key, `${base}.hand`, `invalid hand "${String(gear.hand)}"`);
+    } else if (gear.kind === 'bevel' && !isApex(gear.apex)) {
+      push('invalidApex', key, `${base}.apex`, `apex must be 1 or -1: ${String(gear.apex)}`);
     }
     if (scene.shafts[gear.shaftId] === undefined) {
       push('missingRef', key, `${base}.shaftId`, `shaft "${gear.shaftId}" not found`);
@@ -231,9 +266,10 @@ export function validateScene(scene: Scene): { ok: true } | { ok: false; errors:
     }
   }
 
-  // mesh の親子をたどると root か detached に行き着く（循環しない）
+  // mesh・bevel の親子をたどると root か detached に行き着く（循環しない）
   for (const key of Object.keys(scene.shafts)) {
-    if (scene.shafts[key]?.placement.kind !== 'mesh') continue;
+    const start = scene.shafts[key]?.placement;
+    if (start === undefined || !isChildPlacement(start)) continue;
     const visited = new Set<ShaftId>();
     let current: ShaftId | undefined = key;
     while (current !== undefined) {
@@ -248,7 +284,7 @@ export function validateScene(scene: Scene): { ok: true } | { ok: false; errors:
       }
       visited.add(current);
       const placement: ShaftPlacement | undefined = scene.shafts[current]?.placement;
-      if (placement === undefined || placement.kind !== 'mesh') break; // 根に着いた（参照切れは上で報告済み）
+      if (placement === undefined || !isChildPlacement(placement)) break; // 根に着いた（参照切れは上で報告済み）
       current = scene.gears[placement.parentGearId]?.shaftId;
     }
   }

@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { GEAR_SIZES, HELIX_ANGLE } from '../core/constants';
 import { spurOutline } from '../core/geometry/involute';
-import { buildHelicalGeometry, buildSpurGeometry, createGeometryCache } from './gear-geometry';
+import {
+  buildBevelGeometry,
+  buildHelicalGeometry,
+  buildSpurGeometry,
+  createGeometryCache,
+  gearBodyScaleZ,
+} from './gear-geometry';
 
 const SPUR = { kind: 'spur' } as const;
 
@@ -178,5 +184,60 @@ describe('形状データの共有（S2-01）', () => {
     expect(spur).not.toBe(right1);
     expect(spur).not.toBe(left);
     expect(cache.size()).toBe(3);
+  });
+});
+
+describe('buildBevelGeometry（S2-02）', () => {
+  it('中・20 歯: 大端は z = −4（区画の負側の面）、そこから頂点の側へ b·cos45°（b = 8）。頂点に向かって相似に縮む', () => {
+    const geometry = buildBevelGeometry('M', 20);
+    const box = geometry.boundingBox;
+    if (box === null) throw new Error('boundingBox がない');
+    const front = -4 + 8 * Math.SQRT1_2;
+    expect(box.min.z).toBeCloseTo(-4, 6);
+    expect(box.max.z).toBeCloseTo(front, 6);
+    // 円すい距離 20√2 のうち b = 8 だけ頂点に寄った断面は、大端の (20√2 − 8) / 20√2 倍
+    const shrink = 1 - 8 / (20 * Math.SQRT2);
+    const pos = geometry.getAttribute('position');
+    for (let i = 0; i < pos.count; i++) {
+      const r = Math.hypot(pos.getX(i), pos.getY(i));
+      const z = pos.getZ(i);
+      if (Math.abs(z + 4) < 1e-6) {
+        expect(r).toBeLessThanOrEqual(22 + 1e-5);
+        expect(r).toBeGreaterThanOrEqual(17.5 - 1e-5);
+      } else {
+        expect(z).toBeCloseTo(front, 6);
+        expect(r).toBeLessThanOrEqual(22 * shrink + 1e-5);
+        expect(r).toBeGreaterThanOrEqual(17.5 * shrink - 1e-5);
+      }
+    }
+    geometry.dispose();
+  });
+
+  it('面は外を向く: 背面（大端）の法線は −z、頂点側の面は +z、側面は外向き', () => {
+    const geometry = buildBevelGeometry('S', 12);
+    const pos = geometry.getAttribute('position');
+    const normal = geometry.getAttribute('normal');
+    // 小・12 歯: R = 6、b = min(4, 6√2/3)。大端 z = −2、頂点側の面 z = −2 + b·cos45° = 0
+    const mid = (-2 + (-2 + ((6 * Math.SQRT2) / 3) * Math.SQRT1_2)) / 2;
+    for (let i = 0; i < pos.count; i++) {
+      const nz = normal.getZ(i);
+      const r = Math.hypot(pos.getX(i), pos.getY(i));
+      const radial = (pos.getX(i) * normal.getX(i) + pos.getY(i) * normal.getY(i)) / r;
+      expect(Math.hypot(normal.getX(i), nz, normal.getY(i))).toBeCloseTo(1, 5);
+      if (Math.abs(nz) > 0.99) expect(Math.sign(nz)).toBe(Math.sign(pos.getZ(i) - mid));
+      else expect(radial).toBeGreaterThan(-0.02);
+    }
+    geometry.dispose();
+  });
+
+  it('apex は形状のキーに含めず（1 と −1 で同じ形状）、描画でローカルの z を反転する', () => {
+    const cache = createGeometryCache();
+    const up = cache.acquire({ kind: 'bevel', apex: 1 }, 'M', 20);
+    const down = cache.acquire({ kind: 'bevel', apex: -1 }, 'M', 20);
+    expect(down).toBe(up);
+    expect(cache.acquire(SPUR, 'M', 20)).not.toBe(up);
+    expect(gearBodyScaleZ({ kind: 'bevel', apex: 1 })).toBe(1);
+    expect(gearBodyScaleZ({ kind: 'bevel', apex: -1 })).toBe(-1);
+    expect(gearBodyScaleZ(SPUR)).toBe(1);
   });
 });

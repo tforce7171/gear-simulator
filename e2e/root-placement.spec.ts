@@ -66,7 +66,7 @@ function placementOf(scene: Scene, shaftId: string): ShaftPlacement {
 
 function originOf(scene: Scene, shaftId: string): Vec3 {
   const p = placementOf(scene, shaftId);
-  if (p.kind === 'mesh') throw new Error(`${shaftId} は mesh`);
+  if (p.kind === 'mesh' || p.kind === 'bevel') throw new Error(`${shaftId} は ${p.kind}`);
   return p.origin;
 }
 

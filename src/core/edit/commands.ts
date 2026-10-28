@@ -1,5 +1,5 @@
 import { AXIAL_SNAP, GEAR_SIZES, MOTOR_RPM_RANGE, MOTOR_SIZES } from '../constants';
-import { canMesh } from '../geometry/can-mesh';
+import { canMesh, meshKindOf } from '../geometry/can-mesh';
 import { descendantShafts, resolveLayout } from '../layout/resolve';
 import type { Layout } from '../layout/types';
 import type { Vec3 } from '../math/vec3';
@@ -12,18 +12,20 @@ import {
 } from '../scene/gear-shape';
 import type { IdGenerator } from '../scene/ids';
 import { shaftAxis } from '../scene/shaft-axis';
-import type {
-  Axis,
-  Gear,
-  GearId,
-  GearKind,
-  Motor,
-  MotorId,
-  Scene,
-  Shaft,
-  ShaftId,
-  ShaftPlacement,
-  SizeKey,
+import {
+  type Axis,
+  type FreePlacement,
+  type Gear,
+  type GearId,
+  type GearKind,
+  isChildPlacement,
+  type Motor,
+  type MotorId,
+  type Scene,
+  type Shaft,
+  type ShaftId,
+  type ShaftPlacement,
+  type SizeKey,
 } from '../scene/types';
 import { validateScene } from '../scene/validate';
 
@@ -40,8 +42,16 @@ export type Command =
       origin: Vec3;
       gear: { size: SizeKey; teeth: number; kind?: GearKind };
     }
-  // 子の種類は親から決まる（平歯車は平歯車、ハスバ歯車は逆の hand。S2-01）
+  // 子の種類は親から決まる（平歯車は平歯車、ハスバ歯車は逆の hand。S2-01）。かさ歯車の親は notAllowed
   | { type: 'growGear'; mode: 'perimeter'; parentGearId: GearId; angle: number; teeth: number }
+  // かさ歯車の親とかみ合う、同じ大きさ・同じ歯数のかさ歯車（apex −side、offset 0）と bevel のシャフト（S2-02）
+  | {
+      type: 'growGear';
+      mode: 'bevel';
+      parentGearId: GearId;
+      axisStep: 1 | 2;
+      side: 1 | -1;
+    }
   // kind は省くと 'spur'。ハスバ歯車は hand 'right'（S2-01）
   | {
       type: 'growGear';
@@ -53,7 +63,10 @@ export type Command =
       kind?: GearKind;
     }
   | { type: 'deleteParts'; ids: string[] }
+  // かさ歯車では、木の親子（bevel の配置）でつながったかさ歯車すべての歯数を同じ値にする（S2-02）
   | { type: 'setGearTeeth'; gearId: GearId; teeth: number }
+  // かさ歯車の apex を反転する（S2-02）。bevel の配置の子（apex は −side で決まる）は notAllowed
+  | { type: 'flipBevelApex'; gearId: GearId }
   | { type: 'setMeshAngle'; shaftId: ShaftId; angle: number }
   | { type: 'setGearOffset'; gearId: GearId; offset: number }
   | { type: 'addMotor'; shaftId: ShaftId; size: SizeKey }
@@ -163,13 +176,20 @@ export function applyCommand(scene: Scene, command: Command, ctx: CommandContext
     case 'addRootShaft':
       return addRootShaft(scene, command, ctx);
     case 'growGear':
-      return command.mode === 'perimeter'
-        ? growPerimeter(scene, command, ctx)
-        : growCoaxial(scene, command, ctx);
+      switch (command.mode) {
+        case 'perimeter':
+          return growPerimeter(scene, command, ctx);
+        case 'bevel':
+          return growBevel(scene, command, ctx);
+        default:
+          return growCoaxial(scene, command, ctx);
+      }
     case 'deleteParts':
       return deleteParts(scene, command.ids);
     case 'setGearTeeth':
       return setGearTeeth(scene, command);
+    case 'flipBevelApex':
+      return flipBevelApex(scene, command);
     case 'setMeshAngle':
       return setMeshAngle(scene, command);
     case 'setGearOffset':
@@ -239,6 +259,10 @@ function growPerimeter(
   if (!Number.isFinite(c.angle)) return fail('invalidValue', 'angle must be finite');
   const bad = teethError(parent.size, c.teeth);
   if (bad) return bad;
+  const shape = meshPartnerShape(gearShape(parent));
+  if (shape === null) {
+    return fail('notAllowed', `gear ${parent.id} (${parent.kind}) cannot grow a perimeter gear`);
+  }
   const shaftId = ctx.ids('shaft');
   const gearId = ctx.ids('gear');
   const shaft: Shaft = {
@@ -252,7 +276,48 @@ function growPerimeter(
   };
   const gear = makeGear(
     { id: gearId, shaftId, size: parent.size, teeth: c.teeth, offset: 0 },
-    meshPartnerShape(gearShape(parent)),
+    shape,
+  );
+  return done(
+    {
+      shafts: withEntry(scene.shafts, shaftId, shaft),
+      gears: withEntry(scene.gears, gearId, gear),
+      motors: scene.motors,
+    },
+    [shaftId, gearId],
+  );
+}
+
+// かさ歯車の親に、直交する軸のかさ歯車（同じ大きさ・同じ歯数、apex −side、offset 0）と bevel のシャフトを作る（S2-02）
+function growBevel(
+  scene: Scene,
+  c: Extract<Command, { type: 'growGear'; mode: 'bevel' }>,
+  ctx: CommandContext,
+): CommandResult {
+  const parent = scene.gears[c.parentGearId];
+  if (parent === undefined) return fail('notFound', `gear ${c.parentGearId} not found`);
+  if (parent.kind !== 'bevel') return fail('notAllowed', `gear ${parent.id} is not a bevel gear`);
+  if (c.axisStep !== 1 && c.axisStep !== 2) {
+    return fail('invalidValue', `axisStep must be 1 or 2: ${String(c.axisStep)}`);
+  }
+  if (c.side !== 1 && c.side !== -1) {
+    return fail('invalidValue', `side must be 1 or -1: ${String(c.side)}`);
+  }
+  const shaftId = ctx.ids('shaft');
+  const gearId = ctx.ids('gear');
+  const shaft: Shaft = {
+    id: shaftId,
+    placement: {
+      kind: 'bevel',
+      parentGearId: parent.id,
+      childGearId: gearId,
+      axisStep: c.axisStep,
+      side: c.side,
+    },
+  };
+  const gear = makeGear(
+    { id: gearId, shaftId, size: parent.size, teeth: parent.teeth, offset: 0 },
+    { kind: 'bevel', apex: c.side === 1 ? -1 : 1 },
   );
   return done(
     {
@@ -310,7 +375,7 @@ function deleteParts(scene: Scene, ids: readonly string[]): CommandResult {
   let layout: Layout | null = null;
 
   const detach = (shaft: Shaft): void => {
-    if (shaft.placement.kind !== 'mesh') return;
+    if (!isChildPlacement(shaft.placement)) return;
     layout ??= resolveLayout(scene);
     const at = layout.shafts[shaft.id];
     // 検証済みのシーンでは全てのシャフトが根からたどれる。たどれない場合だけの逃げ道
@@ -334,7 +399,7 @@ function deleteParts(scene: Scene, ids: readonly string[]): CommandResult {
     gearsChanged = true;
     for (const shaft of Object.values(shafts)) {
       const p = shaft.placement;
-      if (p.kind === 'mesh' && (p.parentGearId === gearId || p.childGearId === gearId)) {
+      if (isChildPlacement(p) && (p.parentGearId === gearId || p.childGearId === gearId)) {
         detach(shaft);
       }
     }
@@ -379,7 +444,61 @@ function setGearTeeth(scene: Scene, c: Extract<Command, { type: 'setGearTeeth' }
   const bad = teethError(gear.size, c.teeth);
   if (bad) return bad;
   if (gear.teeth === c.teeth) return done(scene);
-  return done({ ...scene, gears: withEntry(scene.gears, gear.id, { ...gear, teeth: c.teeth }) });
+  if (gear.kind !== 'bevel') {
+    return done({ ...scene, gears: withEntry(scene.gears, gear.id, { ...gear, teeth: c.teeth }) });
+  }
+  // かさ歯車は歯数比 1:1 のみなので、木の親子（bevel の配置）でつながったかさ歯車すべてを同じ歯数にする（S2-02）
+  const gears: Record<GearId, Gear> = { ...scene.gears };
+  for (const id of bevelTreeOf(scene, gear.id)) {
+    const g = scene.gears[id];
+    if (g !== undefined && g.teeth !== c.teeth) gears[id] = { ...g, teeth: c.teeth };
+  }
+  return done({ ...scene, gears });
+}
+
+// gearId と、bevel の配置の親子（どちらの向きにも）でつながった歯車の ID
+function bevelTreeOf(scene: Scene, gearId: GearId): Set<GearId> {
+  const neighbors = new Map<GearId, GearId[]>();
+  const link = (a: GearId, b: GearId) => {
+    const list = neighbors.get(a);
+    if (list === undefined) neighbors.set(a, [b]);
+    else list.push(b);
+  };
+  for (const shaft of Object.values(scene.shafts)) {
+    const p = shaft.placement;
+    if (p.kind !== 'bevel') continue;
+    link(p.parentGearId, p.childGearId);
+    link(p.childGearId, p.parentGearId);
+  }
+  const seen = new Set<GearId>([gearId]);
+  const stack = [gearId];
+  for (let id = stack.pop(); id !== undefined; id = stack.pop()) {
+    for (const next of neighbors.get(id) ?? []) {
+      if (seen.has(next)) continue;
+      seen.add(next);
+      stack.push(next);
+    }
+  }
+  return seen;
+}
+
+// かさ歯車の apex を反転する（S2-02）。区画（offset）はそのままで、大端と頂点が区画の反対側に移り、
+// この歯車を親に持つ bevel のシャフトは（親から導くので）ついてくる。bevel の配置の子は apex が −side で決まるので notAllowed
+function flipBevelApex(
+  scene: Scene,
+  c: Extract<Command, { type: 'flipBevelApex' }>,
+): CommandResult {
+  const gear = scene.gears[c.gearId];
+  if (gear === undefined) return fail('notFound', `gear ${c.gearId} not found`);
+  if (gear.kind !== 'bevel') return fail('notAllowed', `gear ${gear.id} is not a bevel gear`);
+  const p = scene.shafts[gear.shaftId]?.placement;
+  if (p?.kind === 'bevel' && p.childGearId === gear.id) {
+    return fail('notAllowed', `gear ${gear.id} faces its parent's apex and cannot flip`);
+  }
+  return done({
+    ...scene,
+    gears: withEntry(scene.gears, gear.id, { ...gear, apex: gear.apex === 1 ? -1 : 1 }),
+  });
 }
 
 function setMeshAngle(scene: Scene, c: Extract<Command, { type: 'setMeshAngle' }>): CommandResult {
@@ -404,7 +523,7 @@ function setGearOffset(
   const gear = scene.gears[c.gearId];
   if (gear === undefined) return fail('notFound', `gear ${c.gearId} not found`);
   const p = scene.shafts[gear.shaftId]?.placement;
-  if (p?.kind === 'mesh' && p.childGearId === gear.id) {
+  if (p !== undefined && isChildPlacement(p) && p.childGearId === gear.id) {
     return fail('notAllowed', `gear ${gear.id} meshes with its parent and cannot move`);
   }
   if (!isSnapped(c.offset)) return snapError(c.offset);
@@ -482,8 +601,6 @@ function updateMotor(scene: Scene, c: Extract<Command, { type: 'updateMotor' }>)
   return done({ ...scene, motors: withEntry(scene.motors, motor.id, next) });
 }
 
-type FreePlacement = Extract<ShaftPlacement, { kind: 'root' | 'detached' }>;
-
 // root・detached のシャフト（位置と向きを自分で持つもの）
 function freeShaft(
   scene: Scene,
@@ -492,7 +609,7 @@ function freeShaft(
   const shaft = scene.shafts[shaftId];
   if (shaft === undefined) return fail('notFound', `shaft ${shaftId} not found`);
   const p = shaft.placement;
-  if (p.kind === 'mesh') return fail('notAllowed', `shaft ${shaftId} is a mesh shaft`);
+  if (isChildPlacement(p)) return fail('notAllowed', `shaft ${shaftId} is a ${p.kind} shaft`);
   return { ok: true, shaft, placement: p };
 }
 
@@ -511,7 +628,7 @@ function moveShaft(scene: Scene, c: Extract<Command, { type: 'moveShaft' }>): Co
   });
 }
 
-// その先の mesh のシャフトは向きを持たないので書き換えない（resolveLayout で親から導かれる）
+// その先の mesh・bevel のシャフトは向きを持たないので書き換えない（resolveLayout で親から導かれる）
 function setShaftAxis(scene: Scene, c: Extract<Command, { type: 'setShaftAxis' }>): CommandResult {
   const found = freeShaft(scene, c.shaftId);
   if (!found.ok) return found;
@@ -550,6 +667,10 @@ function reattachShaft(
   }
   if (!canMesh(child, parent)) {
     return fail('notAllowed', `gear ${child.id} cannot mesh with ${parent.id}`);
+  }
+  // 付け直しは外周（mesh）だけ。かさ歯車の組は bevel の配置なので付け直せない（S2-02）
+  if (meshKindOf(parent) === 'bevel') {
+    return fail('notAllowed', `bevel gear ${parent.id} cannot be a reattach parent`);
   }
   if (descendantShafts(scene, shaft.id).includes(parent.shaftId)) {
     return fail('notAllowed', `gear ${parent.id} is on shaft ${shaft.id} or beyond it (cycle)`);

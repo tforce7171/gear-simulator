@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Axis } from '../scene/types';
-import { axisFrame, axisVector, radialDirection } from './axis';
+import { axisFrame, axisVector, radialDirection, stepAxis } from './axis';
 import { cross, type Vec3 } from './vec3';
 
 function expectVecClose(actual: Vec3, expected: Vec3): void {
@@ -29,5 +29,17 @@ describe('radialDirection', () => {
     expectVecClose(radialDirection('y', Math.PI / 2), [1, 0, 0]);
     expectVecClose(radialDirection('x', 0), [0, 1, 0]);
     expectVecClose(radialDirection('z', Math.PI / 2), [0, 1, 0]);
+  });
+});
+
+describe('stepAxis（S2-02）', () => {
+  it('x → y → z → x の順に進める', () => {
+    expect(stepAxis('x', 1)).toBe('y');
+    expect(stepAxis('y', 1)).toBe('z');
+    expect(stepAxis('z', 1)).toBe('x');
+    expect(stepAxis('y', 2)).toBe('x');
+    expect(stepAxis('x', 2)).toBe('z');
+    expect(stepAxis('z', 0)).toBe('z');
+    expect(stepAxis('x', 3)).toBe('x');
   });
 });

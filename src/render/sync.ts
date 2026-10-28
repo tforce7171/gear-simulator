@@ -24,7 +24,7 @@ import type {
   SizeKey,
 } from '../core/scene/types';
 import { placeOnAxis } from './frame';
-import { createGeometryCache, type GeometryCache } from './gear-geometry';
+import { createGeometryCache, type GeometryCache, gearBodyScaleZ } from './gear-geometry';
 import { setPickTarget } from './picking';
 import {
   lockGlowIntensity,
@@ -271,6 +271,7 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
       let entry = gears.get(gear.id);
       if (entry === undefined) {
         const body = new Mesh(cache.acquire(gear, gear.size, gear.teeth), gearMaterials.none);
+        body.scale.z = gearBodyScaleZ(gear);
         // 影（S1-24）: 歯車は影を落とし、受ける。品質が軽量なら renderer 側で影の計算ごと止める
         body.castShadow = true;
         body.receiveShadow = true;

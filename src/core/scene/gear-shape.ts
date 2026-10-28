@@ -14,18 +14,22 @@ export function gearShape(gear: Gear): GearShape {
       return { kind: 'spur' };
     case 'helical':
       return { kind: 'helical', hand: gear.hand };
+    case 'bevel':
+      return { kind: 'bevel', apex: gear.apex };
     default:
       return assertNever(gear);
   }
 }
 
-// 起点や同じ軸に新しく置く歯車の形。ハスバ歯車は 'right'
+// 起点や同じ軸に新しく置く歯車の形。ハスバ歯車は 'right'、かさ歯車は apex 1
 export function newGearShape(kind: GearKind): GearShape {
   switch (kind) {
     case 'spur':
       return { kind: 'spur' };
     case 'helical':
       return { kind: 'helical', hand: 'right' };
+    case 'bevel':
+      return { kind: 'bevel', apex: 1 };
     default:
       return assertNever(kind);
   }
@@ -35,13 +39,16 @@ export function oppositeHand(hand: Hand): Hand {
   return hand === 'right' ? 'left' : 'right';
 }
 
-// 外周に生やす子の形。親とかみ合う形（平歯車は平歯車、ハスバ歯車は逆のねじれの向き）
-export function meshPartnerShape(shape: GearShape): GearShape {
+// 外周に生やす子の形。親とかみ合う形（平歯車は平歯車、ハスバ歯車は逆のねじれの向き）。
+// かさ歯車は外周（mesh）には生やさない（bevel の配置。子の apex は −side で決まる）ので null
+export function meshPartnerShape(shape: GearShape): GearShape | null {
   switch (shape.kind) {
     case 'spur':
       return { kind: 'spur' };
     case 'helical':
       return { kind: 'helical', hand: oppositeHand(shape.hand) };
+    case 'bevel':
+      return null;
     default:
       return assertNever(shape);
   }
@@ -53,7 +60,7 @@ export function makeGear(base: GearBase, shape: GearShape): Gear {
 }
 
 // 種類の一覧。Record にして、種類を足したときの書き忘れを型で検出する
-const GEAR_KINDS: Readonly<Record<GearKind, true>> = { spur: true, helical: true };
+const GEAR_KINDS: Readonly<Record<GearKind, true>> = { spur: true, helical: true, bevel: true };
 
 export function isGearKind(value: unknown): value is GearKind {
   return typeof value === 'string' && Object.hasOwn(GEAR_KINDS, value);
@@ -61,4 +68,8 @@ export function isGearKind(value: unknown): value is GearKind {
 
 export function isHand(value: unknown): value is Hand {
   return value === 'left' || value === 'right';
+}
+
+export function isApex(value: unknown): value is 1 | -1 {
+  return value === 1 || value === -1;
 }

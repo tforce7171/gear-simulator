@@ -64,7 +64,7 @@ function handle(scene: Scene, kind: HandleKind, selection: string): HandleSpec {
 
 function originOf(scene: Scene, shaftId: string): Vec3 | undefined {
   const p = scene.shafts[shaftId]?.placement;
-  return p !== undefined && p.kind !== 'mesh' ? p.origin : undefined;
+  return p !== undefined && (p.kind === 'root' || p.kind === 'detached') ? p.origin : undefined;
 }
 
 describe('listHandles', () => {

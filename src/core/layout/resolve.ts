@@ -1,16 +1,34 @@
 import {
+  BEVEL_APEX_CLEARANCE,
   COLLISION_EPS,
   EMPTY_SHAFT_HALF_LENGTH,
   GEAR_SIZES,
   MESH_DISTANCE_EPS,
   SHAFT_END_MARGIN,
 } from '../constants';
+import {
+  bevelApexOf,
+  bevelBigEndOf,
+  bevelChildFrame,
+  bevelChildOrigin,
+  bevelCollisionCylinder,
+  bevelPhase,
+} from '../geometry/bevel';
 import { canMesh, meshKindOf } from '../geometry/can-mesh';
 import { centerDistance, meshPhase, pitchRadius } from '../geometry/mesh';
 import { axisVector, radialDirection } from '../math/axis';
-import { add, dot, scale, sub, type Vec3 } from '../math/vec3';
+import { add, dot, length, scale, sub, type Vec3 } from '../math/vec3';
 import { gearCenter } from '../scene/gear-center';
-import type { Axis, Gear, GearId, Scene, Shaft, ShaftId } from '../scene/types';
+import {
+  type Axis,
+  type ChildPlacement,
+  type Gear,
+  type GearId,
+  isChildPlacement,
+  type Scene,
+  type Shaft,
+  type ShaftId,
+} from '../scene/types';
 import { type Collider, findInterferences, gearCollider, interferingWith } from './collision';
 import type { GearLayout, Layout, Mesh, ShaftLayout } from './types';
 
@@ -51,7 +69,7 @@ export function descendantShafts(scene: Scene, shaftId: ShaftId): ShaftId[] {
 
 interface SceneIndex {
   readonly gearsByShaft: ReadonlyMap<ShaftId, readonly Gear[]>;
-  // 親の歯車 → その外周に生やした mesh のシャフト
+  // 親の歯車 → それを親に持つ mesh・bevel のシャフト
   readonly childShaftsByParentGear: ReadonlyMap<GearId, readonly Shaft[]>;
 }
 
@@ -66,7 +84,7 @@ function indexScene(scene: Scene): SceneIndex {
   for (const gear of Object.values(scene.gears)) push(gearsByShaft, gear.shaftId, gear);
   const childShaftsByParentGear = new Map<GearId, Shaft[]>();
   for (const shaft of Object.values(scene.shafts)) {
-    if (shaft.placement.kind === 'mesh') {
+    if (isChildPlacement(shaft.placement)) {
       push(childShaftsByParentGear, shaft.placement.parentGearId, shaft);
     }
   }
@@ -77,7 +95,7 @@ interface QueueItem {
   readonly shaftId: ShaftId;
   readonly origin: Vec3;
   readonly axis: Axis;
-  // mesh のシャフトの子の歯車とその basePhase（キューに積むときに決める）
+  // mesh・bevel のシャフトの子の歯車とその basePhase（キューに積むときに決める）
   readonly child?: { readonly gearId: GearId; readonly phase: number };
 }
 
@@ -90,7 +108,7 @@ function compute(scene: Scene): Layout {
   const queue: QueueItem[] = [];
   for (const shaft of Object.values(scene.shafts)) {
     const p = shaft.placement;
-    if (p.kind !== 'mesh') queue.push({ shaftId: shaft.id, origin: p.origin, axis: p.axis });
+    if (!isChildPlacement(p)) queue.push({ shaftId: shaft.id, origin: p.origin, axis: p.axis });
   }
 
   for (let head = 0; head < queue.length; head++) {
@@ -113,21 +131,17 @@ function compute(scene: Scene): Layout {
       const parentLayout = gears[parent.id] as GearLayout;
       for (const childShaft of index.childShaftsByParentGear.get(parent.id) ?? []) {
         const p = childShaft.placement;
-        if (p.kind !== 'mesh' || shafts[childShaft.id] !== undefined) continue;
+        if (!isChildPlacement(p) || shafts[childShaft.id] !== undefined) continue;
         const child = scene.gears[p.childGearId];
         if (child === undefined || child.shaftId !== childShaft.id) continue;
-        // 親の歯車の負側の面 + 外周の向き × 中心距離（子の offset は 0 として置く）
-        const face = add(origin, scale(axisVector(axis), parent.offset));
-        const distance = centerDistance(parent.size, parent.teeth, child.teeth);
+        const placed = placeChild(parent, origin, parentLayout, p, child);
+        if (placed === null) continue;
         treePairs.push(ordered(parent.id, child.id));
         queue.push({
           shaftId: childShaft.id,
-          origin: add(face, scale(radialDirection(axis, p.angle), distance)),
-          axis,
-          child: {
-            gearId: child.id,
-            phase: meshPhase(parentLayout.basePhase, parent.teeth, child.teeth, p.angle),
-          },
+          origin: placed.origin,
+          axis: placed.axis,
+          child: { gearId: child.id, phase: placed.phase },
         });
       }
     }
@@ -135,6 +149,59 @@ function compute(scene: Scene): Layout {
 
   const meshes = meshesOf(scene, gears, treePairs);
   return { shafts, gears, meshes, interferences: interferencesOf(scene, shafts, gears, meshes) };
+}
+
+// 木の子のシャフトの原点・向きと、子の歯車の basePhase（子の offset は 0 として置く）。
+// mesh: 親の歯車の負側の面 + 外周の向き × 中心距離、向きは親と同じ。
+// bevel（S2-02）: 子の大端の中心 = 親の大端の中心 + R·side·(子の軸) + R·親の apex·(親の軸)、
+// 子の軸 = 親の軸を axisStep 回進めたもの、原点 = 子の大端の中心 − (歯幅/2)·(1 + side)·(子の軸)。
+// 親子の種類が配置に合わなければ null（検証済みのシーンでは起きない）
+function placeChild(
+  parent: Gear,
+  parentShaftOrigin: Vec3,
+  parentLayout: GearLayout,
+  p: ChildPlacement,
+  child: Gear,
+): { origin: Vec3; axis: Axis; phase: number } | null {
+  const axis = parentLayout.axis;
+  switch (p.kind) {
+    case 'mesh': {
+      const face = add(parentShaftOrigin, scale(axisVector(axis), parent.offset));
+      const distance = centerDistance(parent.size, parent.teeth, child.teeth);
+      return {
+        origin: add(face, scale(radialDirection(axis, p.angle), distance)),
+        axis,
+        phase: meshPhase(parentLayout.basePhase, parent.teeth, child.teeth, p.angle),
+      };
+    }
+    case 'bevel': {
+      if (parent.kind !== 'bevel') return null;
+      const bigEnd = bevelBigEndOf(parentLayout.center, axis, parent);
+      const frame = bevelChildFrame(
+        bigEnd,
+        axis,
+        parent.apex,
+        parentLayout.pitchRadius,
+        p.axisStep,
+        p.side,
+      );
+      return {
+        origin: bevelChildOrigin(
+          frame.bigEnd,
+          frame.axis,
+          p.side,
+          GEAR_SIZES[child.size].faceWidth,
+        ),
+        axis: frame.axis,
+        phase: bevelPhase(
+          parentLayout.basePhase,
+          { axis, bigEnd },
+          { axis: frame.axis, bigEnd: frame.bigEnd },
+          parent.teeth,
+        ),
+      };
+    }
+  }
 }
 
 function compare(a: string, b: string): number {
@@ -194,9 +261,17 @@ function meshesOf(
 
 // かみ合える組（canMesh。同じ大きさで、平歯車同士かねじれの向きが逆のハスバ歯車同士）、軸が同じ、別のシャフト、
 // 軸方向の区間の重なりが COLLISION_EPS より大きく、軸に垂直な方向の中心間の距離がピッチ円半径の和と
-// MESH_DISTANCE_EPS 以内で一致する。安い数値の判定を先に、canMesh を最後にする
+// MESH_DISTANCE_EPS 以内で一致する。安い数値の判定を先に、canMesh を最後にする。
+// かさ歯車（S2-02）は、どちらもかさ歯車、同じ大きさ・同じ歯数、軸が直交、頂点の距離が MESH_DISTANCE_EPS 以内
 function inContact(a: Gear, la: GearLayout, b: Gear, lb: GearLayout): boolean {
-  if (a.size !== b.size || la.axis !== lb.axis || a.shaftId === b.shaftId) return false;
+  if (a.size !== b.size || a.shaftId === b.shaftId) return false;
+  if (a.kind === 'bevel' || b.kind === 'bevel') {
+    if (a.kind !== 'bevel' || b.kind !== 'bevel') return false;
+    if (a.teeth !== b.teeth || la.axis === lb.axis) return false;
+    const d = sub(bevelApexOf(la.center, la.axis, a), bevelApexOf(lb.center, lb.axis, b));
+    return length(d) <= MESH_DISTANCE_EPS;
+  }
+  if (la.axis !== lb.axis) return false;
   const w = axisVector(la.axis);
   const d = sub(lb.center, la.center);
   const axial = dot(d, w);
@@ -235,7 +310,13 @@ function collidersOf(
   return colliders;
 }
 
+// 歯車の円柱。かさ歯車（S2-02）は、歯のある円すい台に外接する円柱（大端の中心から頂点の側へ b·cos45°、
+// 半径は大端の歯先）
 function gearColliderOf(gear: Gear, layout: GearLayout): Collider {
+  if (gear.kind === 'bevel') {
+    const c = bevelCollisionCylinder(layout.center, layout.axis, gear);
+    return { kind: 'cylinder', id: gear.id, shaftId: gear.shaftId, axis: layout.axis, ...c };
+  }
   return gearCollider(gear.id, gear.shaftId, layout.center, layout.axis, gear.size, gear.teeth);
 }
 
@@ -332,43 +413,49 @@ function placeAddition(
   if (gear.shaftId !== shaft.id) return null;
   const span = spanOf([gear]);
   const p = shaft.placement;
-  if (p.kind !== 'mesh') {
+  if (!isChildPlacement(p)) {
     return {
       layout: make(p.origin, p.axis, 0),
       shaftLayout: { origin: p.origin, axis: p.axis, span },
       treePartner: null,
     };
   }
-  // compute と同じく、親の歯車の負側の面 + 外周の向き × 中心距離
+  // compute と同じ置き方（placeChild）
   const parent = scene.gears[p.parentGearId];
   if (parent === undefined || p.childGearId !== gear.id) return null;
   const parentLayout = base.gears[parent.id];
   const parentShaft = base.shafts[parent.shaftId];
   if (parentLayout === undefined || parentShaft === undefined) return null;
-  const { axis } = parentShaft;
-  const face = add(parentShaft.origin, scale(axisVector(axis), parent.offset));
-  const distance = centerDistance(parent.size, parent.teeth, gear.teeth);
-  const origin = add(face, scale(radialDirection(axis, p.angle), distance));
+  const placed = placeChild(parent, parentShaft.origin, parentLayout, p, gear);
+  if (placed === null) return null;
   return {
-    layout: make(
-      origin,
-      axis,
-      meshPhase(parentLayout.basePhase, parent.teeth, gear.teeth, p.angle),
-    ),
-    shaftLayout: { origin, axis, span },
+    layout: make(placed.origin, placed.axis, placed.phase),
+    shaftLayout: { origin: placed.origin, axis: placed.axis, span },
     treePartner: parent.id,
   };
 }
 
-// 載っている歯車の両面（offset と offset + 歯幅）の最小〜最大に、両側 SHAFT_END_MARGIN を足す。
+// 載っている歯車ごとに、両面（offset と offset + 歯幅）から SHAFT_END_MARGIN ずつ伸ばした区間を求め、
+// その最小〜最大をとる。かさ歯車（S2-02）は、頂点側の端を「頂点 − BEVEL_APEX_CLEARANCE」より先へ伸ばさない
+// （頂点の先は相手のシャフトとぶつかるため）。同じシャフトの頂点側にほかの部品があれば、その部品の区間で伸びる。
 // 歯車が無ければ [−EMPTY_SHAFT_HALF_LENGTH, +EMPTY_SHAFT_HALF_LENGTH]
-function spanOf(gears: readonly Gear[]): [number, number] {
+export function spanOf(gears: readonly Gear[]): [number, number] {
   if (gears.length === 0) return [-EMPTY_SHAFT_HALF_LENGTH, EMPTY_SHAFT_HALF_LENGTH];
   let lo = Number.POSITIVE_INFINITY;
   let hi = Number.NEGATIVE_INFINITY;
   for (const gear of gears) {
-    lo = Math.min(lo, gear.offset);
-    hi = Math.max(hi, gear.offset + GEAR_SIZES[gear.size].faceWidth);
+    const faceWidth = GEAR_SIZES[gear.size].faceWidth;
+    let gearLo = gear.offset - SHAFT_END_MARGIN;
+    let gearHi = gear.offset + faceWidth + SHAFT_END_MARGIN;
+    if (gear.kind === 'bevel') {
+      // 大端は区画の頂点と反対側の面、頂点はそこから apex の向きに R
+      const bigEnd = gear.offset + (faceWidth / 2) * (1 - gear.apex);
+      const apex = bigEnd + gear.apex * pitchRadius(gear.size, gear.teeth);
+      if (gear.apex === 1) gearHi = Math.min(gearHi, apex - BEVEL_APEX_CLEARANCE);
+      else gearLo = Math.max(gearLo, apex + BEVEL_APEX_CLEARANCE);
+    }
+    lo = Math.min(lo, gearLo);
+    hi = Math.max(hi, gearHi);
   }
-  return [lo - SHAFT_END_MARGIN, hi + SHAFT_END_MARGIN];
+  return [lo, hi];
 }

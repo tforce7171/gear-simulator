@@ -4,7 +4,7 @@ import type { GrowCandidate } from '../core/layout/candidates';
 import { newInterferences } from '../core/layout/interference-diff';
 import { resolveLayout } from '../core/layout/resolve';
 import type { Vec3 } from '../core/math/vec3';
-import type { Axis, Scene } from '../core/scene/types';
+import { type Axis, isChildPlacement, type Scene } from '../core/scene/types';
 import { grabTarget, type HandRotateSession, startHandRotate } from '../input/hand-rotate';
 import {
   type DragInput,
@@ -537,8 +537,8 @@ export function createInteractions(deps: InteractionsDeps): Interactions {
       const shaftId = selectedShaftId(scene, selection);
       if (shaftId === null) return;
       const placement = scene.shafts[shaftId]?.placement;
-      // mesh のシャフトの向きは親から導くので、R では変えない
-      if (placement === undefined || placement.kind === 'mesh') return;
+      // mesh・bevel のシャフトの向きは親から導くので、R では変えない
+      if (placement === undefined || isChildPlacement(placement)) return;
       store.dispatch({
         type: 'command',
         command: { type: 'setShaftAxis', shaftId, axis: nextAxis(placement.axis) },

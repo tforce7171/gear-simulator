@@ -125,3 +125,56 @@ describe('parseScene: ハスバ歯車（S2-01）', () => {
     expect(result.ok ? [] : result.errors.map((e) => e.code)).toEqual(['meshKindMismatch']);
   });
 });
+
+describe('parseScene: かさ歯車（S2-02）', () => {
+  const bevel = {
+    'shafts.shaft_2.placement': {
+      kind: 'bevel',
+      parentGearId: 'gear_1',
+      childGearId: 'gear_2',
+      axisStep: 2,
+      side: -1,
+      axis: 'x',
+    },
+    'gears.gear_1.kind': 'bevel',
+    'gears.gear_1.apex': 1,
+    'gears.gear_2.kind': 'bevel',
+    'gears.gear_2.apex': 1,
+    'gears.gear_2.teeth': 20,
+  };
+
+  it("'bevel' の歯車と配置を読む（配置の axis は捨てる）", () => {
+    const result = parseScene(sceneWith(bevel));
+    if (!result.ok) throw new Error(JSON.stringify(result.errors));
+    expect(result.scene.shafts.shaft_2?.placement).toEqual({
+      kind: 'bevel',
+      parentGearId: 'gear_1',
+      childGearId: 'gear_2',
+      axisStep: 2,
+      side: -1,
+    });
+    expect(result.scene.gears.gear_1).toEqual({
+      id: 'gear_1',
+      kind: 'bevel',
+      apex: 1,
+      shaftId: 'shaft_1',
+      size: 'M',
+      teeth: 20,
+      offset: 0,
+    });
+  });
+
+  it('apex・axisStep・side が数でない → 形の誤り。子の apex === side → bevelApexMismatch', () => {
+    expect(firstPath(sceneWith({ ...bevel, 'gears.gear_1.apex': 'up' }))).toBe('gears.gear_1.apex');
+    expect(
+      firstPath(
+        sceneWith({
+          ...bevel,
+          'shafts.shaft_2.placement': { ...bevel['shafts.shaft_2.placement'], axisStep: 'x' },
+        }),
+      ),
+    ).toBe('shafts.shaft_2.placement.axisStep');
+    const result = parseScene(sceneWith({ ...bevel, 'gears.gear_2.apex': -1 }));
+    expect(result.ok ? [] : result.errors.map((e) => e.code)).toEqual(['bevelApexMismatch']);
+  });
+});

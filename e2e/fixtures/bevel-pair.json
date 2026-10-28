@@ -1,0 +1,52 @@
+{
+  "shafts": {
+    "shaft_a": {
+      "id": "shaft_a",
+      "placement": {
+        "kind": "root",
+        "origin": [0, 35, 0],
+        "axis": "y"
+      }
+    },
+    "shaft_b": {
+      "id": "shaft_b",
+      "placement": {
+        "kind": "bevel",
+        "parentGearId": "gear_a",
+        "childGearId": "gear_b",
+        "axisStep": 2,
+        "side": -1
+      }
+    }
+  },
+  "gears": {
+    "gear_a": {
+      "id": "gear_a",
+      "kind": "bevel",
+      "apex": 1,
+      "shaftId": "shaft_a",
+      "size": "M",
+      "teeth": 20,
+      "offset": 0
+    },
+    "gear_b": {
+      "id": "gear_b",
+      "kind": "bevel",
+      "apex": 1,
+      "shaftId": "shaft_b",
+      "size": "M",
+      "teeth": 20,
+      "offset": 0
+    }
+  },
+  "motors": {
+    "motor_a": {
+      "id": "motor_a",
+      "shaftId": "shaft_a",
+      "size": "M",
+      "rpm": 60,
+      "direction": 1,
+      "on": true
+    }
+  }
+}

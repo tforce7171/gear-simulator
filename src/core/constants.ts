@@ -29,3 +29,4 @@ export const PERIMETER_CANDIDATE_COUNT = 8; // 外周の候補の方向の数（
 export const HISTORY_LIMIT = 100; // Undo の履歴に残すシーンの数の上限（S1-11）
 export const DEFAULT_TEETH = { S: 30, M: 20, L: 16 } as const; // 新しく置く・生やす歯車の歯数（S1-17）
 export const GRID_SNAP = 5; // mm。起点のシャフトの床上の位置と高さの吸着の単位（S1-17）
+export const BEVEL_APEX_CLEARANCE = 2; // mm。かさ歯車が載るシャフトの頂点側の端を、頂点のこの距離だけ手前で切る（S2-02）
