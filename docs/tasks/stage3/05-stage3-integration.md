@@ -11,7 +11,7 @@ depends: [S3-01, S3-02, S3-03, S3-04]
 S3-01〜S3-04 で入れた固定具・内歯車・遊星歯車機構・ラックを、音・テーマ・保存・画面 UI まで段階 1・2 と同じ水準にそろえ、段階 3（＝要件の全範囲）を締める。
 
 ## 範囲
-- **音**（S1-25・S1-26・S2-05 の拡張）
+- **音**（S1-25・S1-26・S2-05 の拡張。S2-05 の時点: 種類ごとの音色は `MESH_TIMBRES`（`MeshKind` → `{ click, hum, slideNoise }`）、`MeshVoice` は `kind` と `slide`（すべりの雑音の強さ）を持ち、`src/audio/engine.ts` が連続音に `hum`、クリックに `click` を掛ける。こもらせる音色を足すなら `MeshTimbre` に欄を足す）
   - 内歯車の組（`'internal'`）: 平歯車と同じ音色で、うなりを少しこもらせる（高域を落とす）
   - 遊星のかみ合い: 歯の通過頻度は **キャリアに対する相対の回転** で求める（太陽と遊星の組なら `z_s·|ω_s − ω_c| / 2π`）。音源の位置は、公転に合わせて毎フレーム実際の位置（S3-03 の関数）に置く
   - ラックの組: 歯の通過頻度 `|v| / (π·m)`（Hz）。音色は平歯車と同じ
@@ -26,6 +26,7 @@ S3-01〜S3-04 で入れた固定具・内歯車・遊星歯車機構・ラック
   | ラック | 真鍮 | 明るい木 |
   | 固定具（台座・支柱） | 黒い鉄 | 濃い木 |
   - 歯車以外の部品の材質も、種類の追加漏れを型で検出できる表にする
+  - S2-05 の時点: 歯車は `src/render/themes.ts` の `GEAR_KIND_MATERIALS`（`Record<GearKind, Record<ThemeId, GearMaterialId>>`）と `GEAR_MATERIAL_LOOKS`（`'brass' | 'steel' | 'bronze' | 'lightWood' | 'darkWood'` の見た目）。`ThemeLook` に歯車の欄は無く、`gearLook(theme, kind)` で引く。`SceneSync.setBaseMaterials` の `gear` は種類ごとの材質（同じ材質は共有）。シャフト・モーターは `ThemeLook.shaft`・`motor` のまま
 - **保存形式の version 3**（S2-05 の拡張）
   - `CURRENT_SAVE_VERSION = 3`。`MIGRATIONS[2]`（version 2 → 3）で `anchors: {}`、`carriers: {}`、`racks: {}` を足す
   - S3-01・S3-03・S3-04 の「読み込みで足りないコレクションを `{}` で補う」暫定処理を取り除き、移行に置き換える。version 3 ではこれらのコレクションを必須にする
@@ -62,7 +63,7 @@ S3-01〜S3-04 で入れた固定具・内歯車・遊星歯車機構・ラック
 - `src/ui/`: プロパティパネル、パレット、情報表示、コンテキストメニューの拡張
 - テスト用のフィクスチャ
   - `e2e/fixtures/stage3-showcase.json`: 遊星歯車機構（リングを固定）、内歯車の組、ラック、固定具を含み、モーター 1〜2 つで回るシーン（干渉なし、ロックなし。ラックは 10 秒以上端に達しない速さ）
-  - version 2 のファイル: `e2e/fixtures/stage2-showcase.json`（S2-05。version 2 のまま使う）
+  - version 2 のファイル: `e2e/fixtures/stage2-showcase.json`（S2-05。version 2 のまま使う）。ただしこれは `Scene` の形（`SaveFile` ではない）なので、ファイルとして読ませるときは `toSaveFile` で包む（S2-05 の `e2e/stage2.spec.ts` はエクスポートしたファイルを使った）か、`src/core/io/save-file-v1.json`（S2-05。version 1 の `SaveFile`）と同じように version 2 の `SaveFile` を足す
 - **design.md の書き換え**
   - §4: 「段階 3 で anchors などのコレクションを足すときは…」を、version 3 で足したことに書き換える
   - §9: 最新が version 3、version 2 → 3 の移行の中身

@@ -29,7 +29,7 @@ depends: [S2-05]
 - **候補**
   - 内歯車を選ぶと、内側の外周の候補を出す（角度の取り方は段階 1 の外周の候補と同じ）。子は同じ大きさの平歯車で、歯数は S1-18 の既定値を、歯数差の条件を満たすように下げたもの（12 未満になるなら候補を出さない）
   - 平歯車を選ぶと「囲む内歯車」の候補を出す。歯数は `2 × 親の歯数` を、`max(24, 親の歯数 + 12)` 以上・大きさの最大以下に収めたもの（収まらなければ出さない）
-  - 同じ軸の候補で `'internal'` を作れるようにする（パレットの種類に足す）
+  - 同じ軸の候補で `'internal'` を作れるようにする（パレットの種類に足す）。S2-05 の時点: パレットの種類のボタンは `GEAR_KINDS`（`src/core/scene/gear-shape.ts`）の並び `GEAR_KIND_LIST` から作り（`src/ui/palette.ts` の `PALETTE_KINDS`）、表示名は辞書の `gearKind.<種類>` なので、`GEAR_KINDS` と辞書（日・英）に足せばボタンも増える。選んだ種類は `AppState.palette.kind` で、`src/app/interactions.ts` がそのまま `coaxialKind` に渡す
 - **偶然のかみ合い（contact）**: 内歯車と平歯車（同じ大きさ）、軸が平行、歯幅が重なり、中心距離が `R − r` と `MESH_DISTANCE_EPS` 以内、歯数差が 12 以上
 - **位相**: 接点で、外歯車の歯の中心と内歯車の歯溝の中心が重なるように子の `basePhase` を決める
 - **運動学**: 内歯車と外歯車の拘束は `z_ext·ω_ext − z_int·ω_int = 0`（同じ向きに回る）。S2-02 の係数の関数（`src/core/kinematics/mesh-coefficients.ts` の `meshCoefficients`）に足す
@@ -41,9 +41,9 @@ depends: [S2-05]
   - かみ合っている組は、段階 1 と同じく除く
 - **形状**: 外歯車の歯形と同じインボリュートを使い、歯と歯溝を入れ替えた内歯（歯は内向き）。リム、つなぎの筒、ウェブ、中心のボスを付ける。形状データのキーは `(種類, 大きさ, 歯数)`（`webSide` は向きの反転で表す）
 - **歯数の範囲を種類で決める**: 歯数の範囲を返す関数を作り、プロパティパネルの歯数の入力（S1-20）もそれを使う。編集で木の親子の歯数差が 12 未満になる変更は、コマンドが拒否する（シーンは変わらない）
-- **表示**: 段階 1 と同じ材質（材質の違いは S3-05）
+- **表示**: 段階 1 と同じ材質（材質の違いは S3-05）。S2-05 の時点: 歯車の材質の表 `GEAR_KIND_MATERIALS`（`src/render/themes.ts`）と、かみ合いの種類ごとの音色 `MESH_TIMBRES`（`src/core/audio-model/index.ts`。`MeshKind` で引く）は `Record` なので、種類を足すと型エラーになる。S3-02 では平歯車と同じ値（真鍮／明るい木、`{ click: 1, hum: 1, slideNoise: 0 }`）を入れ、違いは S3-05 で付ける。プロパティパネルの種類の名前も `gearKind.<種類>`
 - **保存**: シーンの検証で `'internal'` と `webSide` を受け付ける（`version` は 2 のまま。上げるのは S3-05）
-- **S2-01 の時点**: 歯車の種類を足すと、`switch (gear.kind)` の `assertNever` でコンパイルエラーになる所（`src/core/scene/gear-shape.ts` の `gearShape`・`newGearShape`・`meshPartnerShape`・`GEAR_KINDS`、`geometry/can-mesh.ts` の `canMesh`・`meshKindOf`、`geometry/shape-key.ts` の `gearShapeKey`、`scene/parse.ts`、`render/gear-geometry.ts` の `buildGeometry`）を直す（design.md §4）。`MeshKind` は `geometry/can-mesh.ts` にある。候補（`GrowCandidate`）は作る歯車の形 `shape: GearShape` を持ち、同じ軸の種類は `GrowSpec.coaxialKind`（app は今 `'spur'` を渡す。`src/app/interactions.ts`）、編集コマンドの種類は `addRootShaft` の `gear.kind?`・`growGear`（coaxial）の `kind?` で渡す。外周に生やす子の形は `meshPartnerShape` で決まる
+- **S2-01 の時点**: 歯車の種類を足すと、`switch (gear.kind)` の `assertNever` でコンパイルエラーになる所（`src/core/scene/gear-shape.ts` の `gearShape`・`newGearShape`・`meshPartnerShape`・`GEAR_KINDS`、`geometry/can-mesh.ts` の `canMesh`・`meshKindOf`、`geometry/shape-key.ts` の `gearShapeKey`、`scene/parse.ts`、`render/gear-geometry.ts` の `buildGeometry`）を直す（design.md §4）。`MeshKind` は `geometry/can-mesh.ts` にある。候補（`GrowCandidate`）は作る歯車の形 `shape: GearShape` を持ち、同じ軸の種類は `GrowSpec.coaxialKind`（S2-05 から app はパレットで選んだ種類 `AppState.palette.kind` を渡す。`src/app/interactions.ts`）、編集コマンドの種類は `addRootShaft` の `gear.kind?`・`growGear`（coaxial）の `kind?` で渡す。外周に生やす子の形は `meshPartnerShape` で決まる
 - **S2-01 の canMesh**: `canMesh(a: Gear, b: Gear)` は種類・大きさ・形を変える属性だけで判定している。歯数の差の条件はここに足す
 
 ## 範囲外
