@@ -88,39 +88,39 @@ S3-01〜S3-04 で入れた固定具・内歯車・遊星歯車機構・ラック
   - §10: `getAudio` の `voices` にラックの組・遊星の組が入ること
 
 ## 受け入れ条件
-- [ ] 段階 3 の部品を含むシーンを保存・エクスポートして読み戻すと、元と同じになる
-- [ ] version 1・2 のファイル・作品・自動保存が読める
-- [ ] 遊星のかみ合いの音が公転とともに動いて聞こえ、ラックの速さで音の高さが変わる。端に当たると衝撃音が鳴る
-- [ ] プロパティパネルから遊星の数・ラックの歯数・内歯車の歯数を変えられ、条件を満たさない値は選べない
-- [ ] 両テーマで新しい部品が描き分けられる
+- [x] 段階 3 の部品を含むシーンを保存・エクスポートして読み戻すと、元と同じになる
+- [x] version 1・2 のファイル・作品・自動保存が読める
+- [ ] 遊星のかみ合いの音が公転とともに動いて聞こえ、ラックの速さで音の高さが変わる。端に当たると衝撃音が鳴る（値と回数は Vitest・Playwright で確かめた。聞こえ方は manual-checks）
+- [x] プロパティパネルから遊星の数・ラックの歯数・内歯車の歯数を変えられ、条件を満たさない値は選べない
+- [ ] 両テーマで新しい部品が描き分けられる（材質の表は Vitest、スクリーンショットは `e2e/visual/stage3.spec.ts`。見分けられるかは manual-checks）
 
 ## テストケース
 ### Vitest
-- [ ] `rackToothPassFrequency(40π, 2)` = 20（S3-04 の `rack-basic` の速さ。P 20 歯 × 1 回転/秒と同じ）
-- [ ] `planetToothPassFrequency(24, 2π, 2π/3)`（S3-03 のリング固定、太陽 60 rpm・キャリア 20 rpm）= 24 × (1 − 1/3) = 16 Hz
-- [ ] `computeMeshVoices`: `planetary-ring-fixed` → 太陽と遊星の組 3 つ・遊星とリングの組 3 つ。遊星とリングの組の f = `12 × |−2π − 2π/3| / 2π` = 16 Hz（太陽と遊星の組と一致する）。音源の位置が、キャリアの角度 π のとき基準配置から π 回った位置
-- [ ] `computeMeshVoices`: `rack-basic` → ラックの組の f = 20 Hz
-- [ ] 端に当たった瞬間の検出: 前のフレームに `'rackEnd'` がなく、今のフレームにある → 1 回。続くフレーム → 0 回
-- [ ] 材質の表: すべての部品の種類に、両テーマの材質がある
-- [ ] 移行: version 2 のファイル → `ok`、`migratedFrom === 2`、`version === 3`、`anchors`・`carriers`・`racks` が `{}`、他は元と `toEqual`
-- [ ] 移行: version 1 のファイル → version 3 まで順に移行される（`migratedFrom === 1`）
-- [ ] 往復: `stage3-showcase` → 保存 → 読み込み → 元と `toEqual`
-- [ ] 検証: version 3 で `anchors` がない／遊星のシャフトにモーターがある／`concentric` が自分自身を親にする（循環）／`detached` のラックの `direction` と `normal` が同じ／`pinion` のラックの `axisStep: 3`／(z_s + z_r)/n が整数でない遊星の機構 → いずれも `ok: false`（例外にしない）
-- [ ] 暫定処理の削除: version 3 と書かれていて `racks` がないファイル → `ok: false`
-- [ ] version 4 のファイル → `unsupported-version`
+- [x] `rackToothPassFrequency(40π, 2)` = 20（S3-04 の `rack-basic` の速さ。P 20 歯 × 1 回転/秒と同じ）
+- [x] `planetToothPassFrequency(24, 2π, 2π/3)`（S3-03 のリング固定、太陽 60 rpm・キャリア 20 rpm）= 24 × (1 − 1/3) = 16 Hz
+- [x] `computeMeshVoices`: `planetary-ring-fixed` → 太陽と遊星の組 3 つ・遊星とリングの組 3 つ。遊星とリングの組の f = `12 × |−2π − 2π/3| / 2π` = 16 Hz（太陽と遊星の組と一致する）。音源の位置が、キャリアの角度 π のとき基準配置から π 回った位置
+- [x] `computeMeshVoices`: `rack-basic` → ラックの組の f = 20 Hz
+- [x] 端に当たった瞬間の検出: 前のフレームに `'rackEnd'` がなく、今のフレームにある → 1 回。続くフレーム → 0 回
+- [x] 材質の表: すべての部品の種類に、両テーマの材質がある
+- [x] 移行: version 2 のファイル → `ok`、`migratedFrom === 2`、`version === 3`、`anchors`・`carriers`・`racks` が `{}`、他は元と `toEqual`
+- [x] 移行: version 1 のファイル → version 3 まで順に移行される（`migratedFrom === 1`）
+- [x] 往復: `stage3-showcase` → 保存 → 読み込み → 元と `toEqual`
+- [x] 検証: version 3 で `anchors` がない／遊星のシャフトにモーターがある／`concentric` が自分自身を親にする（循環）／`detached` のラックの `direction` と `normal` が同じ／`pinion` のラックの `axisStep: 3`／(z_s + z_r)/n が整数でない遊星の機構 → いずれも `ok: false`（例外にしない）
+- [x] 暫定処理の削除: version 3 と書かれていて `racks` がないファイル → `ok: false`
+- [x] version 4 のファイル → `unsupported-version`
 ### Playwright（`e2e/stage3.spec.ts`）
-- [ ] 通し（遊星）: 空のシーン → 縦のシャフトを置く → 中・24 歯の平歯車 → 選んで遊星歯車機構の候補をクリック → リングを右クリック →「固定する」→ 太陽のシャフトにモーター（60 rpm）→ キャリアのシャフトの ω が `2 * Math.PI / 3` → キャリアを選んでプロパティで遊星の数を 4 → 遊星のシャフトが 4 本、ω は変わらない → 保存して再読み込み → 同じシーン → Ctrl+Z を繰り返して空に戻る
-- [ ] 通し（ラック）: `one-root-motor.json`（S1-18）を読む → 歯車を選んでラックの候補をクリック → `rackVelocities` が 0 でない → 端まで待つ → `locks` に `'rackEnd'` → プロパティでモーターの向きを反転 → ロックが解ける
-- [ ] プロパティ: 遊星の数の選択肢で、条件を満たさない数（z_s 24・z_r 48 で 5）が選べない。リングの歯数が編集できない
-- [ ] `stage3-showcase.json` → `locks`・`interferences` が空。エクスポート → インポートで等しく、ファイルの `version === 3`
-- [ ] version 2 のファイル（`stage2-showcase`）をインポート → 読める
-- [ ] `getAudio().voices` に、ラックの組と遊星の組の音源がある
+- [x] 通し（遊星）: 空のシーン → 縦のシャフトを置く → 中・24 歯の平歯車 → 選んで遊星歯車機構の候補をクリック → リングを右クリック →「固定する」→ 太陽のシャフトにモーター（60 rpm）→ キャリアのシャフトの ω が `2 * Math.PI / 3` → キャリアを選んでプロパティで遊星の数を 4 → 遊星のシャフトが 4 本、ω は変わらない → 保存して再読み込み → 同じシーン → Ctrl+Z を繰り返して空に戻る
+- [x] 通し（ラック）: `one-root-motor.json`（S1-18）を読む → 歯車を選んでラックの候補をクリック → `rackVelocities` が 0 でない → 端まで待つ → `locks` に `'rackEnd'` → プロパティでモーターの向きを反転 → ロックが解ける
+- [x] プロパティ: 遊星の数の選択肢で、条件を満たさない数（z_s 24・z_r 48 で 5）が選べない。リングの歯数が編集できない
+- [x] `stage3-showcase.json` → `locks`・`interferences` が空。エクスポート → インポートで等しく、ファイルの `version === 3`
+- [x] version 2 のファイル（`stage2-showcase`）をインポート → 読める
+- [x] `getAudio().voices` に、ラックの組と遊星の組の音源がある
 ### Playwright（見た目、`e2e/visual/stage3.spec.ts`）
-- [ ] `stage3-showcase.json` を真鍮・木製で全体表示 → `screenshots/stage3-showcase-brass.png`、`screenshots/stage3-showcase-wood.png`
-- [ ] 遊星歯車機構の拡大（開いている側から）を各テーマで → `screenshots/stage3-planetary-<テーマ>.png`
-- [ ] ラックの拡大、固定具の拡大を各テーマで → `screenshots/stage3-rack-<テーマ>.png`、`screenshots/stage3-anchor-<テーマ>.png`
-- [ ] 情報表示 ON（キャリアの rpm、ラックの速度）→ `screenshots/stage3-info.png`
-- [ ] キャリアとラックのプロパティパネルの日本語・英語 → `screenshots/stage3-ui-ja.png`、`screenshots/stage3-ui-en.png`
+- [x] `stage3-showcase.json` を真鍮・木製で全体表示 → `screenshots/stage3-showcase-brass.png`、`screenshots/stage3-showcase-wood.png`
+- [x] 遊星歯車機構の拡大（開いている側から）を各テーマで → `screenshots/stage3-planetary-<テーマ>.png`
+- [x] ラックの拡大、固定具の拡大を各テーマで → `screenshots/stage3-rack-<テーマ>.png`、`screenshots/stage3-anchor-<テーマ>.png`
+- [x] 情報表示 ON（キャリアの rpm、ラックの速度）→ `screenshots/stage3-info.png`
+- [x] キャリアとラックのプロパティパネルの日本語・英語 → `screenshots/stage3-ui-ja.png`、`screenshots/stage3-ui-en.png`
 
 ## 人が手で確かめる項目
 - 公転する遊星の音が、近づくとよく聞こえ、動きに合って移動して聞こえる
@@ -129,6 +129,6 @@ S3-01〜S3-04 で入れた固定具・内歯車・遊星歯車機構・ラック
 - `stage3-showcase` を含むシーンで、性能が段階 1 の目標（歯車 200 個で 60fps）から大きく落ちない（S1-31 のスクリプトで手元で測る）
 
 ## 完了の条件
-- [ ] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
-- [ ] design.md と後続のタスク資料に、必要な変更を反映した（§4、§7、§9）
+- [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
+- [x] design.md と後続のタスク資料に、必要な変更を反映した（§4、§7、§9、§10）
 - [ ] `status: done` にしてコミットした
