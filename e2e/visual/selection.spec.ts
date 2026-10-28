@@ -1,14 +1,11 @@
-import { readFileSync } from 'node:fs';
 import type { Vec3 } from '../../src/core/math/vec3';
-import type { Scene } from '../../src/core/scene/types';
+import { fixtureScene } from '../fixtures/sim';
 import { test } from '../fixtures/test';
 import { captureScene, prepareCapture, VISUAL_VIEWPORT } from '../fixtures/visual';
 
 test.use({ viewport: VISUAL_VIEWPORT });
 
-const chainThree = JSON.parse(
-  readFileSync(new URL('../fixtures/chain-three.json', import.meta.url), 'utf8'),
-) as Scene;
+const chainThree = fixtureScene('chain-three');
 
 // 選択（B）の強いハイライトと、マウスを乗せた部品（C）の弱いハイライトを人が見比べるための画面
 test('選択とマウスを乗せたときのハイライト', async ({ page }) => {

@@ -1,13 +1,10 @@
-import { readFileSync } from 'node:fs';
-import type { Scene } from '../../src/core/scene/types';
+import { fixtureScene } from '../fixtures/sim';
 import { test } from '../fixtures/test';
 import { captureScene, prepareCapture, VISUAL_VIEWPORT } from '../fixtures/visual';
 
 test.use({ viewport: VISUAL_VIEWPORT });
 
-const twoGears = JSON.parse(
-  readFileSync(new URL('../fixtures/two-gears.json', import.meta.url), 'utf8'),
-) as Scene;
+const twoGears = fixtureScene('two-gears');
 
 // 軸の目印（S1-14）。斜め上からの視点と、平行投影の上からの視点で撮る（見やすさは人が確かめる）
 test('軸の目印と平行投影', async ({ page }) => {

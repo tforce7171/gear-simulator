@@ -1,14 +1,11 @@
-import { readFileSync } from 'node:fs';
 import type { Vec3 } from '../../src/core/math/vec3';
-import type { Scene } from '../../src/core/scene/types';
+import { fixtureScene } from '../fixtures/sim';
 import { test } from '../fixtures/test';
 import { captureScene, prepareCapture, VISUAL_VIEWPORT } from '../fixtures/visual';
 
 test.use({ viewport: VISUAL_VIEWPORT });
 
-const oneRoot = JSON.parse(
-  readFileSync(new URL('../fixtures/one-root.json', import.meta.url), 'utf8'),
-) as Scene;
+const oneRoot = fixtureScene('one-root');
 
 // A を選んで候補（外周の 8 つと同じ軸の 2 つ）が出ている場面。1 つにマウスを乗せて濃くする
 test('生やす候補', async ({ page }) => {
