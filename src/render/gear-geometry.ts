@@ -246,7 +246,7 @@ export function buildInternalGeometry(size: SizeKey, teeth: number): BufferGeome
       INTERNAL_WEB_THICKNESS - module,
     ),
   ];
-  const geometry = mergeGeometries(parts.map((g) => g.toNonIndexed()));
+  const geometry = mergeGeometries(parts); // ExtrudeGeometry はどれも index を持たない
   for (const g of parts) g.dispose();
   if (geometry === null) throw new Error('buildInternalGeometry: merge failed');
   geometry.computeBoundingBox();

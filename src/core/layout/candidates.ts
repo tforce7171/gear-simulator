@@ -41,7 +41,9 @@ export interface GrowSpec {
   perimeterTeeth: number; // 外周の新しい歯車の歯数（大きさは親と同じ）
   coaxialSize: SizeKey; // 同じ軸の新しい歯車の大きさ
   coaxialTeeth: number; // 同じ軸の新しい歯車の歯数
-  coaxialKind: GearKind; // 同じ軸の新しい歯車の種類（S2-01。ハスバ歯車は hand 'right'。ウォームは歯数によらず 1 条）
+  // 同じ軸の新しい歯車の種類（S2-01。ハスバ歯車は hand 'right'。ウォームは歯数によらず 1 条。
+  // 内歯車は歯数を INTERNAL_MIN_TEETH 以上に上げる）。'internal' のときは、平歯車の親を囲む内歯車の候補も出す（S3-02）
+  coaxialKind: GearKind;
 }
 
 export type GrowCandidate =
@@ -168,8 +170,11 @@ export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec)
     });
   }
 
-  // 平歯車の親を囲む内歯車（S3-02）: k·π/4 の向きを順に試し、干渉の増えない最初の 1 つ
-  const encloseShape = internalEncloseShape(gearShape(parent));
+  // 平歯車の親を囲む内歯車（S3-02）: k·π/4 の向きを順に試し、干渉の増えない最初の 1 つ。
+  // パレットで内歯車を選んでいるとき（spec.coaxialKind が 'internal'）だけ出す（いつも出すと、親を覆う大きなリングの
+  // 候補が、親をつかんで回す操作や外周の候補のクリックを奪うため。ピッキングでは候補が歯車より優先される）
+  const encloseShape =
+    spec.coaxialKind === 'internal' ? internalEncloseShape(gearShape(parent)) : null;
   const encloseTeeth = encloseTeethOf(parent);
   for (let k = 0; encloseShape !== null && encloseTeeth !== null; k++) {
     if (k >= PERIMETER_CANDIDATE_COUNT) break;

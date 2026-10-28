@@ -245,11 +245,10 @@ describe('引数の誤り', () => {
 });
 
 describe('並び・決定性・不変', () => {
-  it('外周（角度の昇順）→ 囲む内歯車（S3-02）→ 同じ軸（負 → 正）', () => {
+  it('外周（角度の昇順）→ 同じ軸（負 → 正）', () => {
     const list = listGrowCandidates(onlyA, 'gear_a', SPEC);
     expect(list.map((c) => c.kind)).toEqual([
       ...Array<string>(PERIMETER_CANDIDATE_COUNT).fill('perimeter'),
-      'enclose',
       'coaxial',
       'coaxial',
     ]);
@@ -270,8 +269,7 @@ describe('並び・決定性・不変', () => {
       motors: Object.freeze({}),
       anchors: {},
     });
-    // 外周 8 + 囲む内歯車 1（S3-02）+ 同じ軸 2
-    expect(listGrowCandidates(frozen, 'gear_a', SPEC)).toHaveLength(11);
+    expect(listGrowCandidates(frozen, 'gear_a', SPEC)).toHaveLength(10);
     expect(Object.keys(frozen.gears)).toEqual(['gear_a']);
     expect(Object.keys(frozen.shafts)).toEqual(['shaft_a']);
   });

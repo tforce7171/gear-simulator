@@ -230,6 +230,7 @@ describe('候補', () => {
         perimeterTeeth: DEFAULT_TEETH[gear.size],
         coaxialSize: gear.size,
         coaxialTeeth: DEFAULT_TEETH[gear.size],
+        coaxialKind: 'internal', // パレットで内歯車を選んでいる
       }).filter((c) => c.kind === 'enclose');
     const m20 = encloseOf(spur('gear_s', 'M', 20));
     expect(m20.map((c) => [c.teeth, c.shape])).toEqual([[40, { kind: 'internal', webSide: -1 }]]);
@@ -237,9 +238,24 @@ describe('候補', () => {
     expect(encloseOf(spur('gear_s', 'L', 30))).toEqual([]);
   });
 
+  it('囲む候補は、パレットで内歯車を選んでいるときだけ出す。平歯車以外の親には出さない', () => {
+    const scene = single(spur('gear_s', 'M', 20));
+    expect(listGrowCandidates(scene, 'gear_s', SPEC_M).some((c) => c.kind === 'enclose')).toBe(
+      false,
+    );
+    const helical: Gear = { ...spur('gear_h', 'M', 20), kind: 'helical', hand: 'right' };
+    const list = listGrowCandidates(single(helical), 'gear_h', {
+      ...SPEC_M,
+      coaxialKind: 'internal',
+    });
+    expect(list.some((c) => c.kind === 'enclose')).toBe(false);
+  });
+
   it('囲む候補をコマンドにすると、内歯車ができて親とかみ合う（interferences が空）', () => {
     const scene = single(spur('gear_s', 'M', 20));
-    const [c] = listGrowCandidates(scene, 'gear_s', SPEC_M).filter((c) => c.kind === 'enclose');
+    const [c] = listGrowCandidates(scene, 'gear_s', { ...SPEC_M, coaxialKind: 'internal' }).filter(
+      (c) => c.kind === 'enclose',
+    );
     if (c === undefined || c.kind !== 'enclose') throw new Error('no enclose candidate');
     const next = apply(scene, {
       type: 'growGear',

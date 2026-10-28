@@ -10,6 +10,7 @@ import {
   nextFrames,
   openApp,
   project,
+  settleCamera,
 } from './fixtures/sim';
 import { expect, test } from './fixtures/test';
 
@@ -80,6 +81,8 @@ test('W を選ぶ → ホイールの候補（skew）。1 つをクリック →
 }) => {
   await openApp(page, { scene: wormBasic });
   await page.keyboard.press('Home');
+  // Home のカメラの移動が終わってから押す（動いている間に押す点を求めると外れることがある）
+  await settleCamera(page);
   await clickGear(page, 'gear_w');
   const skews = (await getCandidates(page)).filter((c) => c.kind === 'skew');
   expect(skews.length).toBeGreaterThanOrEqual(1);
