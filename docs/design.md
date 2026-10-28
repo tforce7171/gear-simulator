@@ -296,17 +296,23 @@ interface AppState {
   currentWork: { id: string; name: string } | null;      // 開いている作品。保存しない（S1-27。済。変えるのは setCurrentWork の action）
 }
 
+// src/core/settings.ts（S1-30。済）。app/store.ts は再輸出するだけ
 interface Settings {
-  quality: 'high' | 'low';
-  inputDevice: 'auto' | 'mouse' | 'trackpad';
-  trackpadScroll: 'pan' | 'orbit';
-  language: 'ja' | 'en';
-  theme: 'brass' | 'wood';
+  quality: Quality;                 // 'high' | 'low'（core/theme.ts）
+  inputDevice: InputDeviceSetting;  // 'auto' | 'mouse' | 'trackpad'（core/settings.ts。input/wheel.ts は再輸出）
+  trackpadScroll: TrackpadScroll;   // 'pan' | 'orbit'（同上）
+  language: Lang;                   // 'ja' | 'en'（core/i18n）
+  theme: ThemeId;                   // 'brass' | 'wood'（core/theme.ts）
   muted: boolean;
 }
 ```
 
 - 各欄は、それを使うタスクで足していく（上の型は段階 1 の完成形）。S1-21 で `sim`（`src/app/store.ts` の `SimState`。今は `hand` だけで、初期値は `DEFAULT_SIM`）を足した。`sim.hand` はポインターが動くたびに変わるので、`dispatch` ではなく `store.setHand(hand)`（購読者に知らせない。`setMotion` と同じ）で書き換える。`loadScene` で `null` に戻す。S1-22 で `SimState` に `paused`（初期値 false。保存しない）を足した。Space の押して離す（`src/input/space-tap.ts` の `createSpaceTapDetector`。押している間にカメラのドラッグが始まった・`SPACE_TAP_MAX_MS` = 500ms より長く押した・自動の繰り返しは切り替えない）で `dispatch({ type: 'togglePause' })` する。`togglePause` はシーンと履歴を変えず、運動をすぐ解き直す（ω が次のフレームを待たずに 0 になる・戻る）。`loadScene` と編集コマンドは `paused` を保ち、解き直すときも一時停止中ならモーターを止めて解く。`runFrame` は `stepMotion` に `{ paused: sim.paused, hand }` を渡す（一時停止中でも手で回せる）。一時停止中は `stepMotion` が `locks = []` を返すので、ロックの表示も消える。一時停止中の表示は `src/ui/pause-indicator.ts`（`data-testid="pause-indicator"`、辞書 `sim.paused`）で、描画領域の上部中央に出す。S1-14 で `view.watchMode`・`settings.inputDevice`・`settings.trackpadScroll` を足した（`src/app/store.ts` の `ViewState`・`Settings`。初期値は `DEFAULT_VIEW`・`DEFAULT_SETTINGS`）。ストアのアクションは `updateSettings { patch }`（値が `undefined` の項目は変えない）と `setWatchMode { on }`。どちらも値が変わらなければ購読者に知らせない。`loadScene` と編集コマンドは `view`・`settings` を保つ。S1-24 で `settings.theme`（`ThemeId`、初期値 `'brass'`）と `settings.quality`（`Quality`、初期値 `'high'`）を足した（型と初期値は `src/core/theme.ts` の `DEFAULT_THEME`・`DEFAULT_QUALITY`）。変えるのは同じ `updateSettings` で、ツールバーのテーマボタンは `nextTheme` で次のテーマにする。S1-25 で `settings.muted`（初期値 `false`。localStorage への保存は S1-30）を足した。M キー（`keyboard.ts` に `{ key: 'm' }`）とツールバーの `mute` ボタンが `updateSettings { patch: { muted: !muted } }` で切り替え、ボタンは `aria-pressed` で示す。
+- **設定画面と設定の保存**（S1-30）: `Settings` の型・初期値・保存の形は `src/core/settings.ts`（`SETTINGS_STORAGE_KEY`・`SETTINGS_VERSION`・`defaultSettings(navigatorLanguage)`・`parseSettings(raw, defaults)`・`serializeSettings`、選択肢の一覧 `INPUT_DEVICE_SETTINGS`・`TRACKPAD_SCROLLS`・`QUALITIES`・`LANGS`）。`core` は `input` を import できないので、`InputDeviceSetting`・`TrackpadScroll` は core で定義し `input/wheel.ts` が再輸出する。`createStore(scene, { settings })` で初期値を渡す（省略すると `DEFAULT_SETTINGS` = `defaultSettings('')`、言語は英語）。
+  - `main.ts` は画面を作る前に `loadSettings(browserStorage(), defaultSettings(navigator.language))`（`src/storage/settings-storage.ts`）で読み、`setLanguage` してから `createStore` に渡す。ストアの購読で、設定の参照が変わったら `saveSettings`（書けなければ `false`）し、初めて失敗したときだけトースト `settings.saveFailed`（error）を出す。
+  - 言語: `settings.language` と i18n の言語をいつも一致させる。ストアの購読で `setLanguage(settings.language)`、`onLanguageChange` で `updateSettings { language }`。`__gearSim.setLanguage` も `updateSettings { language }` を通す。
+  - 音の材質: `createAudioEngine({ material: THEME_AUDIO_MATERIAL[theme] })` で作り、ストアの購読で `audio.setMaterial(THEME_AUDIO_MATERIAL[settings.theme])`。
+  - 設定画面は `src/ui/settings-dialog.ts` の `createSettingsDialog({ getSettings, update, subscribe })`（`open`・`close`・`isOpen`）。ツールバーの `settings` で開く `<dialog>`（`showModal`、`data-testid="settings-dialog"`）。項目は `data-setting="<フィールド名>"` の `role="radiogroup"`、選択肢は `data-value="<値>"` の `role="radio"` のボタン（`aria-checked`）。選ぶとすぐ `updateSettings`。閉じるボタン（`settings-close`）・Esc・ダイアログの外（`::backdrop`）のクリックで閉じ、閉じたら DOM から取り除く。中のキーは `stopAppKeys` でアプリのショートカットに届けない。ストアを購読して、ほかの経路（ツールバーのテーマボタンなど）の変更も選択に映す。言語の選択肢の表示名は辞書を通さず「日本語」「English」（`lang` 属性付き）。ミュートは置かない。
 - シーンの変更は、必ず `core/edit` のコマンドを通す（Undo の履歴に積まれる）。コマンドの一覧と引数は S1-11 の資料が正。選択・カメラ・設定はシーンに含めない。
 - `offset` が `AXIAL_SNAP` の倍数であることは、シーンの検証（S1-03）とコマンドの引数チェック（S1-11）で強制する。
 - **部品の上での左ドラッグ**: 選択中の detached シャフトの本体なら付け直し（S1-19）、それ以外は手で回す（S1-21。`Interactions.pressHand`。`DRAG_THRESHOLD_PX` 以上動いてから回し始め、回している間は候補とハンドルを隠し、カーソルを `grabbing` にする。選択は変えない。マウスを乗せた部品のハイライトは続ける）。選択中の detached シャフトの本体が候補（S1-18）の陰にあるときも、左ボタンは `'app'`（付け直し）にする（S1-19）。
@@ -406,7 +412,7 @@ interface Settings {
 ## 8. 国際化
 
 - 辞書は `core/i18n/ja.ts` と `core/i18n/en.ts`。`ja` のキーを正とし、`en` は同じキーを持つことを型で強制する。
-- 言語は設定から切り替える。初期値はブラウザの言語（`ja` で始まれば日本語、それ以外は英語）。
+- 言語は設定から切り替える。初期値はブラウザの言語（`ja` で始まれば日本語、それ以外は英語）。S1-30 から `AppState.settings.language` に入り、localStorage に保存される（§7 の「設定画面と設定の保存」）。
 - 純粋な部分は `core/i18n/index.ts`（`Lang`・`MessageKey`・`MessageParams`・`detectLanguage`・`translate`・`interpolate`・`placeholdersOf`）。差し込みは `{name}` の形で、`params` に無い差し込みはそのまま残す。`ja` と `en` の差し込みの集合は同じにする（Vitest で確かめる）。
 - 実行時の言語は `app/i18n.ts` が持つ（`t`・`getLanguage`・`setLanguage`・`onLanguageChange`。DOM には触れない）。画面の文字列はすべて `t()` で出し、言語が変わったら `onLanguageChange` で書き換える。`setLanguage` は言語が変わったときだけ購読者に知らせる。
 - `main.ts` が、言語が変わるたびに `document.title = t('app.title')` と `<html lang>` を合わせる。
@@ -436,6 +442,10 @@ interface SaveFile {
 - IndexedDB は `gear-simulator` データベースの `works` ストア（作品：id、名前、更新日時、サムネイルの Blob、SaveFile）と `autosave` ストア（キー `'current'` に `{ updatedAt, file: SaveFile }` の 1 件のみ）。
 - 作品を開くこととインポートは、`replaceScene` コマンドでシーン全体を差し替える（Undo で前のシーンに戻れる）。
 - 設定は localStorage の `gear-simulator:settings` に JSON で保存する。読み書きは try/catch で囲み、失敗したら初期値で動かす。
+  - 形（S1-30）: `{ "version": 1, "quality", "inputDevice", "trackpadScroll", "language", "theme", "muted" }`（`serializeSettings`）。
+  - 読むとき（`parseSettings`）: オブジェクトでない・`version !== 1` → 全項目を初期値。項目ごとに検証し、不正な値・欠けた項目はその項目だけ初期値、知らない項目は捨てる。形式を変えるタスクは `SETTINGS_VERSION` を上げ、移行をそのタスクで書く。
+  - `localStorage` にアクセスできない・`getItem` が投げる・JSON が壊れている → 初期値（`console.warn`）。`setItem` が投げる → 書かずに続け、トースト `settings.saveFailed` を起動中に 1 回だけ（`console.warn`）。どれも `console.error` は出さない。
+  - 保存するのは `AppState.settings` だけ（ミュートを含む。情報表示の ON/OFF・眺めるモードは保存しない）。
 - **S1-27 で作ったもの**:
   - `src/core/io/save-file.ts`: `SaveFile` の型・`CURRENT_SAVE_VERSION`（1）・`toSaveFile(scene)`・`parseSaveFileObject(raw: unknown)`（読み込みの 1 か所。`{ ok: true, file } | { ok: false, error: { code } }`。今の `code` は `'not-gear-simulator'`（オブジェクトでない・format が違う）・`'invalid-version'`（1 以上の整数でない）・`'unsupported-version'`（最新より新しい）・`'invalid-scene'`（`scene` に `shafts`・`gears`・`motors` のオブジェクトが無い、`validateScene` が通らない・例外を投げた）。S1-28 で移行と形の確認を足し、結果の型を上の `ParseResult` に広げた）。`src/core/io/thumbnail.ts`: `centerSquareCrop`・`nextDefaultWorkName`。
   - `src/storage/db.ts`: `openDb`（開けたら使い回す。失敗は覚えず次に開き直す）・`listWorks`（`updatedAt` の降順、`file` を含めない）・`getWork`・`putWork`・`renameWork`（更新日時は変えない）・`deleteWork`・`loadAutosave`・`saveAutosave`。書き込みはトランザクションの完了で resolve する。
@@ -478,12 +488,13 @@ interface GearSimDebug {
   // 画面上の位置を求める。Playwright でクリックやドラッグの座標に使う
   projectToScreen(world: Vec3): { x: number; y: number };
   getLanguage(): Lang;               // 現在の画面の言語（S1-12）
-  setLanguage(lang: Lang): void;     // タブの題名と <html lang> も変わる（S1-12）
+  setLanguage(lang: Lang): void;     // タブの題名と <html lang> も変わる（S1-12）。S1-30 から updateSettings { language } と同じ経路
   getCamera(): CameraPose;           // 今の視点（移っている途中ならその時点の値。S1-13）
   setCamera(pose: Pick<CameraPose, 'position' | 'target'>): void; // transition なしで即座に（S1-13）
   getLastContextRequest(): { x: number; y: number } | null; // 最後の右クリック（ドラッグなし）のページ座標（S1-13）
   getInputDevice(): InputDevice;     // 'mouse' | 'trackpad'。今使っている（判別した、または固定した）デバイス（S1-14）
   updateSettings(patch: Partial<Settings>): void; // 設定の一部を変える。S1-30 の設定画面も同じ経路（S1-14）
+  getSettings(): Settings;           // 今の設定（AppState.settings。localStorage に保存している値。S1-30）
   setWatchMode(on: boolean): void;   // 眺めるモードの ON/OFF（S1-14）
   getView(): { infoOverlay: boolean; watchMode: boolean }; // 表示の状態（AppState.view。S1-29）
   getGizmoTargets(): Array<{ view: ViewName; x: number; y: number }>; // 軸の目印の球の中心のページ座標（S1-14）
@@ -554,7 +565,7 @@ API はタスクで必要になった時点で足していく。足したらこ�
 | S1-26 | `getAudio` を広げた（済。`voices[].position`・`background`・`motors`・`lockSounds`。新しい関数は足していない） |
 | S1-27 | `getStorageStatus`（済。`{ lastAutosaveAt, pendingAutosave, currentWorkId }`） |
 | S1-29 | `getView`（済。`{ infoOverlay, watchMode }`） |
-| S1-30 | `getSettings` |
+| S1-30 | `getSettings`（済。`setLanguage` は `updateSettings { language }` を通すようにした） |
 
 - トーストは `__gearSim` を通さず、Playwright から `page.evaluate` で `/src/ui/toast.ts` を動的 import して呼ぶ（S1-15）。`tsconfig.json` の `paths`（`/src/*` → `./src/*`）で、この形の import にも型が付く。時間で消えることは `page.clock.install()` で開いたあと `pauseAt` で時計を止め、`runFor` で進めて確かめる。
 - 描画領域は S1-15 からページより小さい（ツールバーとパネルの分）。ページ座標で「画面の内側」を確かめるときは、`page.viewportSize()` ではなく `page.locator('canvas').boundingBox()` を使う。
