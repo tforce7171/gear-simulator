@@ -76,6 +76,8 @@ export interface Renderer extends SceneView {
   applyTheme(theme: ThemeId, quality: Quality): void;
   // 今の描画の状態（S1-24。__gearSim.getRenderInfo）
   renderInfo(): RenderInfo;
+  // 描画の負荷の数（S1-31。__gearSim.getRenderStats。scripts/perf.ts が使う）
+  renderStats(): RenderStats;
   // 作品のサムネイル（S1-27）。選択とマウスの強調・候補・ハンドル・付け直しの輪・情報表示の矢印を
   // 隠して今のカメラで描き、描画バッファの中央の正方形を size×size に縮めた 2D の canvas を返す。
   // 描いた後は隠したものを元に戻す（情報表示のラベルは DOM なので画に入らない）
@@ -88,6 +90,14 @@ export interface RenderInfo {
   readonly shadowMapEnabled: boolean;
   readonly pixelRatio: number;
   readonly textures: number; // renderer.info.memory.textures
+}
+
+export interface RenderStats {
+  readonly frame: number; // renderer.info.render.frame（実際に描いた回数。影・サムネイルを含む）
+  readonly calls: number; // 最後に描いたフレームの renderer.info.render.calls
+  readonly triangles: number; // 同じく renderer.info.render.triangles
+  readonly redrawChecks: number; // 描き直しの判定（redraw.needsRedraw）を呼んだ回数
+  readonly redrawCheckMs: number; // その判定にかかった時間の合計（ms）
 }
 
 // キャンバスに描く SceneView を作る。canvas の大きさ（ResizeObserver）に追従する。
@@ -154,6 +164,8 @@ export function createRenderer(
   let warmed = false;
   // 見た目が前のフレームと同じなら描かない（render/redraw.ts）
   const redraw = createRedrawDetector();
+  let redrawChecks = 0;
+  let redrawCheckMs = 0;
   // サムネイルを撮った後に戻すため、最後に受けた強調を覚えておく
   let highlight: Highlight = { selected: null, hovered: null };
 
@@ -264,9 +276,22 @@ export function createRenderer(
       objects.update(motion, layout, timeSec);
       candidates.update(motion);
     },
+    renderStats() {
+      return {
+        frame: renderer.info.render.frame,
+        calls: renderer.info.render.calls,
+        triangles: renderer.info.render.triangles,
+        redrawChecks,
+        redrawCheckMs,
+      };
+    },
     render() {
       const version = objects.version();
-      if (!redraw.needsRedraw(scene, active, [version, renderer.getPixelRatio()])) return;
+      const checkStart = performance.now();
+      const needed = redraw.needsRedraw(scene, active, [version, renderer.getPixelRatio()]);
+      redrawCheckMs += performance.now() - checkStart;
+      redrawChecks += 1;
+      if (!needed) return;
       if (version !== shadowVersion) {
         renderer.shadowMap.needsUpdate = true;
         shadowVersion = version;

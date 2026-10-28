@@ -1,0 +1,4 @@
+allowBuilds:
+  # tsx（scripts/perf.ts）が使う esbuild。インストール時のスクリプトは要らない（実行ファイルは
+  # プラットフォーム別のパッケージから入る）
+  esbuild: false

@@ -43,6 +43,7 @@ S2-01〜S2-04 で入れた 4 種類の歯車を、音・テーマ・保存・画
 - **情報表示**（S1-23 の拡張）: ウォームの組のギア比を `30:1` のように表示する
 - **国際化**: 種類の名前、ねじれの向き、注記などのキー（日・英）
 - **通しテストと見た目確認の場面を追加**（S1-31 の拡張）
+  - S1-31 の時点: 通しテストは `e2e/flows/*.spec.ts`（操作は画面から、状態は `__gearSim`）。共通の操作（`openApp`・`fixtureScene`・`clickGear`・`gearPoint`・`clickPerimeterCandidate`・`deselect`・`setPaused`・`settleCamera`・`waitAutosaved` など）は `e2e/fixtures/sim.ts` にある。見た目の確認は `test.use({ viewport: VISUAL_VIEWPORT })`（1280×800）にし、撮る前に `prepareCapture(page)`（Space で一時停止してカメラの停止を待つ。ロックや回転の矢印を写す場面は `{ pause: false }`）を呼んでから `captureScene` する（`e2e/fixtures/visual.ts`）。性能は `pnpm perf`（`scripts/perf.ts`、`src/debug/perf-scene.ts` の `generatePerfScene`）で測る。
 
 ## 範囲外
 - 固定具・内歯車・遊星・ラック（S3-01〜S3-04）

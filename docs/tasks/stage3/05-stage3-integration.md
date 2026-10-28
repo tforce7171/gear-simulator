@@ -42,6 +42,7 @@ S3-01〜S3-04 で入れた固定具・内歯車・遊星歯車機構・ラック
 - **コンテキストメニュー**: キャリア・ラックの上で「固定する／固定を外す」「ここに寄る」「削除」
 - **国際化**: 新しい部品名、プロパティの項目、注記、メニューのキー（日・英）
 - **通しテストと見た目確認の場面を追加**（S1-31・S2-05 の拡張）
+  - S1-31 の時点: 通しテストは `e2e/flows/*.spec.ts`（操作は画面から、状態は `__gearSim`）。共通の操作（`openApp`・`fixtureScene`・`clickGear`・`gearPoint`・`clickPerimeterCandidate`・`deselect`・`setPaused`・`settleCamera`・`waitAutosaved` など）は `e2e/fixtures/sim.ts` にある。見た目の確認は `test.use({ viewport: VISUAL_VIEWPORT })`（1280×800）にし、撮る前に `prepareCapture(page)`（Space で一時停止してカメラの停止を待つ。ロックや回転の矢印を写す場面は `{ pause: false }`）を呼んでから `captureScene` する（`e2e/fixtures/visual.ts`）。性能は `pnpm perf`（`scripts/perf.ts`、`src/debug/perf-scene.ts` の `generatePerfScene`）で測る。
 
 ## 範囲外
 - 慣性、ラック端のばね付き止め、テーマの追加、GIF や動画の書き出し（範囲外（拡張候補））

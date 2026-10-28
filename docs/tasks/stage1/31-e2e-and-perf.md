@@ -1,7 +1,7 @@
 ---
 id: S1-31
 title: 通しテストと見た目の確認をそろえる、性能の計測
-status: todo
+status: done
 depends: [S1-01, S1-02, S1-03, S1-04, S1-05, S1-06, S1-07, S1-08, S1-09, S1-10, S1-11, S1-12, S1-13, S1-14, S1-15, S1-16, S1-17, S1-18, S1-19, S1-20, S1-21, S1-22, S1-23, S1-24, S1-25, S1-26, S1-27, S1-28, S1-29, S1-30]
 ---
 
@@ -94,24 +94,24 @@ depends: [S1-01, S1-02, S1-03, S1-04, S1-05, S1-06, S1-07, S1-08, S1-09, S1-10, 
 - `__gearSim` の不足分（流れのテストで必要になったもの）。足したら design.md §10 を更新する。
 
 ## 受け入れ条件
-- [ ] `pnpm verify` で 7 本の通しテストと、見た目の確認の全場面が通る。
-- [ ] `screenshots/` に一覧の場面名の PNG がそろう。
-- [ ] `pnpm perf` で 4 条件の結果が表と JSON で出る。
-- [ ] 計測の結果をこの資料の「計測の記録」に書いた。
+- [x] `pnpm verify` で 7 本の通しテストと、見た目の確認の全場面が通る。
+- [x] `screenshots/` に一覧の場面名の PNG がそろう。
+- [x] `pnpm perf` で 4 条件の結果が表と JSON で出る。
+- [x] 計測の結果をこの資料の「計測の記録」に書いた。
 
 ## テストケース
 ### Vitest
-- [ ] `generatePerfScene(200)`: 歯車がちょうど 200 枚。`resolveLayout` の `interferences` が空で、`meshes` に `source: 'contact'` が無い。
-- [ ] 同じシーンを力のつり合いで解くと `locks` が空、全シャフトの |ω| > 0（モーターから届かない歯車がない）。
-- [ ] `getLayout().meshes` の件数が 180 以上（同じシャフトに重ねた分だけ 199 より少ない）。
-- [ ] `generatePerfScene(200, 1)` を 2 回 → `toEqual`。`seed` が違うと歯数の並びが違う。
-- [ ] `generatePerfScene(20)` → 20 枚（count を変えられる）。
-- [ ] シーンが `parseSaveFileObject(toSaveFile(scene))`（S1-28）を通る。
+- [x] `generatePerfScene(200)`: 歯車がちょうど 200 枚。`resolveLayout` の `interferences` が空で、`meshes` に `source: 'contact'` が無い。
+- [x] 同じシーンを力のつり合いで解くと `locks` が空、全シャフトの |ω| > 0（モーターから届かない歯車がない）。
+- [x] `getLayout().meshes` の件数が 180 以上（同じシャフトに重ねた分だけ 199 より少ない）。
+- [x] `generatePerfScene(200, 1)` を 2 回 → `toEqual`。`seed` が違うと歯数の並びが違う。
+- [x] `generatePerfScene(20)` → 20 枚（count を変えられる）。
+- [x] シーンが `parseSaveFileObject(toSaveFile(scene))`（S1-28）を通る。
 
 ### Playwright
-- [ ] 上の通しのテスト 7 本。
-- [ ] 上の見た目の確認の全場面。
-- [ ] `generatePerfScene(200)` を `loadScene` して 3 秒回してもコンソールエラー 0 件（SwiftShader なので fps は見ない）。
+- [x] 上の通しのテスト 7 本。
+- [x] 上の見た目の確認の全場面。
+- [x] `generatePerfScene(200)` を `loadScene` して 3 秒回してもコンソールエラー 0 件（SwiftShader なので fps は見ない）。
 
 ## 人が手で確かめる項目
 - `screenshots/` の全場面を目で見て、明らかな崩れ（真っ黒な部品、テクスチャの抜け、UI の文字のはみ出し、英語のままの日本語 UI など）がないか。
@@ -121,7 +121,21 @@ depends: [S1-01, S1-02, S1-03, S1-04, S1-05, S1-06, S1-07, S1-08, S1-09, S1-10, 
 ## 計測の記録
 （実施したら、日付・環境・4 条件の結果をここに書く）
 
+### 2026-10-28 エージェントの環境（参考値。目標の判定には使わない）
+- 環境: AMD Ryzen 5 5500U（12 スレッド）、Linux。画面（DISPLAY）が無く、GPU にも触れられない（Chromium の WebGL は SwiftShader、Vulkan を指定しても llvmpipe）ので `pnpm perf --headless` で測った。Chromium 156.0.8078.4（Playwright 1.64.1）、`devicePixelRatio` 1、1280×800。
+- シーン: `generatePerfScene(200)`（歯車 200 枚、かみ合い 180 組、モーター 20 個）。計測 10 秒、ウォームアップ 3 秒。
+
+| 条件 | 平均 fps | 中央値 ms | p95 ms | p99 ms | 最大 ms | 描いた回数/rAF | calls | triangles | 描き直しの判定 ms/回 | 判定 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 高品質・情報表示 OFF・音あり | 1.6 | 632.4 | 646.0 | 646.0 | 646.0 | 18/16 | 805 | 1,111,332 | 0.489 | BELOW TARGET |
+| 軽量・情報表示 OFF・音あり | 1.9 | 515.9 | 544.1 | 547.7 | 547.7 | 22/20 | 403 | 555,666 | 0.455 | BELOW TARGET |
+| 高品質・情報表示 ON・音あり | 1.2 | 810.0 | 825.0 | 825.0 | 825.0 | 15/13 | 1205 | 1,220,132 | 1.680 | BELOW TARGET |
+| 高品質・情報表示 OFF・ミュート | 1.3 | 758.6 | 778.9 | 778.9 | 778.9 | 16/14 | 805 | 1,111,332 | 0.750 | BELOW TARGET |
+
+- ソフトウェア描画なので fps は目標と比べられない。読み取れること: 高品質は 1 フレーム約 800 回の描画呼び出しと約 111 万の三角形（影の描画を含む。軽量はその半分）で、描画の負荷が支配的。情報表示 ON は 400 呼び出し（矢印）増える。描き直しの判定（全オブジェクトの行列の比較）は 200 枚で 1 回 0.5〜1.7 ms で、16.7 ms の枠に対して小さくない（情報表示 ON で増える）。
+- 実機（GPU のあるノート PC、画面あり）での計測は `docs/tasks/manual-checks.md` の S1-31 の項目。60fps に届かなければ、原因の見当（描画・運動の計算・音・情報表示）と一緒にここへ書き、直すタスクを README に足す。
+
 ## 完了の条件
-- [ ] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
-- [ ] design.md と後続のタスク資料に、必要な変更を反映した（`__gearSim` の追加分、`scripts/perf.ts` の使い方を design.md §10 に書く。60fps に届かなければ改善のタスクを README に足す）
-- [ ] `status: done` にしてコミットした
+- [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
+- [x] design.md と後続のタスク資料に、必要な変更を反映した（`__gearSim` の追加分、`scripts/perf.ts` の使い方を design.md §10 に書く。60fps に届かなければ改善のタスクを README に足す）
+- [x] `status: done` にしてコミットした

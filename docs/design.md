@@ -28,10 +28,11 @@ src/
   app/             状態ストア、毎フレームの更新ループ、各層の組み立て
   debug/           window.__gearSim（開発用・テスト用ビルドのみ）
   main.ts
-e2e/               Playwright の通しテスト（*.spec.ts）
+e2e/               Playwright の機能ごとのテスト（*.spec.ts）
+e2e/flows/         Playwright の通しテスト（主要な操作の流れ。S1-31）
 e2e/visual/        Playwright の見た目確認（*.spec.ts）
-e2e/fixtures/      テスト用のシーン JSON、共通フィクスチャ
-scripts/           性能計測などの手元用スクリプト
+e2e/fixtures/      テスト用のシーン JSON、共通フィクスチャ（test.ts）、共通の操作（sim.ts）
+scripts/           性能計測などの手元用スクリプト（pnpm perf。S1-31）
 ```
 
 - `src/core/` から three などを import できないように、Biome の `noRestrictedImports` で禁止する。
@@ -465,13 +466,18 @@ interface SaveFile {
 - **Vitest**: `src/**/*.test.ts`。`core` は厚くテストする。浮動小数の比較は `toBeCloseTo` を使う。
 - **型検査**: `tsconfig.json` は `strict: true` と `noUncheckedIndexedAccess: true`（配列や Record の添字アクセスは `T | undefined` になる）を採る。`noEmit` で、`src/`・`e2e/`・設定ファイルを対象にする。
 - **Biome**: `docs/`・`.claude/`・Markdown は検査しない（資料の書式を崩さないため）。`src/core/**` には `noRestrictedImports` で three・camera-controls と外の層への import を禁止し、表しきれない規則は `src/core/import-rules.test.ts` で補う。
-- **Playwright**: Chromium のみ。`webServer` で `vite --mode e2e --port 5174 --strictPort` を起動する。WebGL は SwiftShader で動かす（起動引数 `--use-angle=swiftshader` と `--enable-unsafe-swiftshader`。GPU の無い環境でも動く）。並列数は `workers: 3`（S1-24。描画が重く、既定の並列数ではページどうしが CPU を奪い合って時間に依るテストが不安定になるため）。CPU を長く使い続けるテストは `e2e/*.heavy.spec.ts` に置き、別のプロジェクト `chromium-heavy`（`dependencies: ['chromium']`）として他のテストが終わってから流す（S1-24 のテーマと品質の 20 回の切り替え）。ブラウザが無い環境では `pnpm e2e:install`（`playwright install chromium`）を先に実行する。
+- **Playwright**: Chromium のみ。`webServer` で `vite --mode e2e --port 5174 --strictPort` を起動する。WebGL は SwiftShader で動かす（起動引数 `--use-angle=swiftshader` と `--enable-unsafe-swiftshader`。GPU の無い環境でも動く）。並列数は `workers: 3`（S1-24。描画が重く、既定の並列数ではページどうしが CPU を奪い合って時間に依るテストが不安定になるため）。CPU を長く使い続けるテストは `e2e/*.heavy.spec.ts` に置き、別のプロジェクト `chromium-heavy`（`dependencies: ['chromium']`）として他のテストが終わってから流す（S1-24 のテーマと品質の 20 回の切り替え、S1-31 の歯車 200 枚のシーンを 3 秒回す `perf-scene.heavy.spec.ts`）。ブラウザが無い環境では `pnpm e2e:install`（`playwright install chromium`）を先に実行する。
   - 共通フィクスチャ（`e2e/fixtures/test.ts`）で、コンソールエラーと pageerror を集め、テストの終わりに 0 件であることを確かめる。すべての spec はこの `test` を import する。
   - Playwright は `__gearSim.isReady()` が `true` になる（最初のフレームを描いた）のを待ってから操作する。
   - 準備に時間のかかるシーンは `e2e/fixtures/*.json` を `__gearSim.loadScene()` で読み込んで作る。
   - 起動時のシーンは自動保存から復元する（S1-27）。テストごとにブラウザのコンテキストが新しく IndexedDB は空なので、起動直後は空のシーン。部品が要るテストは必ず `loadScene` する（S1-27 で `vertical-slice.spec.ts` と `visual/two-spur.spec.ts` を `two-spur.json` の読み込みに変えた）。`loadScene` も自動保存の対象になる（同じテストの中で再読み込みすると、そのシーンで始まる）。
 - `core` の部品（S1-05〜S1-11）を作ったタスクは、そのタスクの中でアプリ（`app/`）にも組み込み、画面で使われる状態にする。ただし S1-10（候補の列挙）は選択の仕組み（S1-16）が必要なので、組み込みは S1-18 で行う。
 - **見た目の確認**（`e2e/visual/`）: スクリーンショットを `screenshots/<場面名>.png` に保存する（git では無視する）。自動で判定するのは「真っ黒・真っ白でない」（画素の分散がしきい値以上）ことだけ。`e2e/fixtures/visual.ts` の `captureScene(page, name)` を使う（しきい値は `e2e/fixtures/blank.ts` の `BLANK_VARIANCE_THRESHOLD` = 輝度の分散 4）。
+  - S1-31 から: 画面の大きさは `test.use({ viewport: VISUAL_VIEWPORT })`（1280×800）にそろえ、撮る前に `prepareCapture(page)` を呼ぶ（Space で一時停止して回転を止め、カメラの動きが終わる（3 フレーム続けて動かない）のを待つ）。一時停止で見るものが消える場面（ロックの赤 `lock-red`、回転の矢印と rpm の `info-overlay-on`）は `prepareCapture(page, { pause: false })`。
+  - 段階 1 の場面: `theme-brass`・`theme-wood`（showcase、Home）、`theme-brass-mesh-closeup`・`theme-wood-mesh-closeup`（接点から 60 mm）、`theme-brass-low`、`lock-red`、`interference-warning`、`info-overlay-on`、`ui-ja`・`ui-ja-settings`・`ui-en`・`ui-en-settings`（シーン A で g2 を選んだ状態と設定画面）、`works-list`、`context-menu`。各タスクで撮った `empty-scene`・`two-spur`・`axis-gizmo-*`・`candidates`・`selection-highlight` も残す。
+- **通しテスト**（`e2e/flows/`。S1-31）: 主要な操作の流れを、操作は画面（パレット・候補・プロパティパネル・ツールバー・キー・メニュー）から行い、状態は `__gearSim` で確かめる。`loadScene` は準備にだけ使う。共通の操作は `e2e/fixtures/sim.ts`（`fixtureScene`・`openApp`・`getScene` などの読み出し・`gearPoint`（pick がその歯車を返す画面の点）・`clickGear`・`clickPerimeterCandidate`（中心が近い外周の候補）・`deselect`・`setPaused`・`settleCamera`・`nextFrames`・`waitAutosaved`）。新しい spec はこれを使う（S1-30 までの spec は各自の補助関数のまま）。
+- **性能の計測**（S1-31。`pnpm perf`、`scripts/perf.ts`。`pnpm verify` には入れない）: `vite build --mode e2e` → `vite preview --mode e2e --port 4175` を起動し、Playwright の Chromium を画面ありで開く（`--ignore-gpu-blocklist --disable-gpu-vsync --disable-frame-rate-limit`。SwiftShader は使わない）。画面は 1280×800、`devicePixelRatio` は実機の値。`generatePerfScene(count)`（`src/debug/perf-scene.ts`）を読み込み、条件（高品質／軽量・情報表示 ON／OFF・音あり／ミュート、テーマは真鍮）ごとに、キャンバスをクリック（音を開始）→ Home → 眺めるモード → 3 秒待つ → 指定の秒数だけページ内の `requestAnimationFrame` の間隔を記録する。平均 fps・フレーム時間の中央値・p95・p99・最大、実際に描いた回数（`renderer.info.render.frame` の増え方）、`calls`・`triangles`、描き直しの判定 1 回の時間を表で出し、`perf-results/<YYYYMMDD-HHmmss>.json`（git で無視）にも書く。平均 60fps 以上かつ p95 ≤ 16.7 ms で `OK`、それ以外は `BELOW TARGET`。終了コードは結果によらない。引数は `--count <n>`（初期値 200）・`--seconds <n>`（初期値 10）・`--headless`（動くかの確かめ用。数値は参考にならない）。TypeScript は `tsx` で動かす（`page.evaluate` に関数を渡すと tsx が差し込む `__name` がページに無いので、ページで動かす長い処理は文字列で渡す）。
+  - `generatePerfScene(count, seed = 1)`: 歯車 count 枚の、干渉もロックもない、すべて回る 1 本の木（根のシャフト 1 本）。10 枚ずつの列（大きさは S・M・L の順、歯数は 20〜40 を seed で決める、±30° の折れ線）を、前の列の先頭のシャフトに重ねた歯車（列ごとに上の層へ。同じシャフトに 2 枚）と間の 1 枚でつなぎ、各列の先頭のシャフトに列の大きさのモーター（初期値の rpm、+1、ON）を付ける。200 枚でかみ合い 180 組、重ねた歯車 19 枚。
 - **`window.__gearSim`**: `import.meta.env.MODE !== 'production'` のときだけ公開する（`src/debug/gear-sim.ts` の `installGearSim`。型は `GearSimDebug` で、API を足すタスクがこの型を広げる）。
 
 ```ts
@@ -514,6 +520,10 @@ interface GearSimDebug {
   // arrows は今描いている回転方向の矢印（gearId の昇順。止まっている歯車は含まない。10 Hz で書き換える）
   getInfoOverlay(): { enabled: boolean; arrows: Array<{ gearId: GearId; direction: 1 | -1 }> };
   getRenderInfo(): { theme: ThemeId; quality: Quality; shadowMapEnabled: boolean; pixelRatio: number; textures: number }; // S1-24
+  // 描画の負荷（S1-31。scripts/perf.ts が使う。型は src/render/renderer.ts の RenderStats）。frame は実際に描いた回数
+  // （renderer.info.render.frame）、calls・triangles は最後に描いたフレームの値、redrawChecks・redrawCheckMs は
+  // 描き直しの判定（render/redraw.ts）を呼んだ回数とその時間の合計（ms）
+  getRenderStats(): { frame: number; calls: number; triangles: number; redrawChecks: number; redrawCheckMs: number };
   // 音（S1-25・S1-26。型は src/audio/engine.ts の AudioState）。contextState は AudioContext を作る前は 'none'。
   // voices は今鳴らしているかみ合い（f > 0 の組のうちカメラに近い 16 組。S1-26）。key は meshKey、
   // frequency は歯の通過頻度（Hz。連続音のクランプ前の値）、click・tone はクロスフェードの重み、position は接点
@@ -566,11 +576,12 @@ API はタスクで必要になった時点で足していく。足したらこ�
 | S1-27 | `getStorageStatus`（済。`{ lastAutosaveAt, pendingAutosave, currentWorkId }`） |
 | S1-29 | `getView`（済。`{ infoOverlay, watchMode }`） |
 | S1-30 | `getSettings`（済。`setLanguage` は `updateSettings { language }` を通すようにした） |
+| S1-31 | `getRenderStats`（済。`{ frame, calls, triangles, redrawChecks, redrawCheckMs }`。通しテストに要る API は既存のもので足りた） |
 
 - トーストは `__gearSim` を通さず、Playwright から `page.evaluate` で `/src/ui/toast.ts` を動的 import して呼ぶ（S1-15）。`tsconfig.json` の `paths`（`/src/*` → `./src/*`）で、この形の import にも型が付く。時間で消えることは `page.clock.install()` で開いたあと `pauseAt` で時計を止め、`runFor` で進めて確かめる。
 - 描画領域は S1-15 からページより小さい（ツールバーとパネルの分）。ページ座標で「画面の内側」を確かめるときは、`page.viewportSize()` ではなく `page.locator('canvas').boundingBox()` を使う。
 
-- テスト用のシーンは `e2e/fixtures/<名前>.json` に置く（サブフォルダは作らない）。先に作られたものがあれば使い回し、S1-31 で重複を整理する。
+- テスト用のシーンは `e2e/fixtures/<名前>.json` に置く（サブフォルダは作らない）。先に作られたものがあれば使い回す。S1-31 で見直した時点で、同じ中身で名前の違うものは無かった（`future-version.json` はシーン A を新しすぎる版の SaveFile で包んだもので、目的が違うので残した）。
 
 ## 11. コミットの取り決め
 
