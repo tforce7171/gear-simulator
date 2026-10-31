@@ -15,8 +15,9 @@
     "format": "biome format --write .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "e2e": "playwright test",
-    "verify": "biome check . && tsc --noEmit && vitest run && playwright test",
+    "e2e": "tsx scripts/e2e.ts",
+    "verify": "tsx scripts/verify.ts",
+    "verify:all": "tsx scripts/verify.ts --all",
     "e2e:install": "playwright install chromium",
     "perf": "tsx scripts/perf.ts"
   },
