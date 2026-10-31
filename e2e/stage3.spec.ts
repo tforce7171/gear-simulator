@@ -16,6 +16,7 @@ import {
   getScene,
   getSelection,
   openApp,
+  placeOnShaft,
   type Point,
   project,
   selectPaletteKind,
@@ -138,11 +139,17 @@ test('通し（遊星）: 縦のシャフト → 中・24 歯 → 遊星歯車�
   await page.mouse.move(to.x, to.y, { steps: 10 });
   await page.mouse.up();
   const placed = await getScene(page);
-  const sun = Object.values(placed.gears)[0];
+  const rootShaft = Object.values(placed.shafts)[0];
+  if (rootShaft === undefined) throw new Error('シャフトが置かれていない');
+  expect(rootShaft.placement).toMatchObject({ kind: 'root', axis: 'y' });
+  expect(Object.keys(placed.gears)).toHaveLength(0);
+  // 起点のシャフトは歯車なし（S4-04）。その上（原点から 4 mm。offset 0）に平歯車を置く
+  const sunId = await placeOnShaft(page, rootShaft.id, 4);
+  const sun = (await getScene(page)).gears[sunId];
   if (sun === undefined) throw new Error('歯車が置かれていない');
-  expect(placed.shafts[sun.shaftId]?.placement).toMatchObject({ kind: 'root', axis: 'y' });
-  expect(sun.size).toBe('M');
-  // プロパティで 24 歯にする
+  expect(sun).toMatchObject({ kind: 'spur', size: 'M', offset: 0 });
+  // 太陽を選び、プロパティで 24 歯にする
+  await clickGear(page, sun.id);
   expect(await getSelection(page)).toEqual([sun.id]);
   await setTeethByInput(page, 24);
   await expect.poll(async () => (await getScene(page)).gears[sun.id]?.teeth).toBe(24);

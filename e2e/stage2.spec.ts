@@ -100,10 +100,15 @@ test('通し: 縦のシャフト → かさ歯車 A → B → ウォーム W →
   await page.mouse.move(to.x, to.y, { steps: 10 });
   await page.mouse.up();
   const placed = await getScene(page);
-  const root = Object.values(placed.gears)[0];
-  if (root === undefined) throw new Error('起点が置かれていない');
-  expect(root.kind).toBe('spur');
-  expect(await getSelection(page)).toEqual([root.id]);
+  const rootShaft = Object.values(placed.shafts)[0];
+  if (rootShaft === undefined) throw new Error('起点が置かれていない');
+  expect(Object.keys(placed.gears)).toHaveLength(0);
+  expect(await getSelection(page)).toEqual([rootShaft.id]);
+  // 起点のシャフトは歯車なし（S4-04）。その上（原点から 4 mm。offset 0）に平歯車を置く
+  const rootId = await placeOnShaft(page, rootShaft.id, 4);
+  const root = (await getScene(page)).gears[rootId];
+  if (root === undefined) throw new Error('起点の歯車が置かれていない');
+  expect(root).toMatchObject({ kind: 'spur', offset: 0 });
 
   // シャフトの上端のつまみを上へ伸ばし（S4-03）、パレットで「かさ」を選んで、平歯車から離れた上の方にかさ歯車 A を置く
   // （平歯車と隣り合うと、A のかさ歯車の候補はどれも平歯車と干渉する）

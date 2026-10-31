@@ -126,29 +126,57 @@ test.describe('パレットから起点を置く', () => {
     await open(page, EMPTY);
   });
 
-  test('床へドラッグ → 縦の起点と中・20 歯の歯車が 1 枚置かれ、その歯車が選ばれる', async ({
+  // S4-04: 起点のシャフトは歯車なしで置く
+  test('床へドラッグ → __gearSim のシャフトが 1 本増え、歯車は増えない。長さ 20 mm の縦の起点で、そのシャフトが選ばれる', async ({
     page,
   }) => {
     await placeAtOrigin(page);
     const scene = await getScene(page);
     const shafts = Object.values(scene.shafts);
-    const gears = Object.values(scene.gears);
     expect(shafts).toHaveLength(1);
-    expect(gears).toHaveLength(1);
+    expect(Object.keys(scene.gears)).toHaveLength(0);
     const shaft = shafts[0];
-    const gear = gears[0];
-    if (shaft === undefined || gear === undefined) throw new Error('置かれていない');
+    if (shaft === undefined) throw new Error('置かれていない');
     const p = shaft.placement;
     if (p.kind !== 'root') throw new Error('root でない');
     expect(p.axis).toBe('y');
-    // [0, 35, 0] に近く、x・z は 5 の倍数
+    // [0, 35, 0] に近く、x・z は 5 の倍数（高さは中・20 歯を置いても床にめり込まない高さ）
     expect(Math.abs(p.origin[0] % 5)).toBe(0);
     expect(Math.abs(p.origin[2] % 5)).toBe(0);
     expect(Math.abs(p.origin[0])).toBeLessThanOrEqual(5);
     expect(p.origin[1]).toBe(35);
     expect(Math.abs(p.origin[2])).toBeLessThanOrEqual(5);
-    expect(gear).toMatchObject({ shaftId: shaft.id, size: 'M', teeth: 20, offset: 0 });
-    expect(await getSelection(page)).toEqual([gear.id]);
+    expect(shaft.span).toEqual([-10, 10]);
+    expect(await getSelection(page)).toEqual([shaft.id]);
+  });
+
+  test('続けてパレットではすば歯車を選び、そのシャフトをクリック → はすば歯車が置かれる', async ({
+    page,
+  }) => {
+    await placeAtOrigin(page);
+    const shaft = Object.values((await getScene(page)).shafts)[0];
+    if (shaft === undefined) throw new Error('置かれていない');
+    // 置いたシャフトが選ばれているので、そのままシャフトの上に置ける
+    expect(await getSelection(page)).toEqual([shaft.id]);
+    await page.getByTestId('palette-kind-helical').click();
+    await expect(page.getByTestId('palette-kind-helical')).toHaveAttribute('aria-checked', 'true');
+    // シャフトの原点から 4 mm の点 → 中・20 歯（歯幅 8）の中心が 4 に来る offset 0
+    const origin = originOf(await getScene(page), shaft.id);
+    const p = await project(page, [origin[0], origin[1] + 4, origin[2]]);
+    await page.mouse.move(p.x, p.y);
+    await expect
+      .poll(() => page.evaluate(() => window.__gearSim?.getShaftGhost()))
+      .toMatchObject({ shaftId: shaft.id, kind: 'helical', blocked: false });
+    await page.mouse.click(p.x, p.y);
+    await expect.poll(async () => Object.values((await getScene(page)).gears)).toHaveLength(1);
+    const gear = Object.values((await getScene(page)).gears)[0];
+    expect(gear).toMatchObject({
+      kind: 'helical',
+      shaftId: shaft.id,
+      size: 'M',
+      teeth: 20,
+      offset: 0,
+    });
   });
 
   test('ドラッグ中に R を 1 回押してから離す → 向きは x', async ({ page }) => {
@@ -158,14 +186,24 @@ test.describe('パレットから起点を置く', () => {
     expect(shafts[0]?.placement).toMatchObject({ kind: 'root', axis: 'x' });
   });
 
-  test('パレットで「小」を選んでから置く → 小・30 歯', async ({ page }) => {
+  test('パレットで「小」を選んでから置く → 小・30 歯が床にめり込まない高さ 30 に置かれ、シャフトの上の仮の歯車は小', async ({
+    page,
+  }) => {
     await expect(page.getByTestId('palette-size-M')).toHaveAttribute('aria-checked', 'true');
     await page.getByTestId('palette-size-S').click();
     await expect(page.getByTestId('palette-size-S')).toHaveAttribute('aria-checked', 'true');
     await placeAtOrigin(page);
-    const gears = Object.values((await getScene(page)).gears);
-    expect(gears).toHaveLength(1);
-    expect(gears[0]).toMatchObject({ size: 'S', teeth: 30 });
+    const scene = await getScene(page);
+    expect(Object.keys(scene.gears)).toHaveLength(0);
+    const shaft = Object.values(scene.shafts)[0];
+    if (shaft === undefined) throw new Error('置かれていない');
+    expect(originOf(scene, shaft.id)[1]).toBe(30);
+    const origin = originOf(scene, shaft.id);
+    const p = await project(page, [origin[0], origin[1] + 2, origin[2]]);
+    await page.mouse.move(p.x, p.y);
+    await expect
+      .poll(() => page.evaluate(() => window.__gearSim?.getShaftGhost()))
+      .toMatchObject({ shaftId: shaft.id, kind: 'spur', size: 'S', blocked: false });
   });
 
   test('ドラッグ中に Esc → 何も増えない', async ({ page }) => {
@@ -186,20 +224,18 @@ test.describe('パレットから起点を置く', () => {
     expect(await getScene(page)).toEqual(EMPTY);
   });
 
-  test('1 本置いた後、その歯車の中心の真下へもう 1 本 → 干渉するので増えない', async ({ page }) => {
+  test('1 本置いた後、そのシャフトの真下へもう 1 本 → 干渉するので増えない', async ({ page }) => {
     await placeAtOrigin(page);
-    const gear = Object.values((await getScene(page)).gears)[0];
-    if (gear === undefined) throw new Error('置かれていない');
-    const center = centerOf(await getLayout(page), gear.id);
-    await dragFromPalette(page, await project(page, [center[0], 0, center[2]]));
-    const after = await getScene(page);
-    expect(Object.keys(after.shafts)).toHaveLength(1);
-    expect(Object.keys(after.gears)).toHaveLength(1);
+    const shaft = Object.values((await getScene(page)).shafts)[0];
+    if (shaft === undefined) throw new Error('置かれていない');
+    const origin = originOf(await getScene(page), shaft.id);
+    await dragFromPalette(page, await project(page, [origin[0], 0, origin[2]]));
+    expect(Object.keys((await getScene(page)).shafts)).toHaveLength(1);
   });
 
-  test('置いた後 Ctrl+Z → シャフトも歯車も無くなる', async ({ page }) => {
+  test('置いた後 Ctrl+Z → シャフトが無くなる', async ({ page }) => {
     await placeAtOrigin(page);
-    expect(Object.keys((await getScene(page)).gears)).toHaveLength(1);
+    expect(Object.keys((await getScene(page)).shafts)).toHaveLength(1);
     await page.keyboard.press('Control+z');
     expect(await getScene(page)).toEqual(EMPTY);
   });
