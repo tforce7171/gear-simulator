@@ -6,7 +6,8 @@ import { initialMotionState } from '../core/kinematics/motion';
 import { resolveLayout } from '../core/layout/resolve';
 import { GEAR_KIND_LIST } from '../core/scene/gear-shape';
 import type { GearKind, Scene } from '../core/scene/types';
-import { createSceneSync } from './sync';
+import { MOTOR_GAP, MOTOR_PARTS, type MotorPart } from './motor';
+import { createSceneSync, motorCenter } from './sync';
 import type { PartKind } from './themes';
 
 // すべての種類に同じ材質（S2-05 で歯車の材質は種類ごとになった）
@@ -34,6 +35,14 @@ function findTarget(root: Object3D, id: string): Object3D | undefined {
 // キャリア・ラック・固定具の基の材質（S3-05）
 function allParts(material: MeshStandardMaterial): Record<PartKind, MeshStandardMaterial> {
   return { carrier: material, rack: material, anchor: material };
+}
+
+// モーターの部分の基の材質（S4-07）
+function allMotorParts(material: MeshStandardMaterial): Record<MotorPart, MeshStandardMaterial> {
+  return Object.fromEntries(MOTOR_PARTS.map((part) => [part, material])) as Record<
+    MotorPart,
+    MeshStandardMaterial
+  >;
 }
 
 function materialOf(root: Object3D, id: string): MeshStandardMaterial {
@@ -233,7 +242,7 @@ describe('テーマの材質の差し替え（S1-24）', () => {
       gear: allKinds(gear),
       part: allParts(new MeshStandardMaterial()),
       shaft: new MeshStandardMaterial(),
-      motor: new MeshStandardMaterial(),
+      motor: allMotorParts(new MeshStandardMaterial()),
     });
     expect(materialOf(sync.root, 'gear_1')).toBe(gear);
     expect(disposed).toBe(1);
@@ -264,7 +273,7 @@ describe('テーマの材質の差し替え（S1-24）', () => {
       gear: allKinds(brass, { worm: steel, wormWheel: bronze }),
       part: allParts(new MeshStandardMaterial()),
       shaft: new MeshStandardMaterial(),
-      motor: new MeshStandardMaterial(),
+      motor: allMotorParts(new MeshStandardMaterial()),
     });
     expect(materialOf(sync.root, 'gear_w')).toBe(steel);
     expect(materialOf(sync.root, 'gear_h')).toBe(bronze);
@@ -276,7 +285,7 @@ describe('テーマの材質の差し替え（S1-24）', () => {
       gear: allKinds(new MeshStandardMaterial()),
       part: allParts(new MeshStandardMaterial()),
       shaft: new MeshStandardMaterial(),
-      motor: new MeshStandardMaterial(),
+      motor: allMotorParts(new MeshStandardMaterial()),
     });
     expect(disposed).toBe(3);
   });
@@ -295,7 +304,7 @@ describe('テーマの材質の差し替え（S1-24）', () => {
       gear: allKinds(brass),
       part: { carrier: steel, rack: brass, anchor: iron },
       shaft,
-      motor: new MeshStandardMaterial(),
+      motor: allMotorParts(new MeshStandardMaterial()),
     });
     expect(materialOf(sync.root, 'carrier_k')).toBe(steel);
     expect(materialOf(sync.root, 'rack_r')).toBe(brass);
@@ -319,5 +328,74 @@ describe('テーマの材質の差し替え（S1-24）', () => {
     });
     expect(meshes.length).toBeGreaterThan(0);
     for (const m of meshes) expect(m.castShadow).toBe(true);
+  });
+});
+
+// S4-07: モーターの形と継手の回転
+describe('モーターの形（S4-07）', () => {
+  const layout = resolveLayout(demoScene);
+  const motion = initialMotionState();
+  const meshesOf = (root: Object3D, id: string): Mesh[] => {
+    const target = findTarget(root, id);
+    if (target === undefined) throw new Error(`${id} が無い`);
+    const meshes: Mesh[] = [];
+    target.traverse((o) => {
+      if ((o as Mesh).isMesh === true) meshes.push(o as Mesh);
+    });
+    return meshes;
+  };
+
+  it('箱 1 つでなく、部分（本体・端の蓋・端子・継手・線）のメッシュを組み合わせて描く', () => {
+    const sync = createSceneSync();
+    sync.sync(demoScene, layout);
+    expect(meshesOf(sync.root, 'motor_1').length).toBeGreaterThanOrEqual(MOTOR_PARTS.length);
+  });
+
+  it('モーターの本体の中心は、シャフトの負の端からすき間 + 長さの半分だけ外（長さ = 直径 × 1.3）', () => {
+    const sync = createSceneSync();
+    sync.sync(demoScene, layout);
+    const target = findTarget(sync.root, 'motor_1');
+    const shaft = layout.shafts.shaft_1;
+    if (target === undefined || shaft === undefined) throw new Error('部品が無い');
+    const center = motorCenter(shaft, 'S');
+    expect(target.position.toArray()).toEqual(center);
+    const w = shaft.axis === 'x' ? 0 : shaft.axis === 'y' ? 1 : 2;
+    expect(center[w] - shaft.origin[w]).toBeCloseTo(shaft.span[0] - MOTOR_GAP - (6 * 1.3) / 2, 9);
+  });
+
+  it('継手はシャフトの回転角だけ回り、本体は回らない', () => {
+    const sync = createSceneSync();
+    sync.sync(demoScene, layout);
+    const target = findTarget(sync.root, 'motor_1');
+    if (target === undefined) throw new Error('motor_1 が無い');
+    const [housing, spin] = target.children;
+    if (housing === undefined || spin === undefined) throw new Error('部分が無い');
+    const before = sync.version();
+    sync.update({ ...motion, angles: { shaft_1: 0.7, shaft_2: 0 } }, layout, 0);
+    expect(spin.rotation.z).toBeCloseTo(0.7, 12);
+    expect(housing.rotation.z).toBe(0);
+    expect(sync.version()).toBeGreaterThan(before); // 影を描き直す
+    sync.update({ ...motion, angles: { shaft_1: 1.9, shaft_2: 0 } }, layout, 0);
+    expect(spin.rotation.z).toBeCloseTo(1.9, 12);
+  });
+
+  it('部分ごとにテーマの材質が入り、シャフトを選ぶとすべての部分が光る', () => {
+    const sync = createSceneSync();
+    sync.sync(demoScene, layout);
+    const parts = Object.fromEntries(
+      MOTOR_PARTS.map((part, i) => [part, new MeshStandardMaterial({ color: 0x101010 * (i + 1) })]),
+    ) as Record<MotorPart, MeshStandardMaterial>;
+    sync.setBaseMaterials({
+      gear: allKinds(new MeshStandardMaterial()),
+      part: allParts(new MeshStandardMaterial()),
+      shaft: new MeshStandardMaterial(),
+      motor: parts,
+    });
+    const used = new Set(meshesOf(sync.root, 'motor_1').map((m) => m.material));
+    for (const part of MOTOR_PARTS) expect(used.has(parts[part]), part).toBe(true);
+    sync.setHighlight({ selected: 'shaft_1', hovered: null });
+    for (const mesh of meshesOf(sync.root, 'motor_1')) {
+      expect((mesh.material as MeshStandardMaterial).emissive.getHex()).not.toBe(0);
+    }
   });
 });

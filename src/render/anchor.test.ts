@@ -13,7 +13,8 @@ import {
   ANCHOR_FOOT_THICKNESS,
   anchorFrame,
 } from './anchor';
-import { createSceneSync, MOTOR_BOX } from './sync';
+import { MOTOR_GAP, motorLength } from './motor';
+import { createSceneSync } from './sync';
 
 // S3-01: 固定具の見た目の配置
 
@@ -32,7 +33,7 @@ describe('anchorFrame', () => {
     });
   });
 
-  it('モーターがあれば、台座はモーターの箱のさらに外', () => {
+  it('モーターがあれば、台座はモーターの本体のさらに外', () => {
     const frame = anchorFrame(vertical, 8, 1);
     expect(frame.baseCenter[1]).toBeCloseTo(35 - 4 - 1 - 8 - 1 - ANCHOR_BASE_THICKNESS / 2, DIGITS);
   });
@@ -95,7 +96,7 @@ describe('SceneSync の固定具', () => {
     expect(anchorGroup(sync.root, 'anchor_1')).toBeUndefined();
   });
 
-  it('モーターのあるシャフトでは、台座をモーターの箱の外に置く', () => {
+  it('モーターのあるシャフトでは、台座をモーターの本体（長さ = 直径 × 1.3。S4-07）の外に置く', () => {
     const result = applyCommand(
       pair,
       { type: 'addAnchor', shaftId: 'shaft_a' },
@@ -108,7 +109,9 @@ describe('SceneSync の固定具', () => {
     const base = anchorGroup(sync.root, 'anchor_1')?.children[0];
     const shaft = layout.shafts.shaft_a;
     if (shaft === undefined || base === undefined) throw new Error('部品が無い');
-    expect(base.position.toArray()).toEqual(anchorFrame(shaft, MOTOR_BOX.M, 1).baseCenter);
+    expect(base.position.toArray()).toEqual(
+      anchorFrame(shaft, motorLength('M'), MOTOR_GAP).baseCenter,
+    );
   });
 
   it('固定したシャフトがロックしていれば、固定具もロックの材質（発光が赤）', () => {

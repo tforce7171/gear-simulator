@@ -261,8 +261,12 @@ test('モーターをクリック → そのシャフトが選ばれる。select
   });
   const shaft = (await getLayout(page)).shafts[SHAFT_C];
   if (shaft === undefined) throw new Error('C のシャフトが無い');
-  // シャフトの下の端からモーターの箱（一辺 8、すき間 1）の中心まで 5 mm
-  const motorCenter: Vec3 = [shaft.origin[0], shaft.origin[1] + shaft.span[0] - 5, shaft.origin[2]];
+  // シャフトの下の端からモーターの本体（S4-07。直径 8・長さ 8 × 1.3、すき間 1）の中心まで 1 + 5.2 mm
+  const motorCenter: Vec3 = [
+    shaft.origin[0],
+    shaft.origin[1] + shaft.span[0] - 6.2,
+    shaft.origin[2],
+  ];
   const p = await project(page, motorCenter);
   const hit = await page.evaluate(({ x, y }) => window.__gearSim?.pick(x, y), p);
   expect(hit?.kind).toBe('motor');
