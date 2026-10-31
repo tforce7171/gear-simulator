@@ -207,6 +207,11 @@ export function createCameraInput(deps: CameraInputDeps): CameraInput {
     const [px, py, pz] = pose.position;
     const [tx, ty, tz] = pose.target;
     void controls.setLookAt(px, py, pz, tx, ty, tz, animate);
+    // rotate() は方位角を正規化せずに足し込む（ドラッグや眺めるモードで 3π などになる）。setLookAt は
+    // 移り先の方位角を [−π, π] で作り直すので、そのまま移ると何周も回り込む。移り先を決めたあとで、今の
+    // 方位角を移り先に近い周へそろえる（S4-01）。setLookAt の前に呼ぶと、ちょうど ±π の向きで移り先が
+    // 反対の端になって 1 周回ることがある。lookFrom（fitAll・fitTo・dollyToPoint）もここを通る
+    if (animate) controls.normalizeRotations();
     if (!animate) controls.update(0);
   }
   setPose(deps.initialPose);

@@ -1,7 +1,7 @@
 ---
 id: S4-01
 title: 視点を回したあとのズームでカメラが回り込む不具合を直す
-status: todo
+status: doing
 depends: []
 ---
 
