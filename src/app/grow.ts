@@ -1,32 +1,30 @@
-import { DEFAULT_TEETH, GEAR_SIZES } from '../core/constants';
-import type { Command } from '../core/edit/commands';
+import { AXIAL_SNAP, DEFAULT_TEETH, GEAR_SIZES } from '../core/constants';
+import { applyCommand, type Command } from '../core/edit/commands';
+import { sectionWidth, teethRange } from '../core/geometry/dimensions';
 import { skewSign } from '../core/geometry/skew';
 import { rackSign } from '../core/kinematics/mesh-coefficients';
 import {
   type GrowCandidate,
+  isPaletteGearKind,
   listGrowCandidates,
   listRackCandidates,
   type PaletteKind,
 } from '../core/layout/candidates';
 import { resolveLayout } from '../core/layout/resolve';
-import type { Gear, Scene, SizeKey } from '../core/scene/types';
+import { gearCenter } from '../core/scene/gear-center';
+import { assertNever, makeGear, newGearShape } from '../core/scene/gear-shape';
+import type { Gear, GearKind, Scene, ShaftId, SizeKey } from '../core/scene/types';
 import type { CandidateSpec } from '../render/candidates';
 
 // 歯車を生やす（S1-18）。純粋関数のみ。選んだ歯車の候補を列挙し、候補を編集コマンドに変換する
 
-// 'perimeter' | 'bevel' | 'skew' | 'enclose' | 'planetary' | 'rack' | 'rackPinion' | 'coaxial'
-// （S1-10、S2-02、S2-03、S3-02、S3-03、S3-04）
+// 'perimeter' | 'bevel' | 'skew' | 'enclose' | 'planetary' | 'rack' | 'rackPinion'
+// （S1-10、S2-02、S2-03、S3-02、S3-03、S3-04。同じ軸の 'coaxial' は S4-03 で廃止し、シャフトの上に置く方式にした）
 export type CandidateKind = GrowCandidate['kind'];
 
-// 生やす歯車の大きさと歯数。外周は親と同じ大きさ（同じ大きさ同士しかかみ合わない）、
-// 同じ軸はパレットで選んでいる大きさ。歯数はどちらも DEFAULT_TEETH[大きさ]
-export function growSpec(
-  parent: Gear,
-  kind: CandidateKind,
-  paletteSize: SizeKey,
-): { size: SizeKey; teeth: number } {
-  const size = kind === 'coaxial' ? paletteSize : parent.size;
-  return { size, teeth: DEFAULT_TEETH[size] };
+// 生やす歯車の大きさと歯数。親と同じ大きさ（同じ大きさ同士しかかみ合わない）で、歯数は DEFAULT_TEETH[大きさ]
+export function growSpec(parent: Gear): { size: SizeKey; teeth: number } {
+  return { size: parent.size, teeth: DEFAULT_TEETH[parent.size] };
 }
 
 // 選択中の歯車の候補。選択が無い・歯車でない（シャフト）なら []
@@ -36,7 +34,6 @@ export function growSpec(
 export function candidatesFor(
   scene: Scene,
   selection: string | null,
-  paletteSize: SizeKey,
   paletteKind: PaletteKind,
 ): GrowCandidate[] {
   if (selection === null) return [];
@@ -47,11 +44,8 @@ export function candidatesFor(
   }
   const parent = scene.gears[selection];
   if (parent === undefined) return [];
-  const coaxial = growSpec(parent, 'coaxial', paletteSize);
   return listGrowCandidates(scene, parent.id, {
-    perimeterTeeth: growSpec(parent, 'perimeter', paletteSize).teeth,
-    coaxialSize: coaxial.size,
-    coaxialTeeth: coaxial.teeth,
+    perimeterTeeth: growSpec(parent).teeth,
     kind: paletteKind,
   });
 }
@@ -116,15 +110,7 @@ export function growCommand(candidate: GrowCandidate): Command {
       teeth: candidate.teeth,
     };
   }
-  return {
-    type: 'growGear',
-    mode: 'coaxial',
-    shaftId: candidate.shaftId,
-    offset: candidate.offset,
-    size: candidate.size,
-    teeth: candidate.teeth,
-    kind: candidate.shape.kind,
-  };
+  return assertNever(candidate);
 }
 
 // 候補の仮の歯車の見た目（render/candidates.ts）。外周は親とかみ合う向きに、同じ軸は親と一緒に回す
@@ -175,15 +161,6 @@ export function candidateSpec(scene: Scene, candidate: GrowCandidate): Candidate
     center: candidate.center,
     axis: candidate.axis,
   };
-  if (candidate.kind === 'coaxial') {
-    return {
-      ...common,
-      phase: 0,
-      followShaftId: candidate.shaftId,
-      followRatio: 1,
-      withShaft: false,
-    };
-  }
   const parent = scene.gears[candidate.parentGearId];
   if (parent === undefined) throw new Error(`candidateSpec: no gear ${candidate.parentGearId}`);
   if (candidate.kind === 'planetary') {
@@ -222,5 +199,87 @@ export function candidateSpec(scene: Scene, candidate: GrowCandidate): Candidate
     followShaftId: parent.shaftId,
     followRatio,
     withShaft: true,
+  };
+}
+
+// シャフトの上に置く仮の歯車（S4-03）。パレットで選んだ種類・大きさの歯車を、ポインターの位置に合わせて軸に沿って置く
+export interface ShaftGhost {
+  readonly shaftId: ShaftId;
+  readonly kind: GearKind;
+  readonly size: SizeKey;
+  readonly teeth: number;
+  readonly offset: number; // 歯幅の負側の面の位置。AXIAL_SNAP の倍数
+  // 同じシャフトのほかの歯車やほかの部品と重なる（コマンドが拒否する）。赤く表示し、置けない
+  readonly blocked: boolean;
+  readonly command: Command; // growGear（coaxial）
+  readonly spec: CandidateSpec; // 見た目（生やす候補と同じ描き方。blocked なら赤）
+}
+
+// シャフトの上の位置 along に置く仮の歯車の offset（shaftGhostAt と同じ。ポインターが動くたびに、仮の歯車を
+// 作り直すか決めるのに使う）
+export function shaftGhostOffset(
+  span: readonly [number, number],
+  along: number,
+  kind: GearKind,
+  size: SizeKey,
+): number {
+  const t = Math.min(Math.max(along, span[0]), span[1]);
+  const width = sectionWidth({ kind, size });
+  return Math.round((t - width / 2) / AXIAL_SNAP) * AXIAL_SNAP + 0;
+}
+
+// シャフトの上の位置 along（シャフトの原点から軸方向。mm）に、パレットの種類・大きさの歯車を置くときの仮の歯車。
+// 歯車の中心が along に来るように offset を AXIAL_SNAP の倍数に丸める。along はシャフトの範囲に収める（ポインターが
+// 仮の歯車の上にあるあいだ、シャフトの端より先へ追いかけていかないように）。
+// 歯数は DEFAULT_TEETH[大きさ] を種類の範囲に収めたもの（ウォームは 1 条、内歯車は INTERNAL_MIN_TEETH 以上）。
+// パレットがラック・遊星（歯車の種類でない）・シャフトが無い・置かれていなければ null
+export function shaftGhostAt(
+  scene: Scene,
+  shaftId: ShaftId,
+  along: number,
+  paletteSize: SizeKey,
+  paletteKind: PaletteKind,
+): ShaftGhost | null {
+  if (!isPaletteGearKind(paletteKind) || !Number.isFinite(along)) return null;
+  const placed = resolveLayout(scene).shafts[shaftId];
+  if (placed === undefined) return null;
+  const kind = paletteKind;
+  const size = paletteSize;
+  const range = teethRange(kind, size);
+  const teeth = Math.min(Math.max(DEFAULT_TEETH[size], range.min), range.max);
+  const offset = shaftGhostOffset(placed.span, along, kind, size);
+  const command: Command = {
+    type: 'growGear',
+    mode: 'coaxial',
+    shaftId,
+    offset,
+    size,
+    teeth,
+    kind,
+  };
+  const result = applyCommand(scene, command, { ids: () => '__ghost_gear' });
+  if (!result.ok && result.error.code !== 'notAllowed') return null;
+  const shape = newGearShape(kind);
+  const gear = makeGear({ id: '__ghost_gear', shaftId, size, teeth, offset }, shape);
+  return {
+    shaftId,
+    kind,
+    size,
+    teeth,
+    offset,
+    blocked: !result.ok,
+    command,
+    spec: {
+      shape,
+      size,
+      teeth: gear.teeth,
+      center: gearCenter(placed.origin, placed.axis, gear),
+      axis: placed.axis,
+      phase: 0,
+      followShaftId: shaftId,
+      followRatio: 1,
+      withShaft: false,
+      blocked: !result.ok,
+    },
   };
 }

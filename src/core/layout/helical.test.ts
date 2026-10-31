@@ -143,7 +143,7 @@ describe('三角形', () => {
 });
 
 describe('候補（S1-10 の拡張）', () => {
-  const spec = { perimeterTeeth: 20, coaxialSize: 'M', coaxialTeeth: 20 } as const;
+  const spec = { perimeterTeeth: 20 } as const;
   // helical-pair の A だけ（B を除く）
   const onlyA: Scene = {
     shafts: { shaft_a: helicalPair.shafts.shaft_a as Scene['shafts'][string] },
@@ -155,8 +155,6 @@ describe('候補（S1-10 の拡張）', () => {
   };
   const perimeters = (list: readonly GrowCandidate[]) =>
     list.filter((c): c is Extract<GrowCandidate, { kind: 'perimeter' }> => c.kind === 'perimeter');
-  const coaxials = (list: readonly GrowCandidate[]) =>
-    list.filter((c): c is Extract<GrowCandidate, { kind: 'coaxial' }> => c.kind === 'coaxial');
 
   it("中・20 歯 'right' の A の外周の候補は、すべて helical・'left'・大きさ M", () => {
     const list = perimeters(listGrowCandidates(onlyA, 'gear_a', { ...spec, kind: 'helical' }));
@@ -190,22 +188,18 @@ describe('候補（S1-10 の拡張）', () => {
     expect(layout.interferences).toEqual([]);
   });
 
-  it("同じ軸の候補で種類 'helical' を渡すと hand 'right' の歯車になる", () => {
-    const list = coaxials(listGrowCandidates(onlyA, 'gear_a', { ...spec, kind: 'helical' }));
-    expect(list).toHaveLength(2);
-    for (const c of list) expect(c.shape).toEqual({ kind: 'helical', hand: 'right' });
-    const first = list[0];
-    if (first === undefined) throw new Error('候補が無い');
+  // S4-03 で同じ軸の候補は廃止した。シャフトの上に置くコマンド（growGear の coaxial）の種類の扱いを確かめる
+  it("シャフトの上に種類 'helical' で置くと hand 'right' の歯車になる", () => {
     const result = applyCommand(
       onlyA,
       {
         type: 'growGear',
         mode: 'coaxial',
-        shaftId: first.shaftId,
-        offset: first.offset,
-        size: first.size,
-        teeth: first.teeth,
-        kind: first.shape.kind,
+        shaftId: 'shaft_a',
+        offset: -8,
+        size: 'M',
+        teeth: 20,
+        kind: 'helical',
       },
       { ids: createSequentialIdGenerator() },
     );
@@ -216,9 +210,22 @@ describe('候補（S1-10 の拡張）', () => {
     });
   });
 
-  it("同じ軸の候補で種類 'spur' を渡すと平歯車（段階 1 と同じ）", () => {
-    const list = coaxials(listGrowCandidates(onlyA, 'gear_a', { ...spec, kind: 'spur' }));
-    for (const c of list) expect(c.shape).toEqual({ kind: 'spur' });
+  it("シャフトの上に種類 'spur' で置くと平歯車（段階 1 と同じ）", () => {
+    const result = applyCommand(
+      onlyA,
+      {
+        type: 'growGear',
+        mode: 'coaxial',
+        shaftId: 'shaft_a',
+        offset: -8,
+        size: 'M',
+        teeth: 20,
+        kind: 'spur',
+      },
+      { ids: createSequentialIdGenerator() },
+    );
+    if (!result.ok) throw new Error(result.error.message);
+    expect(result.scene.gears[result.created[0] as string]).toMatchObject({ kind: 'spur' });
   });
 
   it('平歯車の外周の候補は平歯車のまま', () => {

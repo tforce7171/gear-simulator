@@ -6,7 +6,8 @@
         "kind": "root",
         "origin": [0, 80, 0],
         "axis": "x"
-      }
+      },
+      "span": [-4, 36]
     },
     "shaft_h": {
       "id": "shaft_h",
@@ -16,7 +17,8 @@
         "childGearId": "gear_h",
         "axisStep": 2,
         "side": -1
-      }
+      },
+      "span": [-4, 12]
     }
   },
   "gears": {

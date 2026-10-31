@@ -33,12 +33,18 @@ export const en = {
   // Gear type to add (S2-05)
   'palette.kind': 'Gear type to add',
   'palette.kind.hint':
-    'Only candidates that make this type are shown. Same-shaft candidates use this type too',
+    'Select a shaft and hover over it to place this type anywhere on the shaft. Select a gear to see the candidates around it that make this type',
   // Note when the selected part cannot mesh with the chosen type (S4-02). {kinds} joins the type names
   'palette.kind.note': 'This gear meshes with: {kinds}',
   'palette.kind.note.rack': 'This rack meshes with: {kinds}',
-  'palette.kind.note.none': 'Only same-shaft gears can be added to this gear',
+  'palette.kind.note.none':
+    'Nothing can be added around this gear. Select a shaft to place gears on it',
   'palette.kind.note.separator': ', ',
+  // Note while the palette has a rack or planetary set (S4-03. They are not placed on a shaft)
+  'palette.kind.note.aroundGear':
+    'Racks and planetary sets are placed from the candidates around a gear',
+  // When a gear cannot be placed on a shaft (S4-03)
+  'shaftPlace.blocked': 'It overlaps another part and cannot be placed here',
   'gearKind.spur': 'Spur gear',
   'gearKind.helical': 'Helical gear',
   'gearKind.bevel': 'Bevel gear',
@@ -57,6 +63,11 @@ export const en = {
   // Property panel contents (S1-20)
   'properties.gear': 'Gear',
   'properties.shaft': 'Shaft',
+  // Shaft length (S4-03)
+  'properties.shaft.length': 'Length',
+  'properties.shaft.length.value': '{length} mm',
+  'properties.shaft.length.hint':
+    'Drag the knobs at both ends to stretch or shrink it in 4 mm steps. Hover over the shaft and click to place the palette type there',
   'properties.kind': 'Type',
   // Per-type display (S2-05)
   'properties.hand': 'Helix hand',

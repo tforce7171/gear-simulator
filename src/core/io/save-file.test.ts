@@ -1,5 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
+import { gearWidth } from '../geometry/dimensions';
+import { requiredShaftSpans, resolveLayout, withShaftSpans } from '../layout/resolve';
 import type { Scene } from '../scene/types';
 import {
   CURRENT_SAVE_VERSION,
@@ -13,12 +15,18 @@ import {
   toSaveFile,
 } from './save-file';
 
+// シャフトの範囲（S4-03）は、小（歯幅 4）の歯車の両面から SHAFT_END_MARGIN ずつ
 const sceneA: Scene = {
   shafts: {
-    shaft_1: { id: 'shaft_1', placement: { kind: 'root', origin: [0, 20, 0], axis: 'y' } },
+    shaft_1: {
+      id: 'shaft_1',
+      placement: { kind: 'root', origin: [0, 20, 0], axis: 'y' },
+      span: [-4, 8],
+    },
     shaft_2: {
       id: 'shaft_2',
       placement: { kind: 'mesh', parentGearId: 'gear_1', childGearId: 'gear_2', angle: 0 },
+      span: [-4, 8],
     },
   },
   gears: {
@@ -34,10 +42,16 @@ const sceneA: Scene = {
 };
 
 describe('toSaveFile', () => {
-  it('format・version 3（S3-05）・同じシーンの参照', () => {
+  it('format・version 4（S4-03）・同じシーンの参照', () => {
     const file = toSaveFile(sceneA);
-    expect(file).toEqual({ format: 'gear-simulator', version: 3, scene: sceneA });
+    expect(file).toEqual({ format: 'gear-simulator', version: 4, scene: sceneA });
     expect(file.scene).toBe(sceneA);
+  });
+
+  it('範囲を省いたシャフトには、載っている部品から求めた範囲を入れて書く（S4-03）', () => {
+    const { span: _s1, ...shaft1 } = sceneA.shafts.shaft_1 as Scene['shafts'][string];
+    const bare: Scene = { ...sceneA, shafts: { ...sceneA.shafts, shaft_1: shaft1 } };
+    expect(toSaveFile(bare).scene).toEqual(sceneA);
   });
 });
 
@@ -61,7 +75,7 @@ describe('parseSaveFileObject', () => {
   const bad: Array<[string, unknown]> = [
     ['undefined', undefined],
     ["format: 'other'", { format: 'other' }],
-    ['version: 4', { format: 'gear-simulator', version: 4, scene: sceneA }],
+    ['version: 5', { format: 'gear-simulator', version: 5, scene: sceneA }],
     ['scene: { shafts: 1 }', { format: 'gear-simulator', version: 1, scene: { shafts: 1 } }],
     [
       '歯数 81 の歯車',
@@ -91,12 +105,21 @@ describe('parseSaveFileObject', () => {
 
 const scene3: Scene = {
   shafts: {
-    shaft_1: { id: 'shaft_1', placement: { kind: 'root', origin: [0, 20, 0], axis: 'y' } },
+    shaft_1: {
+      id: 'shaft_1',
+      placement: { kind: 'root', origin: [0, 20, 0], axis: 'y' },
+      span: [-4, 8],
+    },
     shaft_2: {
       id: 'shaft_2',
       placement: { kind: 'mesh', parentGearId: 'gear_1', childGearId: 'gear_2', angle: 0.5 },
+      span: [-4, 8],
     },
-    shaft_3: { id: 'shaft_3', placement: { kind: 'detached', origin: [40, 8, -4], axis: 'x' } },
+    shaft_3: {
+      id: 'shaft_3',
+      placement: { kind: 'detached', origin: [40, 8, -4], axis: 'x' },
+      span: [4, 20],
+    },
   },
   gears: {
     gear_1: { id: 'gear_1', kind: 'spur', shaftId: 'shaft_1', size: 'S', teeth: 12, offset: 0 },
@@ -313,9 +336,9 @@ describe('migrate', () => {
     expect(result).toEqual({ ok: false, error: { code: 'unsupported-version' } });
   });
 
-  it('移行は 1 → 2（S2-05）と 2 → 3（S3-05）で、最新は 3', () => {
-    expect(Object.keys(MIGRATIONS)).toEqual(['1', '2']);
-    expect(CURRENT_SAVE_VERSION).toBe(3);
+  it('移行は 1 → 2（S2-05）、2 → 3（S3-05）、3 → 4（S4-03）で、最新は 4', () => {
+    expect(Object.keys(MIGRATIONS)).toEqual(['1', '2', '3']);
+    expect(CURRENT_SAVE_VERSION).toBe(4);
   });
 
   it('1 → 2 の移行は中身をそのままにする（version は migrate が書き換える）', () => {
@@ -327,10 +350,10 @@ describe('migrate', () => {
     const step = MIGRATIONS[1];
     expect(step).toBeDefined();
     expect(step?.(raw)).toEqual(raw);
-    // 続けて 2 → 3（S3-05）が anchors・carriers・racks を足す
+    // 続けて 2 → 3（S3-05）が anchors・carriers・racks を足す（シャフトが無いので 3 → 4 は何も足さない）
     expect(migrate(raw)).toEqual({
       ok: true,
-      raw: { ...raw, version: 3, scene: { ...raw.scene, anchors: {}, carriers: {}, racks: {} } },
+      raw: { ...raw, version: 4, scene: { ...raw.scene, anchors: {}, carriers: {}, racks: {} } },
       from: 1,
     });
   });
@@ -387,14 +410,15 @@ describe('version 1 → 2 の移行（S2-05）', () => {
     expect(Object.keys(v1.scene.motors)).toHaveLength(1);
   });
 
-  // 2 → 3 の移行（S3-05）が anchors・carriers・racks を {} で足す
-  it('parseSaveFile → ok、migratedFrom === 1、file.version === 3、scene は元のまま（anchors などは {}）', () => {
+  // 2 → 3 の移行（S3-05）が anchors・carriers・racks を {} で足し、3 → 4（S4-03）がシャフトの範囲を足す
+  const migratedV1 = withShaftSpans({ ...v1.scene, anchors: {}, carriers: {}, racks: {} });
+  it('parseSaveFile → ok、migratedFrom === 1、file.version === 4、scene は元のまま（anchors などは {}、シャフトに範囲）', () => {
     const result = parseSaveFile(v1Text);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.migratedFrom).toBe(1);
-    expect(result.file.version).toBe(3);
-    expect(result.file.scene).toEqual({ ...v1.scene, anchors: {}, carriers: {}, racks: {} });
+    expect(result.file.version).toBe(4);
+    expect(result.file.scene).toEqual(migratedV1);
   });
 
   it('IndexedDB から読んだ値（parseSaveFileObject）も同じ', () => {
@@ -402,8 +426,8 @@ describe('version 1 → 2 の移行（S2-05）', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.migratedFrom).toBe(1);
-    expect(result.file.version).toBe(3);
-    expect(result.file.scene).toEqual({ ...v1.scene, anchors: {}, carriers: {}, racks: {} });
+    expect(result.file.version).toBe(4);
+    expect(result.file.scene).toEqual(migratedV1);
   });
 });
 
@@ -429,7 +453,7 @@ describe('段階 2 の部品の往復（S2-05）', () => {
     const result = parseSaveFile(text);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.file).toEqual({ format: 'gear-simulator', version: 3, scene: showcase });
+    expect(result.file).toEqual({ format: 'gear-simulator', version: 4, scene: showcase });
     expect(result.migratedFrom).toBeNull();
   });
 });
@@ -476,8 +500,8 @@ describe('version 2 の検証（S2-05）', () => {
     });
   }
 
-  it('version 4 のファイル → unsupported-version（S3-05 で最新は 3）', () => {
-    const text = JSON.stringify({ format: 'gear-simulator', version: 4, scene: helical });
+  it('version 5 のファイル → unsupported-version（S4-03 で最新は 4）', () => {
+    const text = JSON.stringify({ format: 'gear-simulator', version: 5, scene: helical });
     expect(parseSaveFile(text)).toEqual({ ok: false, error: { code: 'unsupported-version' } });
   });
 
@@ -494,28 +518,33 @@ describe('version 2 → 3 の移行（S3-05）', () => {
   const v2Url = new URL('./save-file-v2.json', import.meta.url);
   const v2 = readJson(v2Url) as { version: number; scene: Record<string, unknown> };
 
-  it('version 2 のファイル → ok、migratedFrom === 2、version === 3、anchors・carriers・racks が {}、他は元と同じ', () => {
+  it('version 2 のファイル → ok、migratedFrom === 2、version === 4、anchors・carriers・racks が {}、他は元と同じ（シャフトに範囲）', () => {
     expect(v2.version).toBe(2);
     expect(v2.scene.anchors).toBeUndefined();
     const result = parseSaveFile(readFileSync(v2Url, 'utf8'));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.migratedFrom).toBe(2);
-    expect(result.file.version).toBe(3);
+    expect(result.file.version).toBe(4);
     const { anchors, carriers, racks, ...rest } = result.file.scene;
     expect(anchors).toEqual({});
     expect(carriers).toEqual({});
     expect(racks).toEqual({});
-    expect(rest).toEqual(v2.scene);
+    const v3Scene = { ...(v2.scene as unknown as Scene), anchors: {}, carriers: {}, racks: {} };
+    const { anchors: _a, carriers: _c, racks: _r, ...expected } = withShaftSpans(v3Scene);
+    expect(rest).toEqual(expected);
   });
 
-  it('version 1 のファイル → version 3 まで順に移行される（migratedFrom === 1）', () => {
+  it('version 1 のファイル → version 4 まで順に移行される（migratedFrom === 1）', () => {
     const v1 = readJson(new URL('./save-file-v1.json', import.meta.url));
     const result = parseSaveFileObject(v1);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.migratedFrom).toBe(1);
-    expect(result.file.version).toBe(3);
+    expect(result.file.version).toBe(4);
+    for (const shaft of Object.values(result.file.scene.shafts)) {
+      expect(shaft.span).toBeDefined();
+    }
   });
 
   it('S3-01〜S3-04 の間に version 2 のまま保存された段階 3 の部品は、移行で残る', () => {
@@ -547,7 +576,7 @@ describe('段階 3 の部品の往復（S3-05）', () => {
     const result = parseSaveFile(serializeSaveFile(toSaveFile(showcase)));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.file).toEqual({ format: 'gear-simulator', version: 3, scene: showcase });
+    expect(result.file).toEqual({ format: 'gear-simulator', version: 4, scene: showcase });
     expect(result.migratedFrom).toBeNull();
   });
 });
@@ -652,8 +681,131 @@ describe('version 3 の検証（S3-05）', () => {
     expect(result).toEqual({ ok: false, error: { code: 'invalid-scene', path: 'racks' } });
   });
 
-  it('version 4 のファイル → unsupported-version', () => {
-    const text = JSON.stringify({ format: 'gear-simulator', version: 4, scene: ringFixed });
+  it('version 5 のファイル → unsupported-version', () => {
+    const text = JSON.stringify({ format: 'gear-simulator', version: 5, scene: ringFixed });
     expect(parseSaveFile(text)).toEqual({ ok: false, error: { code: 'unsupported-version' } });
   });
+});
+
+// S4-03: 保存形式の version 4（シャフトの範囲 span を必須にし、歯車の省略できる厚さ width を足した）
+describe('version 3 → 4 の移行（S4-03）', () => {
+  // S3-05 の時点の version 3 のファイル（stage3-showcase。シャフトは範囲を持たない）
+  const v3Url = new URL('./save-file-v3.json', import.meta.url);
+  const v3 = readJson(v3Url) as { version: number; scene: Scene };
+
+  it('version 3 のファイルは範囲の無いシャフトだけ', () => {
+    expect(v3.version).toBe(3);
+    for (const shaft of Object.values(v3.scene.shafts)) expect(shaft.span).toBeUndefined();
+  });
+
+  it('移行 → 各シャフトの範囲が、移行前のシャフトの長さ（範囲の無いシーンのレイアウト）と同じ', () => {
+    const before = resolveLayout(v3.scene);
+    const result = parseSaveFile(readFileSync(v3Url, 'utf8'));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.migratedFrom).toBe(3);
+    expect(result.file.version).toBe(4);
+    const shafts = Object.values(result.file.scene.shafts);
+    expect(shafts.length).toBeGreaterThan(0);
+    for (const shaft of shafts) {
+      expect(shaft.span).toEqual(before.shafts[shaft.id]?.span);
+    }
+    // 読み込んだシーンのレイアウトのシャフトの長さも変わらない
+    const after = resolveLayout(result.file.scene);
+    for (const [id, at] of Object.entries(before.shafts)) {
+      expect(after.shafts[id]?.span).toEqual(at.span);
+    }
+  });
+
+  it('かさ歯車（頂点側を切る）・ウォーム・ねじ歯車の version 2 のファイル → 4 まで移行して長さが同じ', () => {
+    const v2 = readJson(new URL('./save-file-v2.json', import.meta.url)) as { scene: Scene };
+    const before = resolveLayout({ ...v2.scene, anchors: {}, carriers: {}, racks: {} });
+    const result = parseSaveFileObject(v2);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    for (const shaft of Object.values(result.file.scene.shafts)) {
+      expect(shaft.span).toEqual(before.shafts[shaft.id]?.span);
+    }
+  });
+
+  it('version 1 のファイル → 1 → 2 → 3 → 4 と順に移行でき、長さが同じ', () => {
+    const v1 = readJson(new URL('./save-file-v1.json', import.meta.url)) as { scene: Scene };
+    const before = resolveLayout({ ...v1.scene, anchors: {}, carriers: {}, racks: {} });
+    const result = parseSaveFileObject(v1);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.migratedFrom).toBe(1);
+    expect(result.file.version).toBe(4);
+    for (const shaft of Object.values(result.file.scene.shafts)) {
+      expect(shaft.span).toEqual(before.shafts[shaft.id]?.span);
+    }
+  });
+
+  it('移行した範囲は、載っている部品の範囲を含む', () => {
+    const result = parseSaveFileObject(v3);
+    if (!result.ok) throw new Error('読めない');
+    const required = requiredShaftSpans(result.file.scene);
+    for (const shaft of Object.values(result.file.scene.shafts)) {
+      const need = required[shaft.id];
+      if (need === null || need === undefined || shaft.span === undefined) continue;
+      expect(shaft.span[0]).toBeLessThanOrEqual(need[0]);
+      expect(shaft.span[1]).toBeGreaterThanOrEqual(need[1]);
+    }
+  });
+});
+
+describe('version 4 の検証（S4-03）', () => {
+  const v4 = (scene: unknown): string =>
+    JSON.stringify({ format: 'gear-simulator', version: 4, scene });
+  // 生の値（シャフト・歯車の欄を書き換えるため）
+  type RawScene = {
+    shafts: Record<string, Record<string, unknown>>;
+    gears: Record<string, Record<string, unknown>>;
+  };
+  const raw = JSON.parse(serializeSaveFile(toSaveFile(sceneA))).scene as RawScene;
+
+  it('width の無い歯車を読む → 厚さは大きさごとの値（gearWidth）', () => {
+    const result = parseSaveFile(v4(raw));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const gear = result.file.scene.gears.gear_1;
+    expect(gear?.width).toBeUndefined();
+    expect(gearWidth(gear as NonNullable<typeof gear>)).toBe(4);
+  });
+
+  it('width のある歯車を読む → その値のまま、往復でも保たれる', () => {
+    const copy = structuredClone(raw);
+    (copy.gears.gear_1 as Record<string, unknown>).width = 12;
+    const result = parseSaveFile(v4(copy));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.file.scene.gears.gear_1?.width).toBe(12);
+    expect(gearWidth(result.file.scene.gears.gear_1 as NonNullable<Scene['gears'][string]>)).toBe(
+      12,
+    );
+    const again = parseSaveFile(serializeSaveFile(result.file));
+    expect(again.ok && again.file.scene.gears.gear_1?.width).toBe(12);
+  });
+
+  const shaft1 = (s: RawScene) => s.shafts.shaft_1 as Record<string, unknown>;
+  const gear1 = (s: RawScene) => s.gears.gear_1 as Record<string, unknown>;
+  const cases: Array<[string, (scene: RawScene) => void, string]> = [
+    ['シャフトの span が無い', (s) => delete shaft1(s).span, 'shafts.shaft_1.span'],
+    ['span が数 1 つ', (s) => (shaft1(s).span = [0]), 'shafts.shaft_1.span'],
+    ['span が逆向き', (s) => (shaft1(s).span = [8, -4]), 'shafts.shaft_1.span'],
+    ['span が歯車より短い', (s) => (shaft1(s).span = [0, 8]), 'shafts.shaft_1.span'],
+    ['width が 4 の倍数でない', (s) => (gear1(s).width = 6), 'gears.gear_1.width'],
+    ['width が 0', (s) => (gear1(s).width = 0), 'gears.gear_1.width'],
+    ['width が文字列', (s) => (gear1(s).width = '8'), 'gears.gear_1.width'],
+  ];
+  for (const [name, edit, path] of cases) {
+    it(`${name} → invalid-scene（${path}）`, () => {
+      const copy = structuredClone(raw);
+      edit(copy);
+      expect(parseSaveFile(v4(copy))).toEqual({
+        ok: false,
+        error: { code: 'invalid-scene', path },
+      });
+    });
+  }
 });

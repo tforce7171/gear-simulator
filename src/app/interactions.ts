@@ -1,8 +1,9 @@
 import { applyCommand, type Command } from '../core/edit/commands';
 import { pitchRadius } from '../core/geometry/mesh';
-import type { GrowCandidate } from '../core/layout/candidates';
+import { type GrowCandidate, isPaletteGearKind } from '../core/layout/candidates';
 import { newInterferences } from '../core/layout/interference-diff';
 import { resolveLayout } from '../core/layout/resolve';
+import { axisVector } from '../core/math/axis';
 import type { Vec3 } from '../core/math/vec3';
 import type { IdKind } from '../core/scene/ids';
 import { type Axis, isFreePlacement, type Scene } from '../core/scene/types';
@@ -19,13 +20,21 @@ import {
   selectedShaftId,
   startHandleDrag,
 } from '../input/handle-drag';
+import { closestParamOnLine } from '../input/handle-math';
 import type { PickKind } from '../input/pick-priority';
 import { intersectRayPlane, nextAxis, rootPlacementCommand } from '../input/placement';
 import { exceedsDragThreshold } from '../input/pointer-route';
 import type { CandidateSpec } from '../render/candidates';
 import type { ReattachRing } from '../render/handles';
 import type { PreviewStyle } from '../render/sync';
-import { candidateSpec, candidatesFor, growCommand } from './grow';
+import {
+  candidateSpec,
+  candidatesFor,
+  growCommand,
+  type ShaftGhost,
+  shaftGhostAt,
+  shaftGhostOffset,
+} from './grow';
 import {
   applyReattach,
   type ReattachCandidate,
@@ -39,6 +48,8 @@ import type { Store } from './store';
 // 生やす候補（S1-18）: 歯車を選んでいる間は候補を出し、クリックした候補で growGear を実行する。
 // 付け直し（S1-19）: 選んでいる detached のシャフトの本体を左ドラッグして、別の歯車の外周の候補の上で離す
 // 手で回す（S1-21）: それ以外の部品の本体の左ドラッグで、そのシャフトを手の角度に拘束する（AppState.sim.hand）
+// シャフトの上に置く（S4-03）: シャフトを選んでいる間、そのシャフトにマウスを乗せると、パレットの種類・大きさの半透明の歯車が
+// ポインターに合わせて軸に沿って動き（4 mm 刻み）、クリックでその位置に置く（重なる位置では赤く、置けない）
 
 // 置く前の仮の部品の ID（シーンの ID と重ならない）
 export const GHOST_SHAFT_ID = '__ghost_shaft';
@@ -102,8 +113,23 @@ export interface Interactions {
   candidates(): readonly GrowCandidate[];
   // マウスを乗せた候補の番号（濃く表示する）。無ければ null
   setHoveredCandidate(index: number | null): void;
-  // 候補（番号）をクリックした: その歯車を生やして選ぶ。生やしたら true
+  // 候補（番号）をクリックした: その歯車を生やして選ぶ。生やしたら true。
+  // シャフトの上の仮の歯車（S4-03。候補の一覧の最後の番号）なら、その位置に置く（シャフトの選択は保つ）
   grow(index: number): boolean;
+  // マウスを乗せた位置（ページ座標）と、そこで当たった部品（S4-03）。選んでいるシャフトの上なら、仮の歯車を動かす。
+  // 描く前に毎フレーム呼ぶ
+  setHover(
+    point: { x: number; y: number } | null,
+    hit: { kind: PickKind; id: string } | null,
+  ): void;
+  // 部品の上のクリック（S4-03）。当たったのが選んでいるシャフト（か、その上の仮の歯車）で、パレットが歯車の種類なら、
+  // その位置に歯車を置いて 'placed'（重なる位置なら何もせず 'blocked'）。それ以外は null
+  placeOnShaft(
+    point: { x: number; y: number },
+    hit: { kind: PickKind; id: string } | null,
+  ): 'placed' | 'blocked' | null;
+  // 今出している、シャフトの上の仮の歯車（S4-03）。無ければ null
+  shaftGhost(): ShaftGhost | null;
 }
 
 interface RootDrag {
@@ -160,6 +186,13 @@ export function createInteractions(deps: InteractionsDeps): Interactions {
   let style: PreviewStyle | null = null;
   let styleKey = '';
   let hoveredCandidate: number | null = null;
+  // シャフトの上の仮の歯車（S4-03）。key は作り直すかの判定（シーン・シャフト・offset・パレット）
+  let ghost: { key: string; scene: Scene; value: ShaftGhost } | null = null;
+  let specsMemo: {
+    base: readonly CandidateSpec[];
+    ghost: ShaftGhost | null;
+    specs: readonly CandidateSpec[];
+  } | null = null;
   const NO_CANDIDATES: { list: readonly GrowCandidate[]; specs: readonly CandidateSpec[] } = {
     list: [],
     specs: [],
@@ -198,10 +231,76 @@ export function createInteractions(deps: InteractionsDeps): Interactions {
       return memo;
     }
     // 同じ軸に作る歯車の種類はパレットで選んだもの（S2-05）
-    const list = candidatesFor(scene, selection, palette.size, palette.kind);
+    const list = candidatesFor(scene, selection, palette.kind);
     const specs = list.map((c) => candidateSpec(scene, c));
     candidateMemo = { scene, selection, size: palette.size, kind: palette.kind, list, specs };
     return candidateMemo;
+  }
+
+  // 仮の歯車を出せる状態か（ドラッグ中でない）。出せるなら選んでいるシャフトの ID
+  function ghostShaft(): string | null {
+    if (
+      rootDrag !== null ||
+      (handleDrag !== null && handleDrag.pending === null) ||
+      reattachDrag?.active != null ||
+      handDrag?.active === true
+    ) {
+      return null;
+    }
+    const { scene, selection, palette } = store.getState();
+    if (selection === null || scene.shafts[selection] === undefined) return null;
+    return isPaletteGearKind(palette.kind) ? selection : null;
+  }
+
+  // ページ座標の点の、選んでいるシャフトの上の仮の歯車。作り直さなくてよければ前のものを返す
+  function ghostAt(shaftId: string, point: { x: number; y: number }): ShaftGhost | null {
+    const { scene, palette } = store.getState();
+    if (!isPaletteGearKind(palette.kind)) return null;
+    const placed = resolveLayout(scene).shafts[shaftId];
+    const ray = deps.rayAt(point.x, point.y);
+    if (placed === undefined || ray === null) return null;
+    const along = closestParamOnLine(
+      ray.origin,
+      ray.direction,
+      placed.origin,
+      axisVector(placed.axis),
+    );
+    if (along === null) return null;
+    const offset = shaftGhostOffset(placed.span, along, palette.kind, palette.size);
+    const key = `${shaftId}|${offset}|${palette.kind}|${palette.size}`;
+    if (ghost !== null && ghost.scene === scene && ghost.key === key) return ghost.value;
+    const value = shaftGhostAt(scene, shaftId, along, palette.size, palette.kind);
+    ghost = value === null ? null : { key, scene, value };
+    return value;
+  }
+
+  // 今の仮の歯車（シーン・選択が変わっていれば出さない）
+  function currentGhost(): ShaftGhost | null {
+    if (ghost === null) return null;
+    const shaftId = ghostShaft();
+    if (shaftId !== ghost.value.shaftId || ghost.scene !== store.getState().scene) return null;
+    const { palette } = store.getState();
+    if (palette.kind !== ghost.value.kind || palette.size !== ghost.value.size) return null;
+    return ghost.value;
+  }
+
+  // 生やす候補の見た目に、シャフトの上の仮の歯車（S4-03）を最後に足したもの（同じ間は同じ参照）
+  function displaySpecs(): readonly CandidateSpec[] {
+    const base = currentCandidates().specs;
+    const g = currentGhost();
+    if (specsMemo !== null && specsMemo.base === base && specsMemo.ghost === g) {
+      return specsMemo.specs;
+    }
+    const specs = g === null ? base : [...base, g.spec];
+    specsMemo = { base, ghost: g, specs };
+    return specs;
+  }
+
+  function placeGhost(g: ShaftGhost): void {
+    if (g.blocked) return;
+    // シャフトの選択は保つ（続けて同じシャフトに置ける）
+    store.dispatch({ type: 'command', command: g.command });
+    ghost = null;
   }
 
   // 置く位置の仮のシーン。描画領域の外や床に当たらない所なら null
@@ -441,7 +540,7 @@ export function createInteractions(deps: InteractionsDeps): Interactions {
       deps.setPreviewStyle(currentStyle());
       const reattaching = reattachDrag?.active ?? null;
       deps.setReattachRings(reattaching?.rings ?? NO_RINGS, reattaching?.hovered ?? null);
-      const { specs } = currentCandidates();
+      const specs = displaySpecs();
       deps.setCandidates(
         specs,
         hoveredCandidate !== null && hoveredCandidate < specs.length ? hoveredCandidate : null,
@@ -591,11 +690,45 @@ export function createInteractions(deps: InteractionsDeps): Interactions {
       hoveredCandidate = index;
     },
     grow(index) {
-      const candidate = currentCandidates().list[index];
+      const list = currentCandidates().list;
+      const g = currentGhost();
+      if (g !== null && index === list.length) {
+        placeGhost(g);
+        return !g.blocked;
+      }
+      const candidate = list[index];
       if (candidate === undefined) return false;
       // 生やした歯車を選ぶ（外周は [シャフト, 歯車] の最後、同じ軸は [歯車]）。続けて次の候補が出る
       store.dispatch({ type: 'command', command: growCommand(candidate), selectCreated: true });
       return true;
     },
+    setHover(point, hit) {
+      const shaftId = ghostShaft();
+      if (shaftId === null || point === null || hit === null) {
+        ghost = null;
+        return;
+      }
+      const onGhost =
+        hit.kind === 'candidate' &&
+        ghost !== null &&
+        Number(hit.id) === currentCandidates().list.length;
+      if (!(hit.kind === 'shaft' && hit.id === shaftId) && !onGhost) {
+        ghost = null;
+        return;
+      }
+      ghostAt(shaftId, point);
+    },
+    placeOnShaft(point, hit) {
+      const shaftId = ghostShaft();
+      if (shaftId === null || hit === null) return null;
+      const onGhost =
+        hit.kind === 'candidate' && Number(hit.id) === currentCandidates().list.length;
+      if (!(hit.kind === 'shaft' && hit.id === shaftId) && !onGhost) return null;
+      const g = ghostAt(shaftId, point);
+      if (g === null) return null;
+      placeGhost(g);
+      return g.blocked ? 'blocked' : 'placed';
+    },
+    shaftGhost: currentGhost,
   };
 }

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import type { Page } from '@playwright/test';
 import { skewSign } from '../src/core/geometry/skew';
+import { withShaftSpans } from '../src/core/layout/resolve';
 import { axisVector } from '../src/core/math/axis';
 import type { Vec3 } from '../src/core/math/vec3';
 import type { GearKind, Scene } from '../src/core/scene/types';
@@ -8,16 +9,17 @@ import {
   type Candidate,
   centerOf,
   clickGear,
+  dragShaftEnd,
   EMPTY,
   fixtureScene,
   getCandidates,
-  getHandles,
   getLayout,
   getMotion,
   getScene,
   getSelection,
   openApp,
   type Point,
+  placeOnShaft,
   project,
   setCamera,
   waitAutosaved,
@@ -79,28 +81,6 @@ async function clickCandidate(page: Page, candidate: Candidate): Promise<string>
   return added[0] ?? '';
 }
 
-// 選んでいる歯車の軸方向の矢印を、その歯車の軸に沿って world の量（mm。符号は軸の向き）だけドラッグする
-async function dragAxial(page: Page, gearId: string, amount: number): Promise<void> {
-  const handle = (await getHandles(page)).find((h) => h.kind === 'axial' && h.targetId === gearId);
-  if (handle === undefined) throw new Error(`${gearId} の軸方向の矢印が無い`);
-  const axis = (await getLayout(page)).gears[gearId]?.axis;
-  if (axis === undefined) throw new Error(`${gearId} がレイアウトに無い`);
-  const e = axisVector(axis);
-  await setCamera(page, lookAt(handle.position));
-  const from = await project(page, handle.position);
-  const to = await project(page, [
-    handle.position[0] + e[0] * amount,
-    handle.position[1] + e[1] * amount,
-    handle.position[2] + e[2] * amount,
-  ]);
-  await page.mouse.move(from.x, from.y);
-  await page.mouse.down();
-  for (let i = 1; i <= 12; i++) {
-    await page.mouse.move(from.x + ((to.x - from.x) * i) / 12, from.y + ((to.y - from.y) * i) / 12);
-  }
-  await page.mouse.up();
-}
-
 const sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
 const dot = (a: Vec3, b: Vec3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 
@@ -125,18 +105,18 @@ test('通し: 縦のシャフト → かさ歯車 A → B → ウォーム W →
   expect(root.kind).toBe('spur');
   expect(await getSelection(page)).toEqual([root.id]);
 
-  // パレットで「かさ」を選び、同じ軸の候補（上の側）からかさ歯車 A
+  // シャフトの上端のつまみを上へ伸ばし（S4-03）、パレットで「かさ」を選んで、平歯車から離れた上の方にかさ歯車 A を置く
+  // （平歯車と隣り合うと、A のかさ歯車の候補はどれも平歯車と干渉する）
   await selectPaletteKind(page, 'bevel');
-  const coaxialA = (await getCandidates(page))
-    .filter((c) => c.kind === 'coaxial')
-    .sort((a, b) => b.center[1] - a.center[1])[0];
-  if (coaxialA === undefined) throw new Error('同じ軸の候補が無い');
-  const a = await clickCandidate(page, coaxialA);
-  expect((await getScene(page)).gears[a]).toMatchObject({ kind: 'bevel', shaftId: root.shaftId });
-  expect(await getSelection(page)).toEqual([a]);
-  // A と平歯車が隣り合うと、A のかさ歯車の候補はどれも平歯車と干渉する。A を上へ離す（軸方向の矢印。S1-19）
-  expect((await getCandidates(page)).filter((c) => c.kind === 'bevel')).toEqual([]);
-  await dragAxial(page, a, 40);
+  await dragShaftEnd(page, root.shaftId, 'spanEnd', 48);
+  expect((await getScene(page)).shafts[root.shaftId]?.span?.[1]).toBeGreaterThanOrEqual(56);
+  const a = await placeOnShaft(page, root.shaftId, 52);
+  expect((await getScene(page)).gears[a]).toMatchObject({
+    kind: 'bevel',
+    shaftId: root.shaftId,
+    offset: 48,
+  });
+  await clickGear(page, a);
   const bevelCandidates = (await getCandidates(page)).filter((c) => c.kind === 'bevel');
   expect(bevelCandidates.length).toBeGreaterThan(0);
 
@@ -149,24 +129,25 @@ test('通し: 縦のシャフト → かさ歯車 A → B → ウォーム W →
   if (shaftB?.placement.kind !== 'bevel') throw new Error('B が bevel のシャフトに無い');
   expect((await getLayout(page)).gears[b]?.axis).not.toBe('y');
 
-  // B のシャフトに、パレットで「ウォーム」を選んで同じ軸の候補からウォーム W
+  // B のシャフトを A から離れる向きに伸ばし、パレットで「ウォーム」を選んで、B から離れた所にウォーム W を置く
+  // （W と B が隣り合うと、ホイールの候補はどれも B と干渉する。ホイールの候補は、パレットでホイールを選んだときだけ出る。S4-02）
   await selectPaletteKind(page, 'worm');
-  const coaxialW = (await getCandidates(page)).find((c) => c.kind === 'coaxial');
-  if (coaxialW === undefined) throw new Error('B の同じ軸の候補が無い');
-  const w = await clickCandidate(page, coaxialW);
+  const layoutB = await getLayout(page);
+  const shaftIdB = gearB?.shaftId as string;
+  const bAxis = axisVector(layoutB.gears[b]?.axis ?? 'x');
+  const awayFromA = Math.sign(dot(sub(centerOf(layoutB, b), centerOf(layoutB, a)), bAxis));
+  await setCamera(page, lookAt(centerOf(layoutB, b), 1.6));
+  await dragShaftEnd(page, shaftIdB, awayFromA > 0 ? 'spanEnd' : 'spanStart', awayFromA * 72);
+  const spanB = (await getScene(page)).shafts[shaftIdB]?.span;
+  if (spanB === undefined) throw new Error('B のシャフトに範囲が無い');
+  const w = await placeOnShaft(page, shaftIdB, awayFromA > 0 ? spanB[1] - 24 : spanB[0] + 24);
   expect((await getScene(page)).gears[w]).toMatchObject({
     kind: 'worm',
     teeth: 1,
-    shaftId: gearB?.shaftId,
+    shaftId: shaftIdB,
   });
-  // W と B が隣り合うと、ホイールの候補はどれも B と干渉する。W を B から離す
-  // （ホイールの候補は、パレットでホイールを選んだときだけ出る。S4-02）
+  await clickGear(page, w);
   await selectPaletteKind(page, 'wormWheel');
-  expect((await getCandidates(page)).filter((c) => c.kind === 'skew')).toEqual([]);
-  const layoutW = await getLayout(page);
-  const awayFromB = sub(centerOf(layoutW, w), centerOf(layoutW, b));
-  const sign = Math.sign(dot(awayFromB, axisVector(layoutW.gears[w]?.axis ?? 'x')));
-  await dragAxial(page, w, sign * 48);
   const skewCandidates = (await getCandidates(page))
     .filter((c) => c.kind === 'skew')
     .sort((p, q) => q.center[1] - p.center[1]);
@@ -337,7 +318,7 @@ async function importFile(page: Page, path: string): Promise<void> {
   await (await chooser).setFiles(path);
 }
 
-test('エクスポート → インポートで stage2-showcase が元と等しい。ダウンロードしたファイルの version は最新（S3-05 から 3）', async ({
+test('エクスポート → インポートで stage2-showcase が元と等しい。ダウンロードしたファイルの version は最新（S4-03 から 4）', async ({
   page,
 }) => {
   await openApp(page, { scene: showcase });
@@ -346,7 +327,7 @@ test('エクスポート → インポートで stage2-showcase が元と等し�
   const path = await (await downloading).path();
   const file = JSON.parse(readFileSync(path, 'utf8'));
   expect(file.format).toBe('gear-simulator');
-  expect(file.version).toBe(3);
+  expect(file.version).toBe(4);
   expect(file.scene).toEqual(showcase);
 
   await page.evaluate((s) => window.__gearSim?.loadScene(s), EMPTY);
@@ -361,10 +342,11 @@ test('段階 1 で保存した version 1 のファイルをインポート → �
   const v1 = JSON.parse(readFileSync(v1Path, 'utf8')) as { version: number; scene: Scene };
   expect(v1.version).toBe(1);
   await importFile(page, v1Path);
-  // 固定具などの無いシーンには、version 2 → 3 の移行（S3-05）が anchors・carriers・racks を {} で足す
+  // 固定具などの無いシーンには、version 2 → 3 の移行（S3-05）が anchors・carriers・racks を {} で足し、
+  // version 3 → 4 の移行（S4-03）がシャフトに今までと同じ長さの範囲を足す
   await expect
     .poll(() => getScene(page))
-    .toEqual({ ...v1.scene, anchors: {}, carriers: {}, racks: {} });
+    .toEqual(withShaftSpans({ ...v1.scene, anchors: {}, carriers: {}, racks: {} }));
   await expect(page.getByTestId('toast')).toHaveCount(0);
 });
 
@@ -379,7 +361,9 @@ test('version 1 の自動保存から起動できる', async ({ page }) => {
   }, v1);
   await page.reload();
   await waitReady(page);
-  expect(await getScene(page)).toEqual({ ...v1.scene, anchors: {}, carriers: {}, racks: {} });
+  expect(await getScene(page)).toEqual(
+    withShaftSpans({ ...v1.scene, anchors: {}, carriers: {}, racks: {} }),
+  );
 });
 
 test('getAudio().voices にウォームの組の音源があり、kind で種類が分かる', async ({ page }) => {

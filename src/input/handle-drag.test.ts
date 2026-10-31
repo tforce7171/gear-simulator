@@ -68,17 +68,24 @@ function originOf(scene: Scene, shaftId: string): Vec3 | undefined {
 }
 
 describe('listHandles', () => {
-  it('起点のシャフトかその上の歯車なら move と height（歯車なら axial も）。move は原点の真下の床', () => {
+  it('起点のシャフトかその上の歯車なら move と height（歯車なら axial、シャフトなら伸縮のつまみも）。move は原点の真下の床', () => {
     const scene = chain();
     const layout = resolveLayout(scene);
-    expect(listHandles(scene, layout, 'shaft_1').map((h) => h.kind)).toEqual(['move', 'height']);
+    expect(listHandles(scene, layout, 'shaft_1').map((h) => h.kind)).toEqual([
+      'move',
+      'height',
+      'spanStart',
+      'spanEnd',
+    ]);
     expect(listHandles(scene, layout, 'gear_1').map((h) => h.kind)).toEqual([
       'move',
       'height',
       'axial',
     ]);
     for (const selection of ['shaft_1', 'gear_1']) {
-      const handles = listHandles(scene, layout, selection).filter((h) => h.kind !== 'axial');
+      const handles = listHandles(scene, layout, selection).filter(
+        (h) => h.kind === 'move' || h.kind === 'height',
+      );
       expect(handles.every((h) => h.targetId === 'shaft_1')).toBe(true);
       expect(handles[0]?.position).toEqual([0, 0, 0]);
       // 高さの矢印は原点の真上の線の上で、部品（シャフトの下端 y = 16）より下、床の四角より上
@@ -90,17 +97,21 @@ describe('listHandles', () => {
     }
   });
 
-  it('mesh のシャフト・その子の歯車では arc だけ（move・height・axial は出ない）。未選択では何も出ない', () => {
+  it('mesh のシャフト・その子の歯車では arc だけ（move・height・axial は出ない。シャフトなら伸縮のつまみも）。未選択では何も出ない', () => {
     const scene = chain();
     const layout = resolveLayout(scene);
     for (const [selection, shaftId] of [
-      ['shaft_2', 'shaft_2'],
       ['gear_2', 'shaft_2'],
       ['gear_3', 'shaft_3'],
     ] as const) {
       const handles = listHandles(scene, layout, selection);
       expect(handles.map((h) => [h.kind, h.targetId])).toEqual([['arc', shaftId]]);
     }
+    expect(listHandles(scene, layout, 'shaft_2').map((h) => [h.kind, h.targetId])).toEqual([
+      ['arc', 'shaft_2'],
+      ['spanStart', 'shaft_2'],
+      ['spanEnd', 'shaft_2'],
+    ]);
     expect(listHandles(scene, layout, null)).toEqual([]);
   });
 
@@ -159,7 +170,7 @@ describe('listHandles', () => {
     const kinds = listHandles(result.scene, resolveLayout(result.scene), 'shaft_2').map(
       (h) => h.kind,
     );
-    expect(kinds).toEqual(['move', 'height']);
+    expect(kinds).toEqual(['move', 'height', 'spanStart', 'spanEnd']);
     const gearKinds = listHandles(result.scene, resolveLayout(result.scene), 'gear_2').map(
       (h) => h.kind,
     );
@@ -402,5 +413,59 @@ describe('startHandleDrag: axial', () => {
   it('レイが軸とほぼ平行なら動かさない（始められない）', () => {
     const scene = stacked();
     expect(startHandleDrag(scene, handle(scene, 'axial', 'gear_2'), downTo(0.1, 0))).toBeNull();
+  });
+});
+
+// S4-03: シャフトの伸縮のつまみ
+describe('listHandles・startHandleDrag: spanStart・spanEnd', () => {
+  it('シャフトを選ぶと、範囲の両端（ワールド座標）につまみが出る。歯車を選んでいるときは出ない', () => {
+    const scene = stacked();
+    // 起点 [0, 35, 0]、範囲は A [0, 8] と E [8, 12] の両面から 4 → [−4, 16]
+    const handles = listHandles(scene, resolveLayout(scene), 'shaft_1');
+    const start = handles.find((h) => h.kind === 'spanStart');
+    const end = handles.find((h) => h.kind === 'spanEnd');
+    expect(start?.position).toEqual([0, 31, 0]);
+    expect(end?.position).toEqual([0, 51, 0]);
+    expect(end?.frame?.axis).toBe('y');
+    const kinds = listHandles(scene, resolveLayout(scene), 'gear_1').map((h) => h.kind);
+    expect(kinds).not.toContain('spanEnd');
+  });
+
+  it('端のつまみを軸に沿って動かす → 4 mm 刻みの setShaftSpan。変わるのはそのシャフトだけ', () => {
+    const scene = stacked();
+    const h = handle(scene, 'spanEnd', 'shaft_1');
+    const session = startHandleDrag(scene, h, sideAt(51, 0, 0));
+    if (session === null) throw new Error('始められない');
+    session.update(sideAt(51 + 9.5, 0, 0));
+    expect(resolveLayout(session.state().scene).shafts.shaft_1?.span).toEqual([-4, 24]);
+    expect(session.state().invalid).toBe(false);
+    expect(session.finish()).toEqual({ type: 'setShaftSpan', shaftId: 'shaft_1', span: [-4, 24] });
+    expect(handleMovedParts(scene, h)).toEqual(new Set(['shaft_1']));
+    const low = startHandleDrag(scene, handle(scene, 'spanStart', 'shaft_1'), sideAt(31, 0, 0));
+    low?.update(sideAt(31 - 13, 0, 0));
+    expect(low?.finish()).toEqual({ type: 'setShaftSpan', shaftId: 'shaft_1', span: [-16, 16] });
+  });
+
+  it('歯車より短くはならない（内側へ動かしても元の長さのまま、何も確定しない）', () => {
+    const scene = stacked();
+    const session = startHandleDrag(scene, handle(scene, 'spanEnd', 'shaft_1'), sideAt(51, 0, 0));
+    if (session === null) throw new Error('始められない');
+    session.update(sideAt(30, 0, 0));
+    expect(resolveLayout(session.state().scene).shafts.shaft_1?.span).toEqual([-4, 16]);
+    expect(session.finish()).toBeNull();
+  });
+
+  it('ほかの部品にぶつかる手前で止まり、赤くならない', () => {
+    // 真上に起点（[0, 100, 0]、中・20 歯、範囲 [−4, 12]）を足す。シャフトの下端は y = 96
+    const scene = build([
+      { type: 'addRootShaft', axis: 'y', origin: [0, 35, 0], gear: { size: 'M', teeth: 20 } },
+      { type: 'addRootShaft', axis: 'y', origin: [0, 100, 0], gear: { size: 'M', teeth: 20 } },
+    ]);
+    const session = startHandleDrag(scene, handle(scene, 'spanEnd', 'shaft_1'), sideAt(47, 0, 0));
+    if (session === null) throw new Error('始められない');
+    session.update(sideAt(200, 0, 0));
+    // 上のシャフトの下端は原点から 96 − 35 = 61。その手前の 4 の倍数 60 で止まる
+    expect(resolveLayout(session.state().scene).shafts.shaft_1?.span).toEqual([-4, 60]);
+    expect(session.state().invalid).toBe(false);
   });
 });

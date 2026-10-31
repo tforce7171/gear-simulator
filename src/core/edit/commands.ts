@@ -12,7 +12,17 @@ import { canMesh, meshGeometryOf } from '../geometry/can-mesh';
 import { teethInRange, teethRange } from '../geometry/dimensions';
 import { defaultPlanetTeeth, planetaryOk, planetCountInRange } from '../geometry/planetary';
 import { rackTeethInRange, snapRackPosition } from '../geometry/rack';
-import { descendantShafts, resolveLayout } from '../layout/resolve';
+import { newInterferences } from '../layout/interference-diff';
+import {
+  defaultShaftSpan,
+  descendantShafts,
+  requiredShaftSpans,
+  resolveLayout,
+  type ShaftSpan,
+  spanContains,
+  unionSpan,
+  withShaftSpans,
+} from '../layout/resolve';
 import type { Layout } from '../layout/types';
 import type { Vec3 } from '../math/vec3';
 import {
@@ -95,7 +105,9 @@ export type Command =
   // 遊星歯車 DEFAULT_PLANET_COUNT 個（太陽と同じ大きさ）、リングのシャフト（concentric）と内歯車（webSide −1、offset は太陽と同じ）。
   // 歯数は defaultPlanetTeeth。作れなければ（平歯車でない・遊星のシャフトの歯車・歯数の組が無い）notAllowed
   | { type: 'growGear'; mode: 'planetary'; parentGearId: GearId }
-  // kind は省くと 'spur'。ハスバ歯車は hand 'right'（S2-01）。ウォームは teeth によらず 1 条（S2-03）
+  // シャフト上の位置を指定して歯車を足す（S4-03。パレットで選んだ種類をシャフトの上に置く）。
+  // kind は省くと 'spur'。ハスバ歯車は hand 'right'（S2-01）。ウォームは teeth によらず 1 条（S2-03）。
+  // 同じシャフトのほかの歯車やほかの部品と重なる（新しい干渉を生む）位置は notAllowed。シャフトからはみ出せばシャフトが伸びる
   | {
       type: 'growGear';
       mode: 'coaxial';
@@ -125,6 +137,9 @@ export type Command =
   | { type: 'setWebSide'; gearId: GearId; webSide: 1 | -1 }
   | { type: 'setMeshAngle'; shaftId: ShaftId; angle: number }
   | { type: 'setGearOffset'; gearId: GearId; offset: number }
+  // シャフトの範囲を変える（S4-03。伸縮のつまみ）。変えた端は AXIAL_SNAP の倍数でなければ invalidValue。
+  // 載っている部品の範囲より短い・新しい干渉を生む（ほかの部品にぶつかる）範囲は notAllowed
+  | { type: 'setShaftSpan'; shaftId: ShaftId; span: readonly [number, number] }
   | { type: 'addMotor'; shaftId: ShaftId; size: SizeKey }
   | { type: 'removeMotor'; motorId: MotorId }
   | {
@@ -231,7 +246,54 @@ function withEntry<T>(
   return { ...record, [id]: value };
 }
 
+// コマンドを実行する。成功してシーンが変わったら、シャフトの範囲を部品に合わせる（fitShaftSpans。S4-03）
 export function applyCommand(scene: Scene, command: Command, ctx: CommandContext): CommandResult {
+  const result = applyRaw(scene, command, ctx);
+  if (!result.ok || result.scene === scene) return result;
+  return { ...result, scene: fitShaftSpans(scene, result.scene) };
+}
+
+// 編集のあとのシャフトの範囲（S4-03）。
+// - 編集で新しくできたシャフト: 載っている部品の範囲（部品が無ければ ±EMPTY_SHAFT_HALF_LENGTH）
+// - 部品にぴったりだったシャフト（編集の前の範囲が、載っている部品の範囲と同じ。version 3 から移したシャフトや、伸縮していない
+//   シャフト）: 部品が変われば、新しい部品の範囲にする（部品についていく。かさ歯車の頂点・内歯車のウェブの向きが変わっても、
+//   相手の部品や空洞へ伸びたまま残らない）
+// - それ以外（伸縮したシャフト）: 載っている部品がはみ出していれば、その分だけ伸ばす（縮めない）
+// 範囲を省いたままの既存のシャフト（テストで組んだシーンなど）はそのまま（レイアウトが部品から求める）
+export function fitShaftSpans(prev: Scene, next: Scene): Scene {
+  const required = requiredShaftSpans(next);
+  let before: Readonly<Record<ShaftId, ShaftSpan | null>> | null = null;
+  let shafts: Record<ShaftId, Shaft> | null = null;
+  for (const shaft of Object.values(next.shafts)) {
+    if (!Object.hasOwn(required, shaft.id)) continue;
+    const need = required[shaft.id] ?? null;
+    let span: ShaftSpan | null = null;
+    const old = prev.shafts[shaft.id];
+    if (shaft.span === undefined) {
+      if (old === undefined) span = defaultShaftSpan(need);
+    } else {
+      before ??= requiredShaftSpans(prev);
+      const was = before[shaft.id] ?? null;
+      const tight =
+        old?.span !== undefined &&
+        was !== null &&
+        sameSpan(old.span, was) &&
+        sameSpan(shaft.span, was);
+      if (tight && need !== null && !sameSpan(need, was)) span = need;
+      else if (!spanContains(shaft.span, need)) span = unionSpan(shaft.span, need);
+    }
+    if (span === null) continue;
+    shafts ??= { ...next.shafts };
+    shafts[shaft.id] = { ...shaft, span: [clean(span[0]), clean(span[1])] };
+  }
+  return shafts === null ? next : { ...next, shafts };
+}
+
+function sameSpan(a: ShaftSpan, b: ShaftSpan): boolean {
+  return Math.abs(a[0] - b[0]) <= 1e-9 && Math.abs(a[1] - b[1]) <= 1e-9;
+}
+
+function applyRaw(scene: Scene, command: Command, ctx: CommandContext): CommandResult {
   switch (command.type) {
     case 'addRootShaft':
       return addRootShaft(scene, command, ctx);
@@ -270,6 +332,8 @@ export function applyCommand(scene: Scene, command: Command, ctx: CommandContext
       return setMeshAngle(scene, command);
     case 'setGearOffset':
       return setGearOffset(scene, command);
+    case 'setShaftSpan':
+      return setShaftSpan(scene, command);
     case 'addMotor':
       return addMotor(scene, command, ctx);
     case 'removeMotor':
@@ -826,7 +890,102 @@ function growCoaxial(
     { id: gearId, shaftId: c.shaftId, size: c.size, teeth, offset: clean(c.offset) },
     newGearShape(kind),
   );
-  return done({ ...scene, gears: withEntry(scene.gears, gearId, gear) }, [gearId]);
+  // 重なる位置には置かない（S4-03）。シャフトが伸びる分も含めて、新しい干渉を生むか確かめる
+  const next = fitShaftSpans(scene, { ...scene, gears: withEntry(scene.gears, gearId, gear) });
+  if (newInterferences(resolveLayout(scene), resolveLayout(next)).length > 0) {
+    return fail('notAllowed', `gear at offset ${gear.offset} overlaps other parts`);
+  }
+  return done(next, [gearId]);
+}
+
+// シャフトの端 end（0: 始まり、1: 終わり）を target（シャフトの原点からの位置）へ動かすときの範囲（S4-03。伸縮のつまみ）。
+// target は AXIAL_SNAP の倍数に丸め、載っている部品の範囲より短くはせず（その手前の 4 の倍数で止める）、
+// 伸ばす向きでは、ほかの部品にぶつかる手前の 4 の倍数で止める（線分は長いほど相手を含むので、ぶつかる長さは単調）。
+// 返す範囲は setShaftSpan が受け付ける。シャフトが無い・置かれていなければ null
+export function stretchShaftSpan(
+  scene: Scene,
+  shaftId: ShaftId,
+  end: 0 | 1,
+  target: number,
+): readonly [number, number] | null {
+  const current = resolveLayout(scene).shafts[shaftId]?.span;
+  if (current === undefined || !Number.isFinite(target)) return null;
+  const need = requiredShaftSpans(scene)[shaftId] ?? null;
+  const sign = end === 0 ? -1 : 1; // 伸ばす向き
+  const now = current[end];
+  const other = current[end === 0 ? 1 : 0];
+  // 縮められる限界（これより内側には行けない）: 部品の範囲の外側の 4 の倍数、反対の端から AXIAL_SNAP 以上
+  const toGrid = (x: number, outward: number) =>
+    (outward > 0 ? Math.ceil(x / AXIAL_SNAP) : Math.floor(x / AXIAL_SNAP)) * AXIAL_SNAP;
+  let limit = toGrid(other + sign * AXIAL_SNAP, sign);
+  if (need !== null)
+    limit = sign > 0 ? Math.max(limit, toGrid(need[1], 1)) : Math.min(limit, toGrid(need[0], -1));
+  const snapped = Math.round(target / AXIAL_SNAP) * AXIAL_SNAP + 0;
+  const spanWith = (value: number): readonly [number, number] =>
+    end === 0 ? [value, other] : [other, value];
+  // 内側へ: 限界で止める（今が限界より内側なら動かさない）
+  if ((snapped - limit) * sign < 0) {
+    const value = (now - limit) * sign < 0 ? now : limit;
+    return spanWith(value);
+  }
+  if ((snapped - now) * sign <= 0) return spanWith(snapped);
+  // 外側へ: ぶつからない最も遠い 4 の倍数（今の端から外側へ 1 段ずつ。二分探索）
+  const grid = toGrid(now, sign);
+  const first = grid === now ? now + sign * AXIAL_SNAP : grid;
+  const steps = Math.round((snapped - first) / (sign * AXIAL_SNAP));
+  const at = (k: number) => first + sign * k * AXIAL_SNAP;
+  const fits = (k: number) =>
+    applyCommand(
+      scene,
+      { type: 'setShaftSpan', shaftId, span: spanWith(at(k)) },
+      {
+        ids: () => '__unused',
+      },
+    ).ok;
+  if (fits(steps)) return spanWith(at(steps));
+  let lo = -1; // ここまでは入る（-1 は今の端）
+  let hi = steps; // ここはぶつかる
+  while (hi - lo > 1) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (fits(mid)) lo = mid;
+    else hi = mid;
+  }
+  return spanWith(lo < 0 ? now : at(lo));
+}
+
+// シャフトの範囲を変える（S4-03）。変えない端はそのまま（version 3 から移した範囲の端は 4 の倍数とは限らない）
+function setShaftSpan(scene: Scene, c: Extract<Command, { type: 'setShaftSpan' }>): CommandResult {
+  const shaft = scene.shafts[c.shaftId];
+  if (shaft === undefined) return fail('notFound', `shaft ${c.shaftId} not found`);
+  const span = c.span;
+  if (!Array.isArray(span) || span.length !== 2 || !span.every((x) => Number.isFinite(x))) {
+    return fail('invalidValue', 'span must be 2 finite numbers');
+  }
+  const [lo, hi] = span;
+  if (lo >= hi) return fail('invalidValue', `span [${lo}, ${hi}] is empty`);
+  const required = requiredShaftSpans(scene);
+  const current = resolveLayout(scene).shafts[shaft.id]?.span;
+  if (current === undefined) return fail('notAllowed', `shaft ${shaft.id} is not placed`);
+  for (const [value, now] of [
+    [lo, current[0]],
+    [hi, current[1]],
+  ] as const) {
+    if (value !== now && !isSnapped(value)) {
+      return fail('invalidValue', `span end ${value} is not a multiple of ${AXIAL_SNAP}`);
+    }
+  }
+  if (!spanContains([lo, hi], required[shaft.id] ?? null)) {
+    return fail('notAllowed', `span [${lo}, ${hi}] is shorter than the parts on ${shaft.id}`);
+  }
+  if (shaft.span !== undefined && shaft.span[0] === lo && shaft.span[1] === hi) return done(scene);
+  const next: Scene = {
+    ...scene,
+    shafts: withEntry(scene.shafts, shaft.id, { ...shaft, span: [clean(lo), clean(hi)] }),
+  };
+  if (newInterferences(resolveLayout(scene), resolveLayout(next)).length > 0) {
+    return fail('notAllowed', `shaft ${shaft.id} with span [${lo}, ${hi}] hits other parts`);
+  }
+  return done(next);
 }
 
 // 部品を消す。消す歯車を親に持つ mesh のシャフトと、消す歯車を子に持つ自分のシャフトは、
@@ -867,7 +1026,8 @@ function deleteParts(scene: Scene, ids: readonly string[]): CommandResult {
     // 検証済みのシーンでは全てのシャフトが根からたどれる。たどれない場合だけの逃げ道
     const origin: Vec3 = at?.origin ?? [0, 0, 0];
     const axis: Axis = at?.axis ?? shaftAxis(scene, shaft.id) ?? 'y';
-    shafts[shaft.id] = { id: shaft.id, placement: { kind: 'detached', origin, axis } };
+    // 範囲（S4-03）は原点からの値なので、その場に残すときもそのまま
+    shafts[shaft.id] = { ...shaft, placement: { kind: 'detached', origin, axis } };
     shaftsChanged = true;
   };
 
@@ -1397,8 +1557,17 @@ function reattachShaft(
     childGearId: child.id,
     angle: normalizeAngle(c.angle),
   };
+  // シャフトの範囲（S4-03）も原点からの値なので、歯車と一緒にずらす
+  const span: ShaftSpan | undefined =
+    shaft.span === undefined
+      ? undefined
+      : [clean(shaft.span[0] - shift), clean(shaft.span[1] - shift)];
   return done({
-    shafts: withEntry(scene.shafts, shaft.id, { ...shaft, placement }),
+    shafts: withEntry(scene.shafts, shaft.id, {
+      ...shaft,
+      placement,
+      ...(span === undefined ? {} : { span }),
+    }),
     gears,
     motors: scene.motors,
     anchors: scene.anchors,
@@ -1413,5 +1582,6 @@ function replaceScene(scene: Scene, next: Scene): CommandResult {
     const first = result.errors[0];
     return fail('invalidValue', `invalid scene: ${first?.message ?? 'unknown error'}`);
   }
-  return done(next === scene ? scene : next);
+  // 範囲を省いたシャフトには、載っている部品から求めた範囲を入れる（S4-03）
+  return done(next === scene ? scene : withShaftSpans(next));
 }

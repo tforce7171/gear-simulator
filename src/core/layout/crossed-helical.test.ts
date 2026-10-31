@@ -176,16 +176,11 @@ describe('位相', () => {
 });
 
 describe('候補', () => {
-  const spec = {
-    perimeterTeeth: 20,
-    coaxialSize: 'M',
-    coaxialTeeth: 20,
-    kind: 'crossedHelical',
-  } as const;
+  const spec = { perimeterTeeth: 20, kind: 'crossedHelical' } as const;
 
   it("A から列挙した外周の候補（新しいシャフトを作るもの）がすべて 'skew' で、軸が 'y' か 'z'。平行な軸の候補はない", () => {
-    const candidates = listGrowCandidates(crossedPair, 'gear_a', spec);
-    const fresh = candidates.filter((c) => c.kind !== 'coaxial');
+    // S4-03 から同じ軸の候補は出ないので、候補はすべて新しいシャフトを作る
+    const fresh = listGrowCandidates(crossedPair, 'gear_a', spec);
     expect(fresh.length).toBeGreaterThanOrEqual(1);
     expect(fresh.length).toBeLessThanOrEqual(4);
     for (const c of fresh) {
@@ -223,13 +218,7 @@ describe('候補', () => {
     expect(layout.interferences).toEqual([]);
   });
 
-  it("同じ軸の候補・起点で 'crossedHelical' を作れる", () => {
-    const coaxial = listGrowCandidates(aOnly, 'gear_a', {
-      ...spec,
-      kind: 'crossedHelical',
-    }).filter((c) => c.kind === 'coaxial');
-    expect(coaxial.map((c) => (c.kind === 'coaxial' ? c.offset : null))).toEqual([-8, 8]);
-    for (const c of coaxial) expect(c.shape).toEqual({ kind: 'crossedHelical' });
+  it("シャフトの上（S4-03）・起点で 'crossedHelical' を作れる", () => {
     const scene = apply(aOnly, {
       type: 'growGear',
       mode: 'coaxial',

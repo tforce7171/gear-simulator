@@ -314,12 +314,7 @@ describe('レイアウト（基準配置と公転）', () => {
 });
 
 describe('候補と編集', () => {
-  const spec = {
-    perimeterTeeth: DEFAULT_TEETH.M,
-    coaxialSize: 'M' as const,
-    coaxialTeeth: DEFAULT_TEETH.M,
-    kind: 'spur' as const,
-  };
+  const spec = { perimeterTeeth: DEFAULT_TEETH.M, kind: 'spur' as const };
 
   it('候補: 中・24 歯の太陽から作った機構が共通の値になる。Undo 1 回で全部消える', () => {
     const scene = sunOnly();
@@ -390,7 +385,7 @@ describe('候補と編集', () => {
     expect(rejected(scene, { type: 'setGearTeeth', gearId: 'gear_4', teeth: 50 })).toBe(true);
   });
 
-  it('遊星のシャフトにモーター・固定具を付けるコマンドは拒否。遊星の歯車からの候補は同じ軸のものだけ', () => {
+  it('遊星のシャフトにモーター・固定具を付けるコマンドは拒否。遊星の歯車からは候補を出さず、シャフトの上に段付きの遊星を置ける', () => {
     const scene = grown();
     expect(rejected(scene, { type: 'addMotor', shaftId: 'shaft_2', size: 'M' })).toBe(true);
     expect(rejected(scene, { type: 'addAnchor', shaftId: 'shaft_2' })).toBe(true);
@@ -403,14 +398,24 @@ describe('候補と編集', () => {
         teeth: 20,
       }),
     ).toBe(true);
-    // 小・12 歯なら遊星の下（リングの空洞の中）に段付きの遊星を置ける
-    const small = { ...spec, coaxialSize: 'S' as const, coaxialTeeth: 12 };
-    const kinds = listGrowCandidates(scene, 'gear_1', small).map((c) => c.kind);
-    expect(kinds.length).toBeGreaterThan(0);
-    expect(new Set(kinds)).toEqual(new Set(['coaxial']));
-    // パレットで内歯車を選んでいても、囲む候補・遊星歯車機構の候補は出ない
-    const withInternal = listGrowCandidates(scene, 'gear_1', { ...small, kind: 'internal' });
-    expect(withInternal.filter((c) => c.kind !== 'coaxial')).toEqual([]);
+    // 遊星の歯車からはどの種類でも候補が出ない（S4-03 で同じ軸の候補を廃止した）
+    for (const kind of ['spur', 'internal', 'planetary', 'rack'] as const) {
+      expect(listGrowCandidates(scene, 'gear_1', { ...spec, kind })).toEqual([]);
+    }
+    // 小・12 歯なら遊星の下（リングの空洞の中）に段付きの遊星を、シャフトの上に置ける
+    const stepped = applyCommand(
+      scene,
+      {
+        type: 'growGear',
+        mode: 'coaxial',
+        shaftId: 'shaft_2',
+        offset: -4,
+        size: 'S',
+        teeth: 12,
+      },
+      { ids: createSequentialIdGenerator() },
+    );
+    expect(stepped.ok).toBe(true);
   });
 
   it('削除: キャリアを消す → 遊星のシャフトが detached になり、位置が消す前の基準配置と同じ', () => {

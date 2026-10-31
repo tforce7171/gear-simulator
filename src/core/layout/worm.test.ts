@@ -430,12 +430,7 @@ describe('位相', () => {
 });
 
 describe('候補', () => {
-  const spec = {
-    perimeterTeeth: 20,
-    coaxialSize: 'M',
-    coaxialTeeth: 20,
-    kind: 'spur',
-  } as const;
+  const spec = { perimeterTeeth: 20, kind: 'spur' } as const;
 
   it('ウォームを選ぶ → ホイールの skew の候補（4 か所のうち干渉しないもの）。外周の候補は出さない', () => {
     const candidates = listGrowCandidates(wormBasic, 'gear_w', { ...spec, kind: 'wormWheel' });
@@ -487,21 +482,28 @@ describe('候補', () => {
     expect(candidates.some((c) => c.kind === 'perimeter')).toBe(false);
   });
 
-  it('同じ軸の候補でウォーム・ホイールを作れる（ウォームは区画の幅 32 で、1 条）', () => {
-    const worm = listGrowCandidates(wormOnly, 'gear_w', { ...spec, kind: 'worm' }).filter(
-      (c) => c.kind === 'coaxial',
-    );
-    expect(worm.map((c) => (c.kind === 'coaxial' ? c.offset : null))).toEqual([-32, 32]);
-    for (const c of worm) {
-      expect(c.shape).toEqual({ kind: 'worm' });
-      expect(c.teeth).toBe(1);
+  // S4-03 で同じ軸の候補は廃止した。シャフトの上に置くコマンド（growGear の coaxial）で作れることを確かめる
+  it('シャフトの上にウォーム・ホイールを作れる（ウォームは区画の幅 32 で、1 条）', () => {
+    const place = (kind: 'worm' | 'wormWheel', offset: number) =>
+      apply(wormOnly, {
+        type: 'growGear',
+        mode: 'coaxial',
+        shaftId: 'shaft_w',
+        offset,
+        size: 'M',
+        teeth: 20,
+        kind,
+      });
+    for (const offset of [-32, 32]) {
+      const scene = place('worm', offset);
+      const added = Object.values(scene.gears).find((g) => !(g.id in wormOnly.gears)) as Gear;
+      expect(added).toMatchObject({ kind: 'worm', teeth: 1, offset });
     }
-    const wheel = listGrowCandidates(wormOnly, 'gear_w', {
-      ...spec,
-      kind: 'wormWheel',
-    }).filter((c) => c.kind === 'coaxial');
-    expect(wheel.map((c) => (c.kind === 'coaxial' ? c.offset : null))).toEqual([-8, 32]);
-    for (const c of wheel) expect(c.shape).toEqual({ kind: 'wormWheel' });
+    for (const offset of [-8, 32]) {
+      const scene = place('wormWheel', offset);
+      const added = Object.values(scene.gears).find((g) => !(g.id in wormOnly.gears)) as Gear;
+      expect(added).toMatchObject({ kind: 'wormWheel', teeth: 20, offset });
+    }
   });
 });
 

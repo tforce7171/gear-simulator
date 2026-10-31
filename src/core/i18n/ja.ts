@@ -34,12 +34,17 @@ export const ja = {
   // 生やす歯車の種類（S2-05）
   'palette.kind': '生やす歯車の種類',
   'palette.kind.hint':
-    '選んだ種類の歯車ができる候補だけを出します。同じ軸の候補もこの種類で作ります',
+    'シャフトを選んでマウスを乗せると、この種類の歯車をシャフトの上の好きな位置に置けます。歯車を選ぶと、この種類ができる候補を周りに出します',
   // 選んだ部品とかみ合えない種類を選んでいるときの注記（S4-02）。{kinds} は種類の名前を区切りでつないだもの
   'palette.kind.note': 'この歯車とかみ合えるのは{kinds}です',
   'palette.kind.note.rack': 'このラックとかみ合えるのは{kinds}です',
-  'palette.kind.note.none': 'この歯車には、同じ軸の歯車だけを足せます',
+  'palette.kind.note.none':
+    'この歯車の周りには足せません。シャフトを選ぶと、シャフトの上に置けます',
   'palette.kind.note.separator': '・',
+  // パレットでラック・遊星を選んでいるときの注記（S4-03。シャフトの上には置かない）
+  'palette.kind.note.aroundGear': 'ラック／遊星は歯車の周りの候補から置きます',
+  // シャフトの上に置けないとき（S4-03）
+  'shaftPlace.blocked': 'ほかの部品と重なるので、ここには置けない',
   'gearKind.spur': '平歯車',
   'gearKind.helical': 'ハスバ歯車',
   'gearKind.bevel': 'かさ歯車',
@@ -58,6 +63,11 @@ export const ja = {
   // プロパティパネルの中身（S1-20）
   'properties.gear': '歯車',
   'properties.shaft': 'シャフト',
+  // シャフトの長さ（S4-03）
+  'properties.shaft.length': '長さ',
+  'properties.shaft.length.value': '{length} mm',
+  'properties.shaft.length.hint':
+    '両端のつまみをドラッグして 4 mm 刻みで伸び縮みさせる。シャフトにマウスを乗せてクリックすると、パレットの種類の歯車をその位置に置く',
   'properties.kind': '種類',
   // 種類ごとの表示（S2-05）
   'properties.hand': 'ねじれの向き',

@@ -6,7 +6,8 @@
         "kind": "root",
         "origin": [0, 20, 0],
         "axis": "y"
-      }
+      },
+      "span": [-4, 8]
     },
     "shaft_s2": {
       "id": "shaft_s2",
@@ -15,7 +16,8 @@
         "parentGearId": "gear_g1",
         "childGearId": "gear_g2",
         "angle": 0
-      }
+      },
+      "span": [-4, 8]
     },
     "shaft_s3": {
       "id": "shaft_s3",
@@ -24,7 +26,8 @@
         "parentGearId": "gear_g2",
         "childGearId": "gear_g3",
         "angle": 0
-      }
+      },
+      "span": [-4, 8]
     }
   },
   "gears": {

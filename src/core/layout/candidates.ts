@@ -7,7 +7,6 @@ import {
   RACK_DEFAULT_TEETH,
   WORM_THREADS,
 } from '../constants';
-import { axialExtent, teethRange } from '../geometry/dimensions';
 import { defaultPlanetTeeth } from '../geometry/planetary';
 import { rackEndMargin, rackLength, rackPitch, snapRackPosition } from '../geometry/rack';
 import type { Vec3 } from '../math/vec3';
@@ -32,15 +31,13 @@ import type {
   RackId,
   Scene,
   Shaft,
-  ShaftId,
   SizeKey,
 } from '../scene/types';
 import { resolveAddition, resolveLayout } from './resolve';
 
 // 生やす候補の列挙（要件 §6、design.md §5）。選んだ歯車について、
-// 外周の候補（新しい mesh のシャフトを作る。親の軸まわりの 8 方向）と、
-// 同じ軸の候補（選んだ歯車のシャフトに通す。歯車の並びの両端の外側）を返す。
-// 外周の子は親とかみ合う形（ハスバ歯車なら逆の hand）、同じ軸は spec.kind の歯車（S2-01。S4-02 までは spec.coaxialKind）。
+// 外周の候補（新しい mesh のシャフトを作る。親の軸まわりの 8 方向）を返す。外周の子は親とかみ合う形（ハスバ歯車なら逆の hand）。
+// 同じ軸の両端の候補は S4-03 で廃止した（シャフトの上の好きな位置に、パレットで選んだ種類を置く。growGear の coaxial）。
 // かさ歯車の親（S2-02）は外周の代わりに、直交する 2 軸 × 2 方向の 4 か所のかさ歯車（新しい bevel のシャフト）を返す。
 // ウォーム・ホイールの親（S2-03）は外周の代わりに、ねじれた位置の 2 軸 × 2 方向の 4 か所に相手（skewPartnerShape。
 // ウォームにはホイール、ホイールにはウォーム）を載せた新しい skew のシャフトを返す。
@@ -60,11 +57,7 @@ export function isPaletteGearKind(kind: PaletteKind): kind is GearKind {
 
 export interface GrowSpec {
   perimeterTeeth: number; // 外周の新しい歯車の歯数（大きさは親と同じ）
-  coaxialSize: SizeKey; // 同じ軸の新しい歯車の大きさ
-  coaxialTeeth: number; // 同じ軸の新しい歯車の歯数
-  // パレットで選んだ種類（S4-02。S2-01〜S3-04 の coaxialKind を置き換えた）。この種類の歯車ができる候補だけを出す。
-  // 歯車の種類なら、同じ軸の候補もこの種類で作る（ハスバ歯車は hand 'right'。ウォームは歯数によらず 1 条。
-  // 内歯車は歯数を INTERNAL_MIN_TEETH 以上に上げる）。'rack'・'planetary' なら同じ軸の候補は出さない
+  // パレットで選んだ種類（S4-02）。この種類の歯車ができる候補だけを出す
   kind: PaletteKind;
 }
 
@@ -156,23 +149,12 @@ export type GrowCandidate =
       center: Vec3;
       axis: Axis;
       basePhase: number;
-    }
-  | {
-      kind: 'coaxial';
-      shaftId: ShaftId;
-      offset: number; // 歯幅の負側の面の位置。AXIAL_SNAP の倍数
-      size: SizeKey;
-      teeth: number;
-      shape: GearShape; // newGearShape(spec.kind)
-      center: Vec3;
-      axis: Axis;
     };
 
 export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec): GrowCandidate[] {
   const parent = scene.gears[gearId];
   if (parent === undefined) throw new Error(`listGrowCandidates: no gear ${gearId}`);
   assertTeeth(parent.size, spec.perimeterTeeth);
-  assertTeeth(spec.coaxialSize, spec.coaxialTeeth);
 
   const layout = resolveLayout(scene);
   if (layout.gears[gearId] === undefined) return [];
@@ -194,7 +176,7 @@ export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec)
   };
 
   const candidates: GrowCandidate[] = [];
-  // 遊星のシャフトの歯車（S3-03）からは、同じ軸の候補（段付きの遊星）だけを出す
+  // 遊星のシャフトの歯車（S3-03）からは候補を出さない（段付きの遊星は、シャフトの上に置く。S4-03）
   const orbiting = scene.shafts[parent.shaftId]?.placement.kind === 'planet';
   const meshShape = orbiting ? null : meshPartnerShape(gearShape(parent));
   const perimeterShape = meshShape?.kind === spec.kind ? meshShape : null;
@@ -364,61 +346,6 @@ export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec)
     }
   }
 
-  // 同じ軸の候補は、パレットの種類が歯車の種類のときだけ（ラック・遊星は同じ軸に作らない。S4-02）
-  if (!isPaletteGearKind(spec.kind)) return candidates;
-  const coaxialKind = spec.kind;
-  const coaxialShape = newGearShape(coaxialKind);
-  // 選んだ歯車のシャフトに載った歯車の並びの、最小と最大の面（区画の両端。ウォームは区画の幅。S2-03。
-  // 内歯車はウェブまで含めた全体。S3-02）
-  let minFace = Number.POSITIVE_INFINITY;
-  let maxFace = Number.NEGATIVE_INFINITY;
-  for (const g of Object.values(scene.gears)) {
-    if (g.shaftId !== parent.shaftId) continue;
-    const [lo, hi] = axialExtent(g);
-    minFace = Math.min(minFace, lo);
-    maxFace = Math.max(maxFace, hi);
-  }
-  // 新しい歯車の歯数は種類の範囲に収める（ウォームは 1 条、内歯車は INTERNAL_MIN_TEETH 以上。S3-02）
-  const coaxialRange = teethRange(coaxialKind, spec.coaxialSize);
-  const coaxialTeeth = Math.min(Math.max(spec.coaxialTeeth, coaxialRange.min), coaxialRange.max);
-  // 新しい歯車が offset からどれだけの範囲を占めるか（内歯車はウェブの側に伸びる）
-  const [extentLo, extentHi] = axialExtent(
-    makeGear(
-      {
-        id: tempGearId,
-        shaftId: parent.shaftId,
-        size: spec.coaxialSize,
-        teeth: coaxialTeeth,
-        offset: 0,
-      },
-      coaxialShape,
-    ),
-  );
-  for (const offset of [minFace - extentHi, maxFace - extentLo]) {
-    const child = makeGear(
-      {
-        id: tempGearId,
-        shaftId: parent.shaftId,
-        size: spec.coaxialSize,
-        teeth: coaxialTeeth,
-        offset,
-      },
-      coaxialShape,
-    );
-    const placed = tryPlace(null, child);
-    if (placed === null) continue;
-    candidates.push({
-      kind: 'coaxial',
-      shaftId: parent.shaftId,
-      offset,
-      size: spec.coaxialSize,
-      teeth: coaxialTeeth,
-      shape: coaxialShape,
-      center: placed.center,
-      axis: placed.axis,
-    });
-  }
-
   return candidates;
 }
 
@@ -434,7 +361,6 @@ export function candidateKind(candidate: GrowCandidate): PaletteKind {
     case 'bevel':
     case 'skew':
     case 'enclose':
-    case 'coaxial':
       return candidate.shape.kind;
     default:
       return assertNever(candidate);
@@ -442,7 +368,7 @@ export function candidateKind(candidate: GrowCandidate): PaletteKind {
 }
 
 // 選んだ部品とかみ合う向きに生やせる種類（S4-02）。パレットの種類がこの中に無ければ、外周などの候補は出ず
-// 同じ軸の候補だけになる（パレットの注記に使う）。並びは PALETTE_KIND_LIST の順。
+// シャフトの上に置くことだけができる（S4-03。パレットの注記に使う）。並びは PALETTE_KIND_LIST の順。
 // 平歯車: 平歯車（外周）・内歯車（囲む）・ラック・遊星。内歯車: 平歯車（内側の外周）。ハスバ歯車: ハスバ歯車（逆の hand）。
 // かさ歯車: かさ歯車。ウォーム: ホイール。ホイール: ウォーム。ねじ歯車: ねじ歯車。ラック: 平歯車（2 つ目以降のピニオン）。
 // 遊星のシャフトの歯車（S3-03）は同じ軸だけなので []。歯車・ラックでない ID・根からたどれない部品も []

@@ -6,14 +6,16 @@
         "kind": "root",
         "origin": [0, 60, 0],
         "axis": "y"
-      }
+      },
+      "span": [-4, 12]
     },
     "shaft_k": {
       "id": "shaft_k",
       "placement": {
         "kind": "concentric",
         "parentShaftId": "shaft_s"
-      }
+      },
+      "span": [8, 20]
     },
     "shaft_p0": {
       "id": "shaft_p0",
@@ -23,7 +25,8 @@
         "parentGearId": "gear_s",
         "childGearId": "gear_p0",
         "angle": 0
-      }
+      },
+      "span": [-4, 16]
     },
     "shaft_p1": {
       "id": "shaft_p1",
@@ -33,7 +36,8 @@
         "parentGearId": "gear_s",
         "childGearId": "gear_p1",
         "angle": 2.0943951023931953
-      }
+      },
+      "span": [-4, 16]
     },
     "shaft_p2": {
       "id": "shaft_p2",
@@ -43,14 +47,16 @@
         "parentGearId": "gear_s",
         "childGearId": "gear_p2",
         "angle": 4.1887902047863905
-      }
+      },
+      "span": [-4, 16]
     },
     "shaft_r": {
       "id": "shaft_r",
       "placement": {
         "kind": "concentric",
         "parentShaftId": "shaft_s"
-      }
+      },
+      "span": [-16, -8]
     }
   },
   "gears": {

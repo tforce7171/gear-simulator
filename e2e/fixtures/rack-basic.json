@@ -6,7 +6,8 @@
         "kind": "root",
         "origin": [0, 60, 0],
         "axis": "z"
-      }
+      },
+      "span": [-4, 12]
     }
   },
   "gears": {

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import type { Page } from '@playwright/test';
 import type { AudioState } from '../src/audio/engine';
+import { withShaftSpans } from '../src/core/layout/resolve';
 import type { Vec3 } from '../src/core/math/vec3';
 import type { Scene } from '../src/core/scene/types';
 import {
@@ -344,7 +345,7 @@ test('プロパティ: ラックの歯数（10〜60）と内歯車のウェブ�
   await expect(page.getByTestId('prop-teeth')).toHaveValue('40');
 });
 
-test('stage3-showcase → locks・interferences が空。エクスポート → インポートで等しく、ファイルの version === 3', async ({
+test('stage3-showcase → locks・interferences が空。エクスポート → インポートで等しく、ファイルの version === 4（S4-03）', async ({
   page,
 }) => {
   await openApp(page, { scene: showcase });
@@ -357,7 +358,7 @@ test('stage3-showcase → locks・interferences が空。エクスポート → 
   await page.getByTestId('toolbar-export').click();
   const path = await (await downloading).path();
   const file = JSON.parse(readFileSync(path, 'utf8')) as { version: number; scene: Scene };
-  expect(file.version).toBe(3);
+  expect(file.version).toBe(4);
   expect(file.scene).toEqual(showcase);
   await page.evaluate((s) => window.__gearSim?.loadScene(s), EMPTY);
   const chooser = page.waitForEvent('filechooser');
@@ -375,9 +376,10 @@ test('version 2 のファイル（stage2-showcase）をインポート → 読�
   const chooser = page.waitForEvent('filechooser');
   await page.getByTestId('toolbar-import').click();
   await (await chooser).setFiles(v2Path);
+  // version 3 → 4 の移行（S4-03）が、シャフトに今までと同じ長さの範囲を足す
   await expect
     .poll(() => getScene(page))
-    .toEqual({ ...v2.scene, anchors: {}, carriers: {}, racks: {} });
+    .toEqual(withShaftSpans({ ...v2.scene, anchors: {}, carriers: {}, racks: {} }));
   expect(await getScene(page)).toEqual(fixtureScene('stage2-showcase'));
   await expect(page.getByTestId('toast')).toHaveCount(0);
 });
