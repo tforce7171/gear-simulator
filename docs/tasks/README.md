@@ -74,6 +74,19 @@
 | [S3-04](stage3/04-rack-pinion.md) | ラック＆ピニオン | S2-05 | done |
 | [S3-05](stage3/05-stage3-integration.md) | 音・テーマ・保存形式の拡張 | S3-01〜S3-04 | done |
 
+## 段階 4: 使ってみての改善
+
+| ID | 題名 | 依存 | 状態 |
+|---|---|---|---|
+| [S4-01](stage4/01-camera-zoom-spin.md) | 視点を回したあとのズームでカメラが回り込む不具合を直す | - | todo |
+| [S4-02](stage4/02-candidates-by-palette-kind.md) | 生やす候補をパレットで選んだ種類だけにする | - | todo |
+| [S4-03](stage4/03-shaft-length-and-free-placement.md) | シャフトの長さを持たせ、伸縮とシャフト上の好きな位置への配置 | S4-02 | todo |
+| [S4-04](stage4/04-root-shaft-without-gear.md) | 起点のシャフトを歯車なしで置く | S4-03 | todo |
+| [S4-05](stage4/05-gear-width.md) | 歯車の厚さを変えられるようにする | S4-03 | todo |
+| [S4-06](stage4/06-gear-click-sound.md) | モーターのうなりをやめ、歯車のカタカタという音にする | - | todo |
+| [S4-07](stage4/07-motor-model.md) | モーターを本物らしい形にする | S4-03 | todo |
+| [S4-08](stage4/08-palette-icons.md) | パレットにアイコンを付ける | S4-02 | todo |
+
 ## タスク資料のひな形
 
 各タスクの資料は次の形で書く。Claude Code が 1 タスクずつ読んで実装する前提で書く。外から見える振る舞いとテストの観点を書き、内部の構造までは決めない。
