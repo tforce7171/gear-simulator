@@ -53,7 +53,7 @@ async function splitByX(page: Page): Promise<{ selected: number[]; others: numbe
   return { selected, others };
 }
 
-test('chain-22 では 16 組を個別に鳴らし、残りは背景のうなりになる', async ({ page }) => {
+test('chain-22 では 16 組を個別に鳴らし、残りは背景（粒のざわざわ）になる', async ({ page }) => {
   await open(page, fixture('chain-22'));
   await startAudio(page);
   await expect.poll(async () => (await getAudio(page)).voices.length).toBe(16);

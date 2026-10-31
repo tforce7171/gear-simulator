@@ -5,7 +5,7 @@ import { add, length, scale, sub, type Vec3 } from '../math/vec3';
 import type { SizeKey } from '../scene/types';
 import type { AudioMaterialId } from '../theme';
 
-// 音の空間配置・鳴らす音源の選び方・背景のうなり・専用音（S1-26、要件 §9）。
+// 音の空間配置・鳴らす音源の選び方・背景・専用音（S1-26、要件 §9）。
 // Web Audio には触れず、src/audio/ がこの結果をノードに流す
 
 // 同時に鳴らすモーターの音源の数（かみ合いの MAX_AUDIO_VOICES とは別に数える）

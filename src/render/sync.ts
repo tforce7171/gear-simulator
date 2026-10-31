@@ -98,7 +98,7 @@ const MOTOR_GAP = 1; // シャフトの端とモーターの箱のすき間
 // 細いシャフトをクリックしやすくする、見えない当たり判定の円柱の半径（S1-16）
 export const SHAFT_PICK_RADIUS = 3;
 
-// モーターの箱の中心: シャフトの負側の端のさらに外（音のうなりの位置にも使う。S1-26）
+// モーターの箱の中心: シャフトの負側の端のさらに外（モーターの音の位置にも使う。S1-26）
 export function motorCenter(placed: ShaftLayout, size: SizeKey): Vec3 {
   const along = placed.span[0] - MOTOR_GAP - MOTOR_BOX[size] / 2;
   return add(placed.origin, scale(axisVector(placed.axis), along));

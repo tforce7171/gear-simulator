@@ -93,7 +93,7 @@ describe('createAudioEngine（開始前）', () => {
     });
   });
 
-  it('初期値は metal・ミュートなし。鳴らす組はリスナーに近い動いている 16 組で、残りは背景のうなり', () => {
+  it('初期値は metal・ミュートなし。鳴らす組はリスナーに近い動いている 16 組で、残りは背景', () => {
     const engine = createAudioEngine();
     expect(engine.state()).toMatchObject({ muted: false, material: 'metal', voices: [] });
     const voices = [
