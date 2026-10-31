@@ -8,7 +8,7 @@ import type { AudioMaterialId } from '../theme';
 // 音の空間配置・鳴らす音源の選び方・背景のうなり・専用音（S1-26、要件 §9）。
 // Web Audio には触れず、src/audio/ がこの結果をノードに流す
 
-// 同時に鳴らすモーターのうなりの数（かみ合いの MAX_AUDIO_VOICES とは別に数える）
+// 同時に鳴らすモーターの音源の数（かみ合いの MAX_AUDIO_VOICES とは別に数える）
 export const MAX_MOTOR_VOICES = 4;
 // 前のフレームで鳴っていた音源は、距離をこの倍率にして比べる（ちらつき防止）
 export const VOICE_HYSTERESIS = 0.9;
@@ -24,12 +24,69 @@ export const PANNER = {
   maxDistance: 10000,
 } as const;
 
-// 背景のうなり
+// かみ合いの組が 1 秒に打つ粒の数の上限（S4-06。clickRate）
+export const CLICK_RATE_MAX = 40;
+
+// 背景（S1-26。S4-06 で持続音をやめ、粒を重ねたざわざわにした）
 export const BACKGROUND_MAX_LEVEL = 0.5;
+// 粒の高さを決める代表の歯の通過頻度の範囲（Hz）
 export const BACKGROUND_MIN_HZ = 30;
 export const BACKGROUND_MAX_HZ = 2000;
-export const BACKGROUND_NOISE_Q = 1;
-export const BACKGROUND_NOISE_RATIO = 0.5; // 帯域ノイズの音量（連続音に対する比）
+// 背景で打つ粒の数の上限（毎秒）
+export const BACKGROUND_MAX_RATE = 80;
+// 背景の粒の時刻の揺らぎ（間隔に対する比）。かみ合いの組より大きく揺らして、ばらばらのざわざわにする
+export const BACKGROUND_TIME_JITTER = 0.5;
+
+// ロック・ラック端の衝撃音に混ぜる材質のクリック（S1-25 の材質の表。S4-06 でかみ合いの粒の音色と分けた。値は前のまま）
+export const IMPACT_CLICKS: Readonly<
+  Record<
+    AudioMaterialId,
+    {
+      readonly partials: readonly { readonly frequency: number; readonly decay: number }[];
+      readonly noise: {
+        readonly type: 'highpass' | 'lowpass';
+        readonly frequency: number;
+        readonly decay: number;
+      };
+      readonly gain: number;
+    }
+  >
+> = {
+  metal: {
+    partials: [
+      { frequency: 2400, decay: 0.08 },
+      { frequency: 3900, decay: 0.06 },
+      { frequency: 6100, decay: 0.04 },
+    ],
+    noise: { type: 'highpass', frequency: 3000, decay: 0.008 },
+    gain: 0.5,
+  },
+  wood: {
+    partials: [
+      { frequency: 420, decay: 0.025 },
+      { frequency: 950, decay: 0.015 },
+    ],
+    noise: { type: 'lowpass', frequency: 1200, decay: 0.012 },
+    gain: 0.6,
+  },
+};
+// 衝撃音のクリックの高さの揺らぎ（±3%）
+const IMPACT_CLICK_JITTER = 0.03;
+
+// 衝撃音のクリック 1 回のパラメータ。部分音とノイズのフィルタの周波数を同じ割合で ±3% ずらす
+// （random() が 0 → −3%、0.5 → 0、1 → +3%）
+export function impactClickParams(
+  material: AudioMaterialId,
+  random: () => number,
+): (typeof IMPACT_CLICKS)[AudioMaterialId] {
+  const base = IMPACT_CLICKS[material];
+  const factor = 1 + IMPACT_CLICK_JITTER * (2 * clamp(random(), 0, 1) - 1);
+  return {
+    partials: base.partials.map((p) => ({ frequency: p.frequency * factor, decay: p.decay })),
+    noise: { ...base.noise, frequency: base.noise.frequency * factor },
+    gain: base.gain,
+  };
+}
 
 // ロックの音
 export const LOCK_IMPACT_LIMIT = 4; // 1 秒あたりの衝撃音の上限
@@ -63,10 +120,8 @@ export const RACK_HIT: Readonly<Record<AudioMaterialId, RackHitParams>> = {
 };
 export const RACK_HIT_OVERTONE = 2.7;
 
-// モーターのうなり
-export const MOTOR_HUM_BASE_HZ: Readonly<Record<SizeKey, number>> = { S: 220, M: 140, L: 90 };
-export const MOTOR_HUM_LOWPASS_RATIO = 6; // ローパスの周波数 = 基準 × 6
-export const MOTOR_GRIND_RATIO = 3; // きしみの帯域の中心 = うなりの周波数 × 3
+// モーターのきしみ（過負荷。S4-06 でのこぎり波のうなりはやめた）。帯域の中心の基準は前のうなりの基準（220/140/90 Hz）の 3 倍
+export const MOTOR_GRIND_BASE_HZ: Readonly<Record<SizeKey, number>> = { S: 660, M: 420, L: 270 };
 export const MOTOR_GRIND_Q = 4;
 export const MOTOR_GRIND_AM_HZ = 7;
 export const MOTOR_GRIND_LEVEL = 0.15;
@@ -135,12 +190,13 @@ export function selectVoices<T extends VoiceCandidate>(
   };
 }
 
-// 選ばれなかった組をまとめた背景のうなり（rest が空なら null）。
-// g_i = level × 距離の減衰、音量 = min(0.5, √Σg²)、周波数 = g で重み付けした log2(f) の平均（30〜2000 Hz）
+// 選ばれなかった組をまとめた背景（rest が空なら null）。
+// g_i = level × 距離の減衰、音量 = min(0.5, √Σg²)、周波数 = g で重み付けした log2(f) の平均（30〜2000 Hz。粒の高さに使う）、
+// rate = 各組の clickRate の和（毎秒の粒の数。BACKGROUND_MAX_RATE まで。S4-06）
 export function summarizeBackground(
   rest: readonly VoiceCandidate[],
   listener: Vec3,
-): { level: number; frequency: number } | null {
+): { level: number; frequency: number; rate: number } | null {
   const moving = rest.filter((c) => c.frequency > 0);
   if (moving.length === 0) return null;
   let sumSq = 0;
@@ -157,9 +213,11 @@ export function summarizeBackground(
     sumW > 0
       ? sumLog / sumW
       : moving.reduce((s, c) => s + Math.log2(c.frequency), 0) / moving.length;
+  const rate = moving.reduce((sum, c) => sum + Math.min(c.frequency, CLICK_RATE_MAX), 0);
   return {
     level: Math.min(BACKGROUND_MAX_LEVEL, Math.sqrt(sumSq)),
     frequency: clamp(2 ** meanLog, BACKGROUND_MIN_HZ, BACKGROUND_MAX_HZ),
+    rate: Math.min(BACKGROUND_MAX_RATE, rate),
   };
 }
 
@@ -205,21 +263,21 @@ export function canPlayImpact(history: readonly number[], now: number): boolean 
   return recent.length < LOCK_IMPACT_LIMIT;
 }
 
-// モーターのうなり。strain = d·(d − ω/ω0) = 1 − d·ω/ω0（トルク ÷ 停動トルクを、モーターの向きを正として見た値）、周波数 = 基準 × (0.6 + 0.4 × clamp(|ω|/ω0, 0, 1.5))、
-// 音量 = 0.08 + 0.07 × clamp(strain, 0, 1)、grind = clamp(strain − 1, 0, 1)
-export function motorHumParams(
+// モーターの負荷（S4-06 でうなりの周波数・音量をやめた）。strain = d·(d − ω/ω0) = 1 − d·ω/ω0（トルク ÷ 停動トルクを、
+// モーターの向きを正として見た値）、grind = clamp(strain − 1, 0, 1)、
+// きしみの帯域の中心 grindFrequency = 基準 × (0.6 + 0.4 × clamp(|ω|/ω0, 0, 1.5))（前のうなりの周波数の 3 倍と同じ）
+export function motorLoadParams(
   size: SizeKey,
   rpm: number,
   direction: 1 | -1,
   omega: number,
-): { frequency: number; level: number; strain: number; grind: number } {
+): { strain: number; grind: number; grindFrequency: number } {
   const omega0 = (rpm * 2 * Math.PI) / 60;
   const ratio = omega0 > 0 ? omega / omega0 : 0;
   const strain = 1 - direction * ratio;
   return {
-    frequency: MOTOR_HUM_BASE_HZ[size] * (0.6 + 0.4 * clamp(Math.abs(ratio), 0, 1.5)),
-    level: 0.08 + 0.07 * clamp(strain, 0, 1),
     strain,
     grind: clamp(strain - 1, 0, 1),
+    grindFrequency: MOTOR_GRIND_BASE_HZ[size] * (0.6 + 0.4 * clamp(Math.abs(ratio), 0, 1.5)),
   };
 }

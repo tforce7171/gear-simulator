@@ -9,7 +9,7 @@ import { selectionForPick } from './app/selection';
 import { createLayoutMemo, createStore } from './app/store';
 import { createWorks } from './app/works';
 import { createAudioEngine } from './audio/engine';
-import { computeMeshVoices, computeMotorHums, lockPosition } from './core/audio-model';
+import { computeMeshVoices, computeMotorVoices, lockPosition } from './core/audio-model';
 import { AUTOSAVE_DEBOUNCE_MS, THUMBNAIL_SIZE } from './core/constants';
 import { toSaveFile } from './core/io/save-file';
 import { boundsOf } from './core/layout/bounds';
@@ -575,7 +575,7 @@ startLoop({
         forward: [forward.x, forward.y, forward.z],
         up: [up.x, up.y, up.z],
       },
-      motors: computeMotorHums(scene, motion, sim.paused, (motor) => {
+      motors: computeMotorVoices(scene, motion, sim.paused, (motor) => {
         const placed = layout.shafts[motor.shaftId];
         return placed === undefined ? null : motorCenter(placed, motor.size);
       }),

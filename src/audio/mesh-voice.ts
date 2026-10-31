@@ -1,13 +1,13 @@
-import { type ClickParams, MATERIALS, slideNoiseParams, VOICE_FADE_SEC } from '../core/audio-model';
+import { type ClickParams, slideNoiseParams, VOICE_FADE_SEC } from '../core/audio-model';
 import type { Vec3 } from '../core/math/vec3';
 import type { AudioMaterialId } from '../core/theme';
 import { createPanner, type Panner } from './panner';
 
-// かみ合い 1 組分の合成（S1-25）: 連続音（倍音の発振器 → ローパス）＋ざらつきのノイズと、予約するクリック。
+// かみ合い 1 組分の合成（S1-25）: 予約する粒の音（S4-06 で連続音・ざらつきをやめ、速さによらず粒だけにした）。
 // ウォーム・ねじ歯車の組（S2-05）は、すべりの雑音（ループするノイズ → 帯域を絞ったフィルタ）を足す。
 // 出力は PannerNode で 3D に置く（S1-26）。作るときに 100 ms でフェードインする
 
-// 連続音の高さ・音量を追いかける時定数（秒）。値を飛ばさずに滑らかに変えてプツッと鳴らさない
+// すべりの雑音を追いかける時定数（秒）。値を飛ばさずに滑らかに変えてプツッと鳴らさない
 const PARAM_SMOOTHING = 0.02;
 // 音源を消すときのフェードアウト（秒）
 const RELEASE_SEC = VOICE_FADE_SEC;
@@ -15,34 +15,19 @@ const RELEASE_SEC = VOICE_FADE_SEC;
 const CLICK_ATTACK_SEC = 0.001;
 // 指数の減衰で鳴り終わったとみなす時間（減衰時間の倍数。約 −52 dB）
 const CLICK_TAIL_FACTOR = 6;
-// ざらつきのノイズを通す帯域フィルタの Q
-const GRIT_Q = 1.5;
 // クリックのノイズの音量（クリックの音量に対する比）
 const CLICK_NOISE_RATIO = 0.8;
 
 export interface MeshVoiceSynth {
-  // 連続音の基本周波数（Hz）と音量
-  setTone(frequency: number, level: number): void;
-  // time（コンテキストの時刻）にクリックを 1 回鳴らす。gain はクロスフェードの重み
+  // time（コンテキストの時刻）に粒を 1 回鳴らす。gain は粒の音量に掛ける倍率（種類の音色の click）
   click(params: ClickParams, time: number, gain: number): void;
   // すべりの雑音の強さ（0〜1。slideNoiseLevel。S2-05）
   setSlide(level: number): void;
-  // 連続音のローパスに掛ける倍率（1 で材質のまま、1 未満でこもる。内歯車の組。S3-05）
-  setLowpassScale(scale: number): void;
   setMaterial(material: AudioMaterialId): void;
   // 音源の位置（かみ合いの接点。mm）
   setPosition(position: Vec3): void;
   // フェードアウトして止め、ノードを切り離す
   dispose(): void;
-}
-
-export function periodicWave(ctx: BaseAudioContext, harmonics: readonly number[]): PeriodicWave {
-  const real = new Float32Array(harmonics.length + 1);
-  const imag = new Float32Array(harmonics.length + 1);
-  harmonics.forEach((amp, i) => {
-    imag[i + 1] = amp;
-  });
-  return ctx.createPeriodicWave(real, imag);
 }
 
 export function createMeshVoiceSynth(
@@ -53,33 +38,12 @@ export function createMeshVoiceSynth(
   position: Vec3,
 ): MeshVoiceSynth {
   let material = initialMaterial;
-  let level = 0;
-  let lowpassScale = 1;
   const panner: Panner = createPanner(ctx, destination, position);
   const output = ctx.createGain();
   // 入れ替わりでプツッと鳴らないように、0 から 100 ms で上げる
   output.gain.setValueAtTime(0, ctx.currentTime);
   output.gain.linearRampToValueAtTime(1, ctx.currentTime + VOICE_FADE_SEC);
   output.connect(panner.node);
-
-  // 連続音: 倍音を持つ発振器 → ローパス → 音量
-  const osc = ctx.createOscillator();
-  const toneFilter = ctx.createBiquadFilter();
-  toneFilter.type = 'lowpass';
-  const toneGain = ctx.createGain();
-  toneGain.gain.value = 0;
-  osc.connect(toneFilter).connect(toneGain).connect(output);
-
-  // ざらつき: ノイズ → 基本周波数のまわりの帯域 → 音量（連続音の音量 × 材質のノイズの量）
-  const grit = ctx.createBufferSource();
-  grit.buffer = noise;
-  grit.loop = true;
-  const gritFilter = ctx.createBiquadFilter();
-  gritFilter.type = 'bandpass';
-  gritFilter.Q.value = GRIT_Q;
-  const gritGain = ctx.createGain();
-  gritGain.gain.value = 0;
-  grit.connect(gritFilter).connect(gritGain).connect(output);
 
   // すべりの雑音（S2-05）: ノイズ → 帯域を絞ったフィルタ → 音量。強さ 0 の組では音量 0 のまま
   let slideLevel = 0;
@@ -98,42 +62,13 @@ export function createMeshVoiceSynth(
     slideFilter.Q.setTargetAtTime(p.q, now, PARAM_SMOOTHING);
     slideGain.gain.setTargetAtTime(p.gain, now, PARAM_SMOOTHING);
   };
-
-  const applyMaterial = (): void => {
-    const tone = MATERIALS[material].tone;
-    osc.setPeriodicWave(periodicWave(ctx, tone.harmonics));
-    toneFilter.frequency.setTargetAtTime(
-      tone.lowpass * lowpassScale,
-      ctx.currentTime,
-      PARAM_SMOOTHING,
-    );
-    gritGain.gain.setTargetAtTime(level * tone.noise, ctx.currentTime, PARAM_SMOOTHING);
-    applySlide();
-  };
   const initialSlide = slideNoiseParams(0, material);
   slideFilter.frequency.value = initialSlide.frequency;
   slideFilter.Q.value = initialSlide.q;
-  toneFilter.frequency.value = MATERIALS[material].tone.lowpass;
-  applyMaterial();
-  osc.start();
-  grit.start(0, Math.random() * noise.duration);
   slide.start(0, Math.random() * noise.duration);
 
   let disposed = false;
   return {
-    setTone(frequency, nextLevel) {
-      if (disposed) return;
-      level = nextLevel;
-      const now = ctx.currentTime;
-      osc.frequency.setTargetAtTime(frequency, now, PARAM_SMOOTHING);
-      gritFilter.frequency.setTargetAtTime(frequency * 2, now, PARAM_SMOOTHING);
-      toneGain.gain.setTargetAtTime(nextLevel, now, PARAM_SMOOTHING);
-      gritGain.gain.setTargetAtTime(
-        nextLevel * MATERIALS[material].tone.noise,
-        now,
-        PARAM_SMOOTHING,
-      );
-    },
     click(params, time, gain) {
       if (disposed) return;
       playClick(ctx, output, noise, params, time, gain);
@@ -143,16 +78,10 @@ export function createMeshVoiceSynth(
       slideLevel = next;
       applySlide();
     },
-    setLowpassScale(next) {
-      if (disposed || next === lowpassScale) return;
-      lowpassScale = next;
-      const lowpass = MATERIALS[material].tone.lowpass * lowpassScale;
-      toneFilter.frequency.setTargetAtTime(lowpass, ctx.currentTime, PARAM_SMOOTHING);
-    },
     setMaterial(next) {
       if (disposed || next === material) return;
       material = next;
-      applyMaterial();
+      applySlide();
     },
     setPosition(next) {
       if (disposed) return;
@@ -165,10 +94,8 @@ export function createMeshVoiceSynth(
       output.gain.cancelScheduledValues(now);
       output.gain.setValueAtTime(output.gain.value, now);
       output.gain.linearRampToValueAtTime(0, now + RELEASE_SEC);
-      osc.stop(now + RELEASE_SEC + 0.01);
-      grit.stop(now + RELEASE_SEC + 0.01);
       slide.stop(now + RELEASE_SEC + 0.01);
-      osc.onended = () => {
+      slide.onended = () => {
         output.disconnect();
         panner.dispose();
       };
@@ -176,7 +103,7 @@ export function createMeshVoiceSynth(
   };
 }
 
-// time（コンテキストの時刻）にクリックを 1 回鳴らす。gain はクリックの音量に掛ける倍率
+// time（コンテキストの時刻）にクリック（粒・衝撃音のクリック）を 1 回鳴らす。gain はクリックの音量に掛ける倍率
 export function playClick(
   ctx: BaseAudioContext,
   output: AudioNode,
@@ -199,12 +126,13 @@ export function playClick(
     o.stop(end);
     o.onended = () => g.disconnect();
   });
-  // ノイズの成分: 材質のフィルタを通した短いノイズ
+  // ノイズの成分: 材質のフィルタ（粒は共鳴の帯域通過。S4-06）を通した短いノイズ
   const n = ctx.createBufferSource();
   n.buffer = noise;
   const f = ctx.createBiquadFilter();
   f.type = params.noise.type;
   f.frequency.value = params.noise.frequency;
+  if (params.noise.q !== undefined) f.Q.value = params.noise.q;
   const g = ctx.createGain();
   envelope(g.gain, time, peak * CLICK_NOISE_RATIO, params.noise.decay);
   n.connect(f).connect(g).connect(output);

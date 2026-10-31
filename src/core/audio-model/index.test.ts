@@ -149,10 +149,13 @@ describe('clickPitch', () => {
     }
   });
 
-  it.each([0, 5, 24, 100, 1000])('歯の通過頻度 %f Hz で metal と wood の値が違い、metal が高い', (f) => {
-    expect(clickPitch(f, 'metal')).not.toBe(clickPitch(f, 'wood'));
-    expect(clickPitch(f, 'metal')).toBeGreaterThan(clickPitch(f, 'wood'));
-  });
+  it.each([0, 5, 24, 100, 1000])(
+    '歯の通過頻度 %f Hz で metal と wood の値が違い、metal が高い',
+    (f) => {
+      expect(clickPitch(f, 'metal')).not.toBe(clickPitch(f, 'wood'));
+      expect(clickPitch(f, 'metal')).toBeGreaterThan(clickPitch(f, 'wood'));
+    },
+  );
 
   it.each(MATERIAL_IDS)('%s: 止まりかけは材質の基準の高さ、基準の頻度で 1.2 倍', (material) => {
     const base = MATERIALS[material].click.pitch;
@@ -218,20 +221,23 @@ describe('toothPassTimes', () => {
 });
 
 describe('clickParams（S4-06: 粒 1 つ）', () => {
-  it.each(MATERIAL_IDS)('%s: random = 0.5 なら揺らぎ 0。共鳴フィルタの中心は clickPitch', (material) => {
-    const m = MATERIALS[material].click;
-    const pitch = clickPitch(24, material);
-    const p = clickParams(material, () => 0.5, 24);
-    expect(p.noise.type).toBe('bandpass');
-    expect(p.noise.frequency).toBeCloseTo(pitch, 9);
-    expect(p.noise.q).toBe(m.q);
-    expect(p.noise.decay).toBe(m.noiseDecay);
-    m.partials.forEach((partial, i) => {
-      expect(p.partials[i]?.frequency).toBeCloseTo(pitch * partial.ratio, 9);
-      expect(p.partials[i]?.decay).toBe(partial.decay);
-    });
-    expect(p.gain).toBe(m.gain);
-  });
+  it.each(MATERIAL_IDS)(
+    '%s: random = 0.5 なら揺らぎ 0。共鳴フィルタの中心は clickPitch',
+    (material) => {
+      const m = MATERIALS[material].click;
+      const pitch = clickPitch(24, material);
+      const p = clickParams(material, () => 0.5, 24);
+      expect(p.noise.type).toBe('bandpass');
+      expect(p.noise.frequency).toBeCloseTo(pitch, 9);
+      expect(p.noise.q).toBe(m.q);
+      expect(p.noise.decay).toBe(m.noiseDecay);
+      m.partials.forEach((partial, i) => {
+        expect(p.partials[i]?.frequency).toBeCloseTo(pitch * partial.ratio, 9);
+        expect(p.partials[i]?.decay).toBe(partial.decay);
+      });
+      expect(p.gain).toBe(m.gain);
+    },
+  );
 
   it.each(MATERIAL_IDS)('%s: random = 0 / 1 で高さが −3% / +3%', (material) => {
     const pitch = clickPitch(100, material);
@@ -257,15 +263,18 @@ describe('MATERIALS（S4-06: 粒の音色）', () => {
     expect(MATERIALS.wood.click.partials.map((p) => p.ratio)).toEqual([1, 2.26]);
   });
 
-  it.each(MATERIAL_IDS)('%s: 連続音の欄は無い。減衰は正で短い（50 ms 未満。粒が重ならない）', (material) => {
-    const m = MATERIALS[material];
-    expect(Object.keys(m).sort()).toEqual(['click', 'slide']);
-    const decays = [...m.click.partials.map((p) => p.decay), m.click.noiseDecay];
-    for (const d of decays) {
-      expect(d).toBeGreaterThan(0);
-      expect(d).toBeLessThan(0.05);
-    }
-  });
+  it.each(MATERIAL_IDS)(
+    '%s: 連続音の欄は無い。減衰は正で短い（50 ms 未満。粒が重ならない）',
+    (material) => {
+      const m = MATERIALS[material];
+      expect(Object.keys(m).sort()).toEqual(['click', 'slide']);
+      const decays = [...m.click.partials.map((p) => p.decay), m.click.noiseDecay];
+      for (const d of decays) {
+        expect(d).toBeGreaterThan(0);
+        expect(d).toBeLessThan(0.05);
+      }
+    },
+  );
 });
 
 describe('impactClickParams（ロック・ラック端の音のクリック。S4-06 の前と同じ）', () => {
@@ -341,7 +350,9 @@ describe('grainTimes', () => {
   it('毎秒 40 回を 0.1 秒 → 4 粒、間隔 1/40 秒。端数は次のフレームへ持ち越す', () => {
     const a = grainTimes(40, 0.1, 0);
     expect(a.times).toHaveLength(4);
-    a.times.forEach((t, i) => expect(t).toBeCloseTo((i + 1) / 40, 9));
+    a.times.forEach((t, i) => {
+      expect(t).toBeCloseTo((i + 1) / 40, 9);
+    });
     expect(a.carry).toBeCloseTo(0, 9);
     const b = grainTimes(40, 1 / 60, 0);
     expect(b.times).toHaveLength(0);

@@ -207,7 +207,8 @@ describe('粒の音（S4-06）', () => {
   function run(f: number, material: 'metal' | 'wood' = 'metal') {
     const engine = createAudioEngine({ material, random: () => 0.5 });
     const omega = (f * 2 * Math.PI) / 12;
-    let angle = 0;
+    // 歯の境目ちょうどから始めない（足し合わせの丸めで最後の境目を跨ぐかが揺れないように）
+    let angle = 0.01;
     for (let i = 0; i <= 60; i += 1) {
       engine.update(frame([voice('a', f)], { angles: { a: angle } }));
       angle += omega / 60;

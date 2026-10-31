@@ -1,11 +1,11 @@
 import {
-  clickParams,
+  IMPACT_CLICKS,
+  impactClickParams,
   LOCK_IMPACT,
   LOCK_IMPACT_LEVEL,
   LOCK_RATTLE_HZ,
   LOCK_RATTLE_LEVEL,
   LOCK_RATTLE_RELEASE_SEC,
-  MATERIALS,
   RACK_HIT,
   RACK_HIT_OVERTONE,
 } from '../core/audio-model';
@@ -42,9 +42,9 @@ export function playLockImpact(
   o.connect(g).connect(panner.node);
   o.start(time);
   o.stop(time + p.duration + 0.01);
-  playClick(ctx, panner.node, noise, clickParams(material, random), time, p.clickGain);
+  playClick(ctx, panner.node, noise, impactClickParams(material, random), time, p.clickGain);
   // クリックの尾より長く待ってから切り離す
-  const tail = Math.max(p.duration, ...MATERIALS[material].click.partials.map((x) => x.decay * 6));
+  const tail = Math.max(p.duration, ...IMPACT_CLICKS[material].partials.map((x) => x.decay * 6));
   o.onended = () => {
     g.disconnect();
     setTimeout(() => panner.dispose(), tail * 1000 + 50);
@@ -75,8 +75,8 @@ export function playRackHit(
     o.onended = () => g.disconnect();
     return o;
   });
-  playClick(ctx, panner.node, noise, clickParams(material, random), time, p.clickGain);
-  const tail = Math.max(p.duration, ...MATERIALS[material].click.partials.map((x) => x.decay * 6));
+  playClick(ctx, panner.node, noise, impactClickParams(material, random), time, p.clickGain);
+  const tail = Math.max(p.duration, ...IMPACT_CLICKS[material].partials.map((x) => x.decay * 6));
   const first = oscillators[0];
   if (first !== undefined) {
     const ended = first.onended;
@@ -93,7 +93,7 @@ export interface LockRattle {
   dispose(): void;
 }
 
-// ガタガタ: ノイズ → 材質のクリックの最初の部分音を中心にした帯域 → 18 Hz で振幅変調 → 音量 0.1
+// ガタガタ: ノイズ → 衝撃音のクリック（IMPACT_CLICKS）の最初の部分音を中心にした帯域 → 18 Hz で振幅変調 → 音量 0.1
 export function createLockRattle(
   ctx: BaseAudioContext,
   destination: AudioNode,
@@ -112,7 +112,7 @@ export function createLockRattle(
   src.loop = true;
   const band = ctx.createBiquadFilter();
   band.type = 'bandpass';
-  band.frequency.value = MATERIALS[material].click.partials[0]?.frequency ?? 1000;
+  band.frequency.value = IMPACT_CLICKS[material].partials[0]?.frequency ?? 1000;
   band.Q.value = RATTLE_Q;
   // 振幅変調: 0〜1 を 18 Hz で行き来する（0.5 + 0.5 × 矩形波）
   const am = ctx.createGain();
