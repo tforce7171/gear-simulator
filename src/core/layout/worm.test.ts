@@ -434,11 +434,11 @@ describe('候補', () => {
     perimeterTeeth: 20,
     coaxialSize: 'M',
     coaxialTeeth: 20,
-    coaxialKind: 'spur',
+    kind: 'spur',
   } as const;
 
   it('ウォームを選ぶ → ホイールの skew の候補（4 か所のうち干渉しないもの）。外周の候補は出さない', () => {
-    const candidates = listGrowCandidates(wormBasic, 'gear_w', spec);
+    const candidates = listGrowCandidates(wormBasic, 'gear_w', { ...spec, kind: 'wormWheel' });
     expect(candidates.some((c) => c.kind === 'perimeter')).toBe(false);
     const skew = candidates.filter((c) => c.kind === 'skew');
     expect(skew.length).toBeGreaterThanOrEqual(1);
@@ -454,7 +454,9 @@ describe('候補', () => {
   });
 
   it('候補をクリックしたのと同じコマンド → skew のシャフトにホイールが生え、干渉なし', () => {
-    const candidate = listGrowCandidates(wormBasic, 'gear_w', spec).find((c) => c.kind === 'skew');
+    const candidate = listGrowCandidates(wormBasic, 'gear_w', { ...spec, kind: 'wormWheel' }).find(
+      (c) => c.kind === 'skew',
+    );
     if (candidate?.kind !== 'skew') throw new Error('skew の候補が無い');
     const scene = apply(wormBasic, {
       type: 'growGear',
@@ -475,7 +477,7 @@ describe('候補', () => {
   });
 
   it('ホイールを選ぶ → ウォームの skew の候補（1 条）', () => {
-    const candidates = listGrowCandidates(wormBasic, 'gear_h', spec);
+    const candidates = listGrowCandidates(wormBasic, 'gear_h', { ...spec, kind: 'worm' });
     const skew = candidates.filter((c) => c.kind === 'skew');
     expect(skew.length).toBeGreaterThanOrEqual(1);
     for (const c of skew) {
@@ -486,7 +488,7 @@ describe('候補', () => {
   });
 
   it('同じ軸の候補でウォーム・ホイールを作れる（ウォームは区画の幅 32 で、1 条）', () => {
-    const worm = listGrowCandidates(wormOnly, 'gear_w', { ...spec, coaxialKind: 'worm' }).filter(
+    const worm = listGrowCandidates(wormOnly, 'gear_w', { ...spec, kind: 'worm' }).filter(
       (c) => c.kind === 'coaxial',
     );
     expect(worm.map((c) => (c.kind === 'coaxial' ? c.offset : null))).toEqual([-32, 32]);
@@ -496,7 +498,7 @@ describe('候補', () => {
     }
     const wheel = listGrowCandidates(wormOnly, 'gear_w', {
       ...spec,
-      coaxialKind: 'wormWheel',
+      kind: 'wormWheel',
     }).filter((c) => c.kind === 'coaxial');
     expect(wheel.map((c) => (c.kind === 'coaxial' ? c.offset : null))).toEqual([-8, 32]);
     for (const c of wheel) expect(c.shape).toEqual({ kind: 'wormWheel' });

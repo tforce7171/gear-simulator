@@ -3,7 +3,15 @@ import { PERIMETER_CANDIDATE_COUNT } from '../constants';
 import { samePhase } from '../geometry/mesh';
 import type { Vec3 } from '../math/vec3';
 import type { Gear, Scene, Shaft, SizeKey } from '../scene/types';
-import { type GrowCandidate, type GrowSpec, listGrowCandidates } from './candidates';
+import {
+  candidateKind,
+  type GrowCandidate,
+  type GrowSpec,
+  listGrowCandidates,
+  meshableKinds,
+  PALETTE_KIND_LIST,
+  type PaletteKind,
+} from './candidates';
 import { resolveLayout } from './resolve';
 
 // テスト用の小さな組み立て（resolve.test.ts と同じ形）
@@ -55,7 +63,7 @@ const SPEC: GrowSpec = {
   perimeterTeeth: 12,
   coaxialSize: 'S',
   coaxialTeeth: 12,
-  coaxialKind: 'spur',
+  kind: 'spur',
 };
 
 // 起点 A: axis 'y'、原点、12 歯 offset 0（中心 [0, 2, 0]）
@@ -247,15 +255,10 @@ describe('引数の誤り', () => {
 });
 
 describe('並び・決定性・不変', () => {
-  it('外周（角度の昇順）→ 遊星歯車機構（S3-03）→ ラック（S3-04）→ 同じ軸（負 → 正）', () => {
+  it('外周（角度の昇順）→ 同じ軸（負 → 正）。パレットが平歯車なら遊星・ラックは出ない（S4-02）', () => {
     const list = listGrowCandidates(onlyA, 'gear_a', SPEC);
     expect(list.map((c) => c.kind)).toEqual([
       ...Array<string>(PERIMETER_CANDIDATE_COUNT).fill('perimeter'),
-      'planetary',
-      'rack',
-      'rack',
-      'rack',
-      'rack',
       'coaxial',
       'coaxial',
     ]);
@@ -278,8 +281,8 @@ describe('並び・決定性・不変', () => {
       carriers: {},
       racks: {},
     });
-    // 外周 8 + 遊星歯車機構 1（S3-03）+ ラック 4（S3-04）+ 同じ軸 2
-    expect(listGrowCandidates(frozen, 'gear_a', SPEC)).toHaveLength(15);
+    // 外周 8 + 同じ軸 2（パレットが平歯車。S4-02）
+    expect(listGrowCandidates(frozen, 'gear_a', SPEC)).toHaveLength(10);
     expect(Object.keys(frozen.gears)).toEqual(['gear_a']);
     expect(Object.keys(frozen.shafts)).toEqual(['shaft_a']);
   });
@@ -318,5 +321,91 @@ describe('性能の目安', () => {
     const elapsed = performance.now() - start;
     expect(list.length).toBeGreaterThan(0);
     expect(elapsed).toBeLessThan(200);
+  });
+});
+
+describe('パレットの種類での絞り込み（S4-02）', () => {
+  // 中・24 歯の平歯車 1 枚（遊星歯車機構の歯数の組 12・48 がある）
+  const spurM = scene([shaftA], [gear('gear_a', 'shaft_a', 24, 0, 'M')]);
+  const specOf = (kind: PaletteKind): GrowSpec => ({
+    perimeterTeeth: 20,
+    coaxialSize: 'M',
+    coaxialTeeth: 20,
+    kind,
+  });
+
+  for (const kind of PALETTE_KIND_LIST) {
+    it(`平歯車の親 × パレットが ${kind} → 候補の種類は ${kind} だけ`, () => {
+      const list = listGrowCandidates(spurM, 'gear_a', specOf(kind));
+      expect(list.length).toBeGreaterThan(0);
+      expect(new Set(list.map(candidateKind))).toEqual(new Set([kind]));
+    });
+  }
+
+  it('平歯車の親 × パレットが平歯車 → 外周 8 方向と同じ軸の 2 つだけ（遊星・ラックの候補が無い）', () => {
+    const list = listGrowCandidates(spurM, 'gear_a', specOf('spur'));
+    expect(list.some((c) => c.kind === 'planetary' || c.kind === 'rack')).toBe(false);
+    expect(list.map((c) => c.kind)).toEqual([
+      ...Array<string>(PERIMETER_CANDIDATE_COUNT).fill('perimeter'),
+      'coaxial',
+      'coaxial',
+    ]);
+  });
+
+  it('平歯車の親 × パレットがラック → ラックの候補だけ（4 か所）', () => {
+    const list = listGrowCandidates(spurM, 'gear_a', specOf('rack'));
+    expect(list.map((c) => c.kind)).toEqual(['rack', 'rack', 'rack', 'rack']);
+  });
+
+  it('平歯車の親 × パレットが遊星 → 遊星歯車機構の候補だけ（1 つ）', () => {
+    const list = listGrowCandidates(spurM, 'gear_a', specOf('planetary'));
+    expect(list.map((c) => c.kind)).toEqual(['planetary']);
+  });
+
+  it('平歯車の親 × パレットがウォーム → 外周の候補が無く、同じ軸の候補（ウォーム）だけ', () => {
+    const list = listGrowCandidates(spurM, 'gear_a', specOf('worm'));
+    expect(list.map((c) => c.kind)).toEqual(['coaxial', 'coaxial']);
+    for (const c of list) expect(c.kind === 'coaxial' && c.shape.kind).toBe('worm');
+  });
+
+  it('平歯車の親 × パレットが内歯車 → 囲む候補と同じ軸の内歯車（外周の平歯車は出ない）', () => {
+    const list = listGrowCandidates(spurM, 'gear_a', specOf('internal'));
+    expect(list.map((c) => c.kind)).toEqual(['enclose', 'coaxial', 'coaxial']);
+  });
+
+  it('meshableKinds: 親の種類ごとにかみ合う向きに生やせる種類', () => {
+    const one = (g: Gear): Scene => scene([shaftA], [g]);
+    const base = gear('gear_a', 'shaft_a', 20, 0, 'M');
+    expect(meshableKinds(one(base), 'gear_a')).toEqual(['spur', 'internal', 'rack', 'planetary']);
+    expect(meshableKinds(one({ ...base, kind: 'helical', hand: 'right' }), 'gear_a')).toEqual([
+      'helical',
+    ]);
+    expect(meshableKinds(one({ ...base, kind: 'bevel', apex: 1 }), 'gear_a')).toEqual(['bevel']);
+    expect(meshableKinds(one({ ...base, kind: 'worm', teeth: 1 }), 'gear_a')).toEqual([
+      'wormWheel',
+    ]);
+    expect(meshableKinds(one({ ...base, kind: 'wormWheel' }), 'gear_a')).toEqual(['worm']);
+    expect(meshableKinds(one({ ...base, kind: 'crossedHelical' }), 'gear_a')).toEqual([
+      'crossedHelical',
+    ]);
+    expect(
+      meshableKinds(one({ ...base, kind: 'internal', webSide: -1, teeth: 40 }), 'gear_a'),
+    ).toEqual(['spur']);
+    expect(meshableKinds(one(base), 'gear_x')).toEqual([]);
+    expect(meshableKinds(one(base), 'shaft_a')).toEqual([]);
+  });
+
+  it('PALETTE_KIND_LIST: 歯車の種類 → ラック → 遊星', () => {
+    expect(PALETTE_KIND_LIST).toEqual([
+      'spur',
+      'helical',
+      'bevel',
+      'worm',
+      'wormWheel',
+      'crossedHelical',
+      'internal',
+      'rack',
+      'planetary',
+    ]);
   });
 });

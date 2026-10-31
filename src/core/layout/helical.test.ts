@@ -159,7 +159,7 @@ describe('候補（S1-10 の拡張）', () => {
     list.filter((c): c is Extract<GrowCandidate, { kind: 'coaxial' }> => c.kind === 'coaxial');
 
   it("中・20 歯 'right' の A の外周の候補は、すべて helical・'left'・大きさ M", () => {
-    const list = perimeters(listGrowCandidates(onlyA, 'gear_a', { ...spec, coaxialKind: 'spur' }));
+    const list = perimeters(listGrowCandidates(onlyA, 'gear_a', { ...spec, kind: 'helical' }));
     expect(list).toHaveLength(8);
     for (const c of list) {
       expect(c.shape).toEqual({ kind: 'helical', hand: 'left' });
@@ -168,9 +168,7 @@ describe('候補（S1-10 の拡張）', () => {
   });
 
   it('外周の候補の growGear で、逆向きのねじれの子がかみ合う位置に置かれる', () => {
-    const [first] = perimeters(
-      listGrowCandidates(onlyA, 'gear_a', { ...spec, coaxialKind: 'spur' }),
-    );
+    const [first] = perimeters(listGrowCandidates(onlyA, 'gear_a', { ...spec, kind: 'helical' }));
     if (first === undefined) throw new Error('候補が無い');
     const result = applyCommand(
       onlyA,
@@ -193,7 +191,7 @@ describe('候補（S1-10 の拡張）', () => {
   });
 
   it("同じ軸の候補で種類 'helical' を渡すと hand 'right' の歯車になる", () => {
-    const list = coaxials(listGrowCandidates(onlyA, 'gear_a', { ...spec, coaxialKind: 'helical' }));
+    const list = coaxials(listGrowCandidates(onlyA, 'gear_a', { ...spec, kind: 'helical' }));
     expect(list).toHaveLength(2);
     for (const c of list) expect(c.shape).toEqual({ kind: 'helical', hand: 'right' });
     const first = list[0];
@@ -219,7 +217,7 @@ describe('候補（S1-10 の拡張）', () => {
   });
 
   it("同じ軸の候補で種類 'spur' を渡すと平歯車（段階 1 と同じ）", () => {
-    const list = coaxials(listGrowCandidates(onlyA, 'gear_a', { ...spec, coaxialKind: 'spur' }));
+    const list = coaxials(listGrowCandidates(onlyA, 'gear_a', { ...spec, kind: 'spur' }));
     for (const c of list) expect(c.shape).toEqual({ kind: 'spur' });
   });
 
@@ -237,9 +235,7 @@ describe('候補（S1-10 の拡張）', () => {
         },
       },
     };
-    const list = perimeters(
-      listGrowCandidates(spurOnly, 'gear_a', { ...spec, coaxialKind: 'spur' }),
-    );
+    const list = perimeters(listGrowCandidates(spurOnly, 'gear_a', { ...spec, kind: 'spur' }));
     expect(list).toHaveLength(8);
     for (const c of list) expect(c.shape).toEqual({ kind: 'spur' });
   });
@@ -261,9 +257,9 @@ describe('候補（S1-10 の拡張）', () => {
       carriers: {},
       racks: {},
     };
-    const angles = perimeters(
-      listGrowCandidates(scene, 'gear_p', { ...spec, coaxialKind: 'spur' }),
-    ).map((c) => Math.round(c.angle / (Math.PI / 4)));
+    const angles = perimeters(listGrowCandidates(scene, 'gear_p', { ...spec, kind: 'spur' })).map(
+      (c) => Math.round(c.angle / (Math.PI / 4)),
+    );
     expect(angles).not.toContain(6);
     expect(angles).toHaveLength(7);
     // A が平歯車なら、同じ候補は contact でかみ合うので出る（段階 1 と同じ）
@@ -272,7 +268,7 @@ describe('候補（S1-10 の拡張）', () => {
       gears: { ...scene.gears, gear_a: { ...(scene.gears.gear_a as Gear), kind: 'spur' } as Gear },
     };
     const spurAngles = perimeters(
-      listGrowCandidates(spurA, 'gear_p', { ...spec, coaxialKind: 'spur' }),
+      listGrowCandidates(spurA, 'gear_p', { ...spec, kind: 'spur' }),
     ).map((c) => Math.round(c.angle / (Math.PI / 4)));
     expect(spurAngles).toContain(6);
   });

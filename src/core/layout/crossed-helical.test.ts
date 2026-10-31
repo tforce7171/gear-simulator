@@ -180,7 +180,7 @@ describe('候補', () => {
     perimeterTeeth: 20,
     coaxialSize: 'M',
     coaxialTeeth: 20,
-    coaxialKind: 'spur',
+    kind: 'crossedHelical',
   } as const;
 
   it("A から列挙した外周の候補（新しいシャフトを作るもの）がすべて 'skew' で、軸が 'y' か 'z'。平行な軸の候補はない", () => {
@@ -226,7 +226,7 @@ describe('候補', () => {
   it("同じ軸の候補・起点で 'crossedHelical' を作れる", () => {
     const coaxial = listGrowCandidates(aOnly, 'gear_a', {
       ...spec,
-      coaxialKind: 'crossedHelical',
+      kind: 'crossedHelical',
     }).filter((c) => c.kind === 'coaxial');
     expect(coaxial.map((c) => (c.kind === 'coaxial' ? c.offset : null))).toEqual([-8, 8]);
     for (const c of coaxial) expect(c.shape).toEqual({ kind: 'crossedHelical' });

@@ -318,12 +318,12 @@ describe('候補と編集', () => {
     perimeterTeeth: DEFAULT_TEETH.M,
     coaxialSize: 'M' as const,
     coaxialTeeth: DEFAULT_TEETH.M,
-    coaxialKind: 'spur' as const,
+    kind: 'spur' as const,
   };
 
   it('候補: 中・24 歯の太陽から作った機構が共通の値になる。Undo 1 回で全部消える', () => {
     const scene = sunOnly();
-    const candidates = listGrowCandidates(scene, 'gear_sun', spec);
+    const candidates = listGrowCandidates(scene, 'gear_sun', { ...spec, kind: 'planetary' });
     const planetary = candidates.filter((c) => c.kind === 'planetary');
     expect(planetary).toHaveLength(1);
     const state = { scene, history: emptyHistory() };
@@ -409,7 +409,7 @@ describe('候補と編集', () => {
     expect(kinds.length).toBeGreaterThan(0);
     expect(new Set(kinds)).toEqual(new Set(['coaxial']));
     // パレットで内歯車を選んでいても、囲む候補・遊星歯車機構の候補は出ない
-    const withInternal = listGrowCandidates(scene, 'gear_1', { ...small, coaxialKind: 'internal' });
+    const withInternal = listGrowCandidates(scene, 'gear_1', { ...small, kind: 'internal' });
     expect(withInternal.filter((c) => c.kind !== 'coaxial')).toEqual([]);
   });
 

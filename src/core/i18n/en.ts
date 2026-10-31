@@ -33,7 +33,12 @@ export const en = {
   // Gear type to add (S2-05)
   'palette.kind': 'Gear type to add',
   'palette.kind.hint':
-    'Same-shaft candidates use this type. Candidates around a gear follow the gear they mesh with. With spur gears, internal gears enclosing the parent are offered too',
+    'Only candidates that make this type are shown. Same-shaft candidates use this type too',
+  // Note when the selected part cannot mesh with the chosen type (S4-02). {kinds} joins the type names
+  'palette.kind.note': 'This gear meshes with: {kinds}',
+  'palette.kind.note.rack': 'This rack meshes with: {kinds}',
+  'palette.kind.note.none': 'Only same-shaft gears can be added to this gear',
+  'palette.kind.note.separator': ', ',
   'gearKind.spur': 'Spur gear',
   'gearKind.helical': 'Helical gear',
   'gearKind.bevel': 'Bevel gear',
@@ -41,6 +46,9 @@ export const en = {
   'gearKind.wormWheel': 'Worm wheel',
   'gearKind.crossedHelical': 'Crossed helical gear',
   'gearKind.internal': 'Internal gear',
+  // Palette types that are not gear kinds (S4-02)
+  'paletteKind.rack': 'Rack',
+  'paletteKind.planetary': 'Planetary gears',
   'palette.rootShaft': 'Base shaft',
   'palette.rootShaft.tooltip':
     'Drag onto the floor to place (R to change the direction, Esc to cancel)',

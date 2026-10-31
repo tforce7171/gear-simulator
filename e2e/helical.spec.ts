@@ -9,6 +9,7 @@ import {
   getMotion,
   getScene,
   openApp,
+  selectPaletteKind,
 } from './fixtures/sim';
 import { expect, test } from './fixtures/test';
 
@@ -30,6 +31,7 @@ test("A を選び外周の候補をクリック → 'left' のハスバ歯車が
   page,
 }) => {
   await openApp(page, { scene: helicalPair });
+  await selectPaletteKind(page, 'helical');
   await page.keyboard.press('Home');
   await clickGear(page, 'gear_a');
   const a = centerOf(await getLayout(page), 'gear_a');

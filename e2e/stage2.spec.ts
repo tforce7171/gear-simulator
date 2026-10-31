@@ -160,6 +160,8 @@ test('通し: 縦のシャフト → かさ歯車 A → B → ウォーム W →
     shaftId: gearB?.shaftId,
   });
   // W と B が隣り合うと、ホイールの候補はどれも B と干渉する。W を B から離す
+  // （ホイールの候補は、パレットでホイールを選んだときだけ出る。S4-02）
+  await selectPaletteKind(page, 'wormWheel');
   expect((await getCandidates(page)).filter((c) => c.kind === 'skew')).toEqual([]);
   const layoutW = await getLayout(page);
   const awayFromB = sub(centerOf(layoutW, w), centerOf(layoutW, b));

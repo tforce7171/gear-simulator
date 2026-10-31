@@ -111,7 +111,8 @@ test('モーターを OFF にして R を direction に沿ってドラッグ →
   expect(dθ).toBeCloseTo(ds / 20, 3);
 });
 
-test('平歯車を選ぶとラックの候補が 4 つ出て、クリックでかみ合う位置にラックが置かれる', async ({
+// S4-02: ラックの候補は、パレットでラックを選んだときだけ出る
+test('パレットでラックを選び、平歯車を選ぶ → ラックの候補 4 つだけが見え、クリックでかみ合う位置にラックが置かれる', async ({
   page,
 }) => {
   const noRack = { ...rackBasic, racks: {} };
@@ -120,9 +121,14 @@ test('平歯車を選ぶとラックの候補が 4 つ出て、クリックで�
     motors: { motor_p: { ...(rackBasic.motors.motor_p as Scene['motors'][string]), on: false } },
   };
   await openApp(page, { scene: motorOff, camera: VIEW });
+  // パレットが平歯車（初期値）なら、ラックの候補は出ない
   await clickGear(page, 'gear_p');
-  const racks = (await getCandidates(page)).filter((c) => c.kind === 'rack');
-  expect(racks).toHaveLength(4);
+  expect((await getCandidates(page)).some((c) => c.kind === 'rack')).toBe(false);
+  await page.getByTestId('palette-kind-rack').click();
+  await expect(page.getByTestId('palette-kind-rack')).toHaveAttribute('aria-checked', 'true');
+  const candidates = await getCandidates(page);
+  expect(candidates.map((c) => c.kind)).toEqual(['rack', 'rack', 'rack', 'rack']);
+  const racks = candidates;
   // P の下（基準位置 [0, 40, 4]）の候補を、背の側（ピッチ線から 5 mm 下）で押す
   const below = racks.find(
     (c) => Math.abs(c.center[1] - 40) < 1e-6 && Math.abs(c.center[0]) < 1e-6,
@@ -137,11 +143,16 @@ test('平歯車を選ぶとラックの候補が 4 つ出て、クリックで�
   expect(layout.rackMeshes).toHaveLength(1);
   expect(layout.rackMeshes[0]?.gear).toBe('gear_p');
   expect(layout.interferences).toEqual([]);
-  // 置いたラックが選ばれ、2 つ目のピニオンの候補（ラックの上の 2 か所）が出る
+  // 置いたラックが選ばれる。パレットがラックのままなら候補は無く、注記が出る（ラックとかみ合えるのは平歯車）
   const selection = await page.evaluate(() => window.__gearSim?.getSelection());
   expect(selection).toEqual([layout.rackMeshes[0]?.rack]);
+  expect(await getCandidates(page)).toEqual([]);
+  await expect(page.getByTestId('palette-kind-note')).toBeVisible();
+  // パレットを平歯車にすると、2 つ目のピニオンの候補（ラックの上の 2 か所）が出る
+  await page.getByTestId('palette-kind-spur').click();
   const pinions = (await getCandidates(page)).filter((c) => c.kind === 'rackPinion');
   expect(pinions).toHaveLength(2);
+  await expect(page.getByTestId('palette-kind-note')).toBeHidden();
 });
 
 test('ラックを選んでプロパティで固定する → P が回らず anchor のロック', async ({ page }) => {

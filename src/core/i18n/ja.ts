@@ -34,7 +34,12 @@ export const ja = {
   // 生やす歯車の種類（S2-05）
   'palette.kind': '生やす歯車の種類',
   'palette.kind.hint':
-    '同じ軸の候補をこの種類で作ります。外周の候補の種類は相手の歯車で決まります。平歯車を選ぶと、親を囲む内歯車の候補も出ます',
+    '選んだ種類の歯車ができる候補だけを出します。同じ軸の候補もこの種類で作ります',
+  // 選んだ部品とかみ合えない種類を選んでいるときの注記（S4-02）。{kinds} は種類の名前を区切りでつないだもの
+  'palette.kind.note': 'この歯車とかみ合えるのは{kinds}です',
+  'palette.kind.note.rack': 'このラックとかみ合えるのは{kinds}です',
+  'palette.kind.note.none': 'この歯車には、同じ軸の歯車だけを足せます',
+  'palette.kind.note.separator': '・',
   'gearKind.spur': '平歯車',
   'gearKind.helical': 'ハスバ歯車',
   'gearKind.bevel': 'かさ歯車',
@@ -42,6 +47,9 @@ export const ja = {
   'gearKind.wormWheel': 'ウォームホイール',
   'gearKind.crossedHelical': 'ねじ歯車',
   'gearKind.internal': '内歯車',
+  // パレットの種類のうち、歯車の種類でないもの（S4-02）
+  'paletteKind.rack': 'ラック',
+  'paletteKind.planetary': '遊星歯車',
   'palette.rootShaft': '起点のシャフト',
   'palette.rootShaft.tooltip':
     '床へドラッグして置く（ドラッグ中に R で向きを変える、Esc でやめる）',

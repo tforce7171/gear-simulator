@@ -8,6 +8,7 @@ import {
   getScene,
   openApp,
   project,
+  selectPaletteKind,
 } from './fixtures/sim';
 import { expect, test } from './fixtures/test';
 
@@ -35,6 +36,7 @@ test('A を選ぶ → skew の候補だけ（平行な軸の候補なし）。1 
   page,
 }) => {
   await openApp(page, { scene: crossedPair, camera: SIDE });
+  await selectPaletteKind(page, 'crossedHelical');
   await clickGear(page, 'gear_a');
   const candidates = await getCandidates(page);
   const fresh = candidates.filter((c) => c.kind !== 'coaxial');

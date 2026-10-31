@@ -12,6 +12,7 @@ import type { GearId, Scene, ShaftId } from '../core/scene/types';
 import type { Quality, ThemeId } from '../core/theme';
 import type { CameraPose } from '../input/camera';
 import type { HandleKind } from '../input/handle-drag';
+import type { PickKind } from '../input/pick-priority';
 import type { ViewName } from '../input/views';
 import type { InputDevice } from '../input/wheel';
 import type { PickHit } from '../render/picking';
@@ -62,8 +63,11 @@ export interface GearSimDebug {
   getGizmoTargets(): Array<{ view: ViewName; x: number; y: number }>;
   /** 選択中の部品の ID。無ければ []、あれば [id]（選択は 1 つだけ。S1-16） */
   getSelection(): string[];
-  /** ページ座標の点の下の部品（優先順位つき）。何も無ければ null（S1-16） */
-  pick(x: number, y: number): PickHit | null;
+  /**
+   * ページ座標の点の下の部品（優先順位つき）。何も無ければ null（S1-16）。
+   * kinds を渡すと、その種類だけを調べる（S4-02。ハンドルの陰の候補を確かめる）
+   */
+  pick(x: number, y: number, kinds?: readonly PickKind[]): PickHit | null;
   /** 選択を置き換える。null で外す。シーンに無い ID は null と同じ（S1-16） */
   select(id: string | null): void;
   /**

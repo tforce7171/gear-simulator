@@ -134,3 +134,15 @@
   border-radius: 3px;
   background: #c8ccd2;
 }
+
+/* 選んだ部品とかみ合えない種類を選んでいるときの注記（S4-02） */
+.gs-palette__note {
+  margin: 6px 0 0;
+  color: #e6c27a;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.gs-palette__note[hidden] {
+  display: none;
+}
