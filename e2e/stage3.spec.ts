@@ -344,7 +344,7 @@ test('プロパティ: ラックの歯数（10〜60）と内歯車のウェブ�
   await expect(page.getByTestId('prop-teeth')).toHaveValue('40');
 });
 
-test('stage3-showcase → locks・interferences が空。エクスポート → インポートで等しく、ファイルの version === 3', async ({
+test('stage3-showcase → locks・interferences が空。エクスポート → インポートで等しく、ファイルの version === 4（S4-03）', async ({
   page,
 }) => {
   await openApp(page, { scene: showcase });
@@ -357,7 +357,7 @@ test('stage3-showcase → locks・interferences が空。エクスポート → 
   await page.getByTestId('toolbar-export').click();
   const path = await (await downloading).path();
   const file = JSON.parse(readFileSync(path, 'utf8')) as { version: number; scene: Scene };
-  expect(file.version).toBe(3);
+  expect(file.version).toBe(4);
   expect(file.scene).toEqual(showcase);
   await page.evaluate((s) => window.__gearSim?.loadScene(s), EMPTY);
   const chooser = page.waitForEvent('filechooser');

@@ -904,13 +904,21 @@ describe('かさ歯車（S2-02）', () => {
         ctx,
       ),
     ).scene; // gear_3
-    scene = ok(
-      applyCommand(
-        scene,
-        { type: 'growGear', mode: 'coaxial', shaftId: 'shaft_2', offset: -8, size: 'M', teeth: 30 },
-        ctx,
-      ),
-    ).scene; // gear_4（平歯車）
+    // gear_4（平歯車）。S4-03 から干渉を生む位置にはコマンドで置けないので、シーンに直接足す
+    scene = {
+      ...scene,
+      gears: {
+        ...scene.gears,
+        gear_4: {
+          id: 'gear_4',
+          kind: 'spur',
+          shaftId: 'shaft_2',
+          size: 'M',
+          teeth: 30,
+          offset: -8,
+        },
+      },
+    };
     const result = ok(apply(scene, { type: 'setGearTeeth', gearId: 'gear_3', teeth: 16 }));
     expect(result.scene.gears.gear_1?.teeth).toBe(16);
     expect(result.scene.gears.gear_2?.teeth).toBe(16);

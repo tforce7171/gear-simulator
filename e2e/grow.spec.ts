@@ -25,15 +25,7 @@ const OBLIQUE_VIEW = { position: [120, 210, 200] as Vec3, target: [0, 35, 0] as 
 
 type Candidate = {
   index: number;
-  kind:
-    | 'perimeter'
-    | 'bevel'
-    | 'skew'
-    | 'enclose'
-    | 'planetary'
-    | 'rack'
-    | 'rackPinion'
-    | 'coaxial';
+  kind: 'perimeter' | 'bevel' | 'skew' | 'enclose' | 'planetary' | 'rack' | 'rackPinion';
   center: Vec3;
 };
 
@@ -122,14 +114,14 @@ test.describe('one-root.json', () => {
     expect(await getCandidates(page)).toEqual([]);
   });
 
-  test("A をクリック → 'perimeter' と 'coaxial' の候補がそれぞれ 1 つ以上。選択を外すと消える", async ({
+  test("A をクリック → 'perimeter' の候補だけが 1 つ以上（同じ軸の候補は S4-03 で廃止）。選択を外すと消える", async ({
     page,
   }) => {
     await clickGear(page, A);
     expect(await getSelection(page)).toEqual([A]);
     const list = await getCandidates(page);
-    expect(list.filter((c) => c.kind === 'perimeter').length).toBeGreaterThanOrEqual(1);
-    expect(list.filter((c) => c.kind === 'coaxial').length).toBeGreaterThanOrEqual(1);
+    expect(list.length).toBeGreaterThanOrEqual(1);
+    expect(list.every((c) => c.kind === 'perimeter')).toBe(true);
     await page.keyboard.press('Escape');
     expect(await getCandidates(page)).toEqual([]);
   });
@@ -178,24 +170,6 @@ test.describe('one-root.json', () => {
     const undone = await getScene(page);
     expect(Object.keys(undone.gears)).toHaveLength(1);
     expect(Object.keys(undone.shafts)).toHaveLength(1);
-  });
-
-  test("パレットで「大」を選び、A の 'coaxial' の候補をクリック → A のシャフトに大・16 歯が通る", async ({
-    page,
-  }) => {
-    await page.getByTestId('palette-size-L').click();
-    await clickGear(page, A);
-    await clickCandidate(page, 'coaxial');
-
-    const scene = await getScene(page);
-    expect(Object.keys(scene.shafts)).toEqual([A_SHAFT]);
-    expect(Object.keys(scene.gears)).toHaveLength(2);
-    const newGear = Object.values(scene.gears).find((g) => g.id !== A);
-    if (newGear === undefined) throw new Error('増えていない');
-    expect(newGear).toMatchObject({ shaftId: A_SHAFT, size: 'L', teeth: 16 });
-    expect([-12, 8]).toContain(newGear.offset);
-    expect((await getLayout(page)).interferences).toEqual([]);
-    expect(await getSelection(page)).toEqual([newGear.id]);
   });
 
   test('外周の候補を 3 回続けてクリック → 4 枚の鎖になり、干渉が無い', async ({ page }) => {

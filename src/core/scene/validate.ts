@@ -3,6 +3,7 @@ import { canMesh, meshGeometryOf, placementKindOf } from '../geometry/can-mesh';
 import { teethRange } from '../geometry/dimensions';
 import { planetaryConditions } from '../geometry/planetary';
 import { rackTeethInRange } from '../geometry/rack';
+import { requiredShaftSpans, spanContains } from '../layout/resolve';
 import { isApex, isGearKind, isHand, isWebSide } from './gear-shape';
 import { lineRootOf, placementParentShafts } from './scene';
 import type { Scene, Shaft, ShaftId } from './types';
@@ -51,7 +52,10 @@ export type SceneErrorCode =
   | 'planetLineMismatch' // 遊星の親の歯車のシャフトが、キャリアのシャフトと同じ線上にない（S3-03）
   | 'nestedOrbit' // キャリア・同じ線上のシャフトの親が遊星のシャフト（2 段以上の遊星は範囲外。S3-03）
   | 'planetShaftAttachment' // 遊星のシャフトにモーター・固定具がある（S3-05）
-  | 'planetaryMismatch'; // 遊星歯車機構の歯数が配置の条件（同心・等配・隣の遊星）を満たさない（S3-05）
+  | 'planetaryMismatch' // 遊星歯車機構の歯数が配置の条件（同心・等配・隣の遊星）を満たさない（S3-05）
+  | 'invalidSpan' // シャフトの範囲が有限の 2 つの数 [始まり < 終わり] でない（S4-03）
+  | 'spanTooShort' // シャフトの範囲が、載っている部品の範囲（余白込み）を含まない（S4-03）
+  | 'invalidWidth'; // 歯車の厚さ width が AXIAL_SNAP の正の倍数でない（S4-03）
 
 const AXES: readonly unknown[] = ['x', 'y', 'z'];
 
@@ -89,6 +93,23 @@ export function validateScene(scene: Scene): { ok: true } | { ok: false; errors:
   for (const [key, shaft] of Object.entries(scene.shafts)) {
     const p = shaft.placement;
     const base = `shafts.${key}.placement`;
+    // 範囲（S4-03）。省いてもよい（載っている部品から求める）
+    const span: unknown = shaft.span;
+    if (span !== undefined) {
+      const ends: readonly unknown[] = Array.isArray(span) ? span : [];
+      if (
+        ends.length !== 2 ||
+        !ends.every(isFiniteNumber) ||
+        (ends[0] as number) >= (ends[1] as number)
+      ) {
+        push(
+          'invalidSpan',
+          key,
+          `shafts.${key}.span`,
+          'span must be [start, end] with start < end',
+        );
+      }
+    }
     if (p.kind === 'root' || p.kind === 'detached') {
       if (!AXES.includes(p.axis)) {
         push('invalidAxis', key, `${base}.axis`, `invalid axis "${String(p.axis)}"`);
@@ -452,6 +473,16 @@ export function validateScene(scene: Scene): { ok: true } | { ok: false; errors:
         `offset ${gear.offset} is not a multiple of ${AXIAL_SNAP}`,
       );
     }
+    // 厚さ（S4-03 で足した省略できる欄。範囲 4〜32 mm は S4-05 で決める）
+    const width: unknown = gear.width;
+    if (width !== undefined && !(isFiniteNumber(width) && width > 0 && width % AXIAL_SNAP === 0)) {
+      push(
+        'invalidWidth',
+        key,
+        `${base}.width`,
+        `width must be a positive multiple of ${AXIAL_SNAP}: ${String(width)}`,
+      );
+    }
   }
 
   // モーター
@@ -592,6 +623,21 @@ export function validateScene(scene: Scene): { ok: true } | { ok: false; errors:
     for (const [key, carrier] of Object.entries(scene.carriers)) {
       const problem = planetaryProblem(scene, carrier.id, carrier.shaftId);
       if (problem !== null) push('planetaryMismatch', key, `carriers.${key}`, problem);
+    }
+  }
+
+  // シャフトの範囲が載っている部品の範囲を含む（S4-03）。部品の範囲はレイアウトで求めるので、ここまでが通ったときだけ見る
+  if (errors.length === 0) {
+    const required = requiredShaftSpans(scene);
+    for (const [key, shaft] of Object.entries(scene.shafts)) {
+      if (shaft.span === undefined || spanContains(shaft.span, required[key] ?? null)) continue;
+      const need = required[key];
+      push(
+        'spanTooShort',
+        key,
+        `shafts.${key}.span`,
+        `span [${shaft.span.join(', ')}] does not contain the parts [${need?.join(', ')}]`,
+      );
     }
   }
 

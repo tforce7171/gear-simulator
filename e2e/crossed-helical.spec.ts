@@ -38,8 +38,8 @@ test('A を選ぶ → skew の候補だけ（平行な軸の候補なし）。1 
   await openApp(page, { scene: crossedPair, camera: SIDE });
   await selectPaletteKind(page, 'crossedHelical');
   await clickGear(page, 'gear_a');
-  const candidates = await getCandidates(page);
-  const fresh = candidates.filter((c) => c.kind !== 'coaxial');
+  // S4-03 から同じ軸の候補は出ないので、候補はすべて新しいシャフトを作る
+  const fresh = await getCandidates(page);
   expect(fresh.length).toBeGreaterThanOrEqual(1);
   expect(fresh.length).toBeLessThanOrEqual(4);
   for (const c of fresh) expect(c.kind).toBe('skew');

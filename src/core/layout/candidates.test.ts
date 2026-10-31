@@ -43,13 +43,9 @@ function expectVec(actual: readonly number[] | undefined, expected: readonly num
 }
 
 type Perimeter = Extract<GrowCandidate, { kind: 'perimeter' }>;
-type Coaxial = Extract<GrowCandidate, { kind: 'coaxial' }>;
 
 function perimeters(list: readonly GrowCandidate[]): Perimeter[] {
   return list.filter((c): c is Perimeter => c.kind === 'perimeter');
-}
-function coaxials(list: readonly GrowCandidate[]): Coaxial[] {
-  return list.filter((c): c is Coaxial => c.kind === 'coaxial');
 }
 // 角度を π/4 の何倍かで表す（比べやすくするため）
 function angleSteps(list: readonly GrowCandidate[]): number[] {
@@ -61,8 +57,6 @@ function distance(a: Vec3, b: Vec3): number {
 
 const SPEC: GrowSpec = {
   perimeterTeeth: 12,
-  coaxialSize: 'S',
-  coaxialTeeth: 12,
   kind: 'spur',
 };
 
@@ -157,45 +151,21 @@ describe('外周の候補', () => {
   });
 });
 
-describe('同じ軸の候補', () => {
-  it('歯車 1 枚だけ、S・12 歯 → offset −4（中心 [0, −2, 0]）と offset 4（中心 [0, 6, 0]）', () => {
-    const list = coaxials(listGrowCandidates(onlyA, 'gear_a', SPEC));
-    expect(list.map((c) => c.offset)).toEqual([-4, 4]);
-    expectVec(list[0]?.center, [0, -2, 0]);
-    expectVec(list[1]?.center, [0, 6, 0]);
-    for (const c of list) {
-      expect(c.shaftId).toBe('shaft_a');
-      expect(c.size).toBe('S');
-      expect(c.teeth).toBe(12);
-      expect(c.axis).toBe('y');
+describe('同じ軸の候補（S4-03 で廃止）', () => {
+  it('歯車の種類のどれをパレットで選んでも、選んだ歯車のシャフトに通す候補は出ない（シャフトの上に置く）', () => {
+    for (const kind of PALETTE_KIND_LIST) {
+      const list = listGrowCandidates(onlyA, 'gear_a', { ...SPEC, kind });
+      expect(list.map((c) => c.kind as string)).not.toContain('coaxial');
     }
   });
 
-  it('違う大きさ: M・20 歯 → offset −8（中心 [0, −4, 0]）と offset 4（中心 [0, 8, 0]）', () => {
-    const list = coaxials(
-      listGrowCandidates(onlyA, 'gear_a', { ...SPEC, coaxialSize: 'M', coaxialTeeth: 20 }),
-    );
-    expect(list.map((c) => c.offset)).toEqual([-8, 4]);
-    expectVec(list[0]?.center, [0, -4, 0]);
-    expectVec(list[1]?.center, [0, 8, 0]);
+  it('外周の候補だけ: 新しい歯車はどれも選んだ歯車のシャフトの上（軸 y・x = z = 0）にない', () => {
+    const list = listGrowCandidates(onlyA, 'gear_a', SPEC);
+    expect(list).toHaveLength(PERIMETER_CANDIDATE_COUNT);
     for (const c of list) {
-      expect(c.size).toBe('M');
-      expect(c.teeth).toBe(20);
+      if (c.kind !== 'perimeter') throw new Error('外周でない候補');
+      expect(Math.hypot(c.center[0], c.center[2])).toBeGreaterThan(1);
     }
-  });
-
-  it('並びの両端: offset 0 と 4 の 2 枚、offset 0 の方を選ぶ → offset −4 と 8', () => {
-    const s = scene([shaftA], [gearA, gear('gear_a2', 'shaft_a', 12, 4)]);
-    expect(coaxials(listGrowCandidates(s, 'gear_a', SPEC)).map((c) => c.offset)).toEqual([-4, 8]);
-  });
-
-  it('片側がふさがる: 起点 E（[13.5, 4, 0]）→ offset −4 だけ', () => {
-    const s = scene(
-      [shaftA, root('shaft_e', [13.5, 4, 0])],
-      [gearA, gear('gear_e', 'shaft_e', 12)],
-    );
-    expect(resolveLayout(s).interferences).toEqual([]);
-    expect(coaxials(listGrowCandidates(s, 'gear_a', SPEC)).map((c) => c.offset)).toEqual([-4]);
   });
 });
 
@@ -213,30 +183,11 @@ describe('既存の干渉は関係しない', () => {
       listGrowCandidates(base, 'gear_a', SPEC),
     );
   });
-
-  it('伸びるシャフトが元から干渉していても、それだけでは同じ軸の候補を減らさない', () => {
-    // 起点 G を A の真上に置く（同じ直線上の別のシャフト）。G の歯車は y 6〜10
-    const s = scene(
-      [shaftA, root('shaft_g', [0, 30, 0])],
-      [gearA, gear('gear_g', 'shaft_g', 12, -24)],
-    );
-    // A のシャフトの線分（y −4〜8）が G の歯車を貫く（元からある干渉）
-    expect(resolveLayout(s).interferences).toContainEqual(['gear_g', 'shaft_a']);
-    // offset 4（y 4〜8）は G の歯車と重なるので出ない。offset −4 は A のシャフトが伸びるが、
-    // A のシャフトを含む干渉は元からある組だけなので出る
-    expect(coaxials(listGrowCandidates(s, 'gear_a', SPEC)).map((c) => c.offset)).toEqual([-4]);
-  });
 });
 
 describe('引数の誤り', () => {
   it('perimeterTeeth 81（S）→ 例外', () => {
     expect(() => listGrowCandidates(onlyA, 'gear_a', { ...SPEC, perimeterTeeth: 81 })).toThrow();
-  });
-
-  it('coaxialSize L、coaxialTeeth 41 → 例外', () => {
-    expect(() =>
-      listGrowCandidates(onlyA, 'gear_a', { ...SPEC, coaxialSize: 'L', coaxialTeeth: 41 }),
-    ).toThrow();
   });
 
   it('歯数が整数でない → 例外。シーンに無い歯車 → 例外', () => {
@@ -255,15 +206,12 @@ describe('引数の誤り', () => {
 });
 
 describe('並び・決定性・不変', () => {
-  it('外周（角度の昇順）→ 同じ軸（負 → 正）。パレットが平歯車なら遊星・ラックは出ない（S4-02）', () => {
+  it('外周（角度の昇順）。パレットが平歯車なら遊星・ラックは出ない（S4-02）。同じ軸の候補は出ない（S4-03）', () => {
     const list = listGrowCandidates(onlyA, 'gear_a', SPEC);
-    expect(list.map((c) => c.kind)).toEqual([
-      ...Array<string>(PERIMETER_CANDIDATE_COUNT).fill('perimeter'),
-      'coaxial',
-      'coaxial',
-    ]);
+    expect(list.map((c) => c.kind)).toEqual(
+      Array<string>(PERIMETER_CANDIDATE_COUNT).fill('perimeter'),
+    );
     expect(angleSteps(list)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
-    expect(coaxials(list).map((c) => c.offset)).toEqual([-4, 4]);
   });
 
   it('同じ入力なら同じ結果', () => {
@@ -281,8 +229,8 @@ describe('並び・決定性・不変', () => {
       carriers: {},
       racks: {},
     });
-    // 外周 8 + 同じ軸 2（パレットが平歯車。S4-02）
-    expect(listGrowCandidates(frozen, 'gear_a', SPEC)).toHaveLength(10);
+    // 外周 8（パレットが平歯車。同じ軸の候補は S4-03 で廃止）
+    expect(listGrowCandidates(frozen, 'gear_a', SPEC)).toHaveLength(8);
     expect(Object.keys(frozen.gears)).toEqual(['gear_a']);
     expect(Object.keys(frozen.shafts)).toEqual(['shaft_a']);
   });
@@ -327,29 +275,28 @@ describe('性能の目安', () => {
 describe('パレットの種類での絞り込み（S4-02）', () => {
   // 中・24 歯の平歯車 1 枚（遊星歯車機構の歯数の組 12・48 がある）
   const spurM = scene([shaftA], [gear('gear_a', 'shaft_a', 24, 0, 'M')]);
-  const specOf = (kind: PaletteKind): GrowSpec => ({
-    perimeterTeeth: 20,
-    coaxialSize: 'M',
-    coaxialTeeth: 20,
-    kind,
-  });
+  const specOf = (kind: PaletteKind): GrowSpec => ({ perimeterTeeth: 20, kind });
 
   for (const kind of PALETTE_KIND_LIST) {
-    it(`平歯車の親 × パレットが ${kind} → 候補の種類は ${kind} だけ`, () => {
+    // かみ合える種類（meshableKinds）なら候補が出て、どれもその種類。かみ合えない種類なら候補は無い（S4-03 で同じ軸の候補を廃止）
+    const meshable = meshableKinds(spurM, 'gear_a').includes(kind);
+    it(`平歯車の親 × パレットが ${kind} → 候補の種類は ${kind} だけ（${meshable ? 'あり' : 'なし'}）`, () => {
       const list = listGrowCandidates(spurM, 'gear_a', specOf(kind));
-      expect(list.length).toBeGreaterThan(0);
-      expect(new Set(list.map(candidateKind))).toEqual(new Set([kind]));
+      if (meshable) {
+        expect(list.length).toBeGreaterThan(0);
+        expect(new Set(list.map(candidateKind))).toEqual(new Set([kind]));
+      } else {
+        expect(list).toEqual([]);
+      }
     });
   }
 
-  it('平歯車の親 × パレットが平歯車 → 外周 8 方向と同じ軸の 2 つだけ（遊星・ラックの候補が無い）', () => {
+  it('平歯車の親 × パレットが平歯車 → 外周 8 方向だけ（遊星・ラック・同じ軸の候補が無い）', () => {
     const list = listGrowCandidates(spurM, 'gear_a', specOf('spur'));
     expect(list.some((c) => c.kind === 'planetary' || c.kind === 'rack')).toBe(false);
-    expect(list.map((c) => c.kind)).toEqual([
-      ...Array<string>(PERIMETER_CANDIDATE_COUNT).fill('perimeter'),
-      'coaxial',
-      'coaxial',
-    ]);
+    expect(list.map((c) => c.kind)).toEqual(
+      Array<string>(PERIMETER_CANDIDATE_COUNT).fill('perimeter'),
+    );
   });
 
   it('平歯車の親 × パレットがラック → ラックの候補だけ（4 か所）', () => {
@@ -362,15 +309,13 @@ describe('パレットの種類での絞り込み（S4-02）', () => {
     expect(list.map((c) => c.kind)).toEqual(['planetary']);
   });
 
-  it('平歯車の親 × パレットがウォーム → 外周の候補が無く、同じ軸の候補（ウォーム）だけ', () => {
-    const list = listGrowCandidates(spurM, 'gear_a', specOf('worm'));
-    expect(list.map((c) => c.kind)).toEqual(['coaxial', 'coaxial']);
-    for (const c of list) expect(c.kind === 'coaxial' && c.shape.kind).toBe('worm');
+  it('平歯車の親 × パレットがウォーム → 候補は無い（外周は出ず、S4-03 から同じ軸の候補も出ない）', () => {
+    expect(listGrowCandidates(spurM, 'gear_a', specOf('worm'))).toEqual([]);
   });
 
-  it('平歯車の親 × パレットが内歯車 → 囲む候補と同じ軸の内歯車（外周の平歯車は出ない）', () => {
+  it('平歯車の親 × パレットが内歯車 → 囲む候補だけ（外周の平歯車・同じ軸の内歯車は出ない）', () => {
     const list = listGrowCandidates(spurM, 'gear_a', specOf('internal'));
-    expect(list.map((c) => c.kind)).toEqual(['enclose', 'coaxial', 'coaxial']);
+    expect(list.map((c) => c.kind)).toEqual(['enclose']);
   });
 
   it('meshableKinds: 親の種類ごとにかみ合う向きに生やせる種類', () => {

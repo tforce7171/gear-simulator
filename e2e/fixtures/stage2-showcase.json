@@ -6,7 +6,8 @@
         "kind": "root",
         "origin": [0, 60, 0],
         "axis": "y"
-      }
+      },
+      "span": [-28, 12]
     },
     "shaft_helical": {
       "id": "shaft_helical",
@@ -15,7 +16,8 @@
         "parentGearId": "gear_helical_a",
         "childGearId": "gear_helical_b",
         "angle": 0
-      }
+      },
+      "span": [-4, 12]
     },
     "shaft_spur": {
       "id": "shaft_spur",
@@ -24,7 +26,8 @@
         "parentGearId": "gear_spur_a",
         "childGearId": "gear_spur_b",
         "angle": 0.7853981633974483
-      }
+      },
+      "span": [-4, 12]
     },
     "shaft_bevel": {
       "id": "shaft_bevel",
@@ -34,7 +37,8 @@
         "childGearId": "gear_bevel_b",
         "axisStep": 1,
         "side": -1
-      }
+      },
+      "span": [-68, 12]
     },
     "shaft_wheel": {
       "id": "shaft_wheel",
@@ -44,7 +48,8 @@
         "childGearId": "gear_wheel",
         "axisStep": 1,
         "side": -1
-      }
+      },
+      "span": [-36, 12]
     },
     "shaft_crossed": {
       "id": "shaft_crossed",
@@ -54,7 +59,8 @@
         "childGearId": "gear_crossed_b",
         "axisStep": 1,
         "side": -1
-      }
+      },
+      "span": [-4, 12]
     }
   },
   "gears": {

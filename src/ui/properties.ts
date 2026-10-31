@@ -304,6 +304,24 @@ export function createProperties(deps: PropertiesDeps): Properties {
         text('span', 'gs-prop__hint', 'properties.axis.hint'),
       );
     }
+    // シャフトの長さ（S4-03）と、伸縮のつまみ・シャフトの上に置く操作の説明
+    const span = deps.getLayout(scene).shafts[shaftId]?.span;
+    if (span !== undefined) {
+      const length = Math.round((span[1] - span[0]) * 10) / 10;
+      section.append(
+        row(
+          'properties.shaft.length',
+          text(
+            'span',
+            'gs-prop__value',
+            'properties.shaft.length.value',
+            { length },
+            'prop-shaft-length',
+          ),
+        ),
+        text('span', 'gs-prop__hint', 'properties.shaft.length.hint'),
+      );
+    }
     return section;
   }
 

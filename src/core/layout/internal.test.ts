@@ -78,12 +78,7 @@ const pair = fixture('internal-pair');
 const P = 'gear_p';
 const G = 'gear_g';
 
-const SPEC_M: GrowSpec = {
-  perimeterTeeth: DEFAULT_TEETH.M,
-  coaxialSize: 'M',
-  coaxialTeeth: DEFAULT_TEETH.M,
-  kind: 'spur',
-};
+const SPEC_M: GrowSpec = { perimeterTeeth: DEFAULT_TEETH.M, kind: 'spur' };
 
 describe('centerDistance・canMesh・teethRange', () => {
   it('centerDistance: 中・20 歯の平歯車と中・60 歯の内歯車 → 40。中・20 歯同士の平歯車 → 40', () => {
@@ -210,8 +205,6 @@ describe('候補', () => {
     const s24 = listGrowCandidates(single(internal('gear_i', 'S', 24)), 'gear_i', {
       ...SPEC_M,
       perimeterTeeth: DEFAULT_TEETH.S,
-      coaxialSize: 'S',
-      coaxialTeeth: DEFAULT_TEETH.S,
     });
     expect(new Set(perimeterTeeth(s24))).toEqual(new Set([12]));
   });
@@ -230,8 +223,6 @@ describe('候補', () => {
       listGrowCandidates(single(gear), gear.id, {
         ...SPEC_M,
         perimeterTeeth: DEFAULT_TEETH[gear.size],
-        coaxialSize: gear.size,
-        coaxialTeeth: DEFAULT_TEETH[gear.size],
         kind: 'internal', // パレットで内歯車を選んでいる
       }).filter((c) => c.kind === 'enclose');
     const m20 = encloseOf(spur('gear_s', 'M', 20));
@@ -271,16 +262,22 @@ describe('候補', () => {
     expect(layout.interferences).toEqual([]);
   });
 
-  it('同じ軸の候補で内歯車を作れる（歯数は INTERNAL_MIN_TEETH 以上に上げる。ウェブの外に並べる）', () => {
+  // S4-03 で同じ軸の候補は廃止した。シャフトの上に置くコマンド（growGear の coaxial）で内歯車を作れることを確かめる
+  it('シャフトの上に内歯車を作れる（負の側はリングが接し、正の側はウェブが接する位置）', () => {
     const scene = single(spur('gear_s', 'M', 20));
-    const list = listGrowCandidates(scene, 'gear_s', { ...SPEC_M, kind: 'internal' });
-    const coaxial = list.filter((c) => c.kind === 'coaxial');
-    expect(coaxial.map((c) => [c.teeth, c.shape.kind])).toEqual([
-      [24, 'internal'],
-      [24, 'internal'],
-    ]);
-    // 負の側: リングが平歯車の負側の面に接する（offset −8）。正の側: ウェブが平歯車の正側の面に接する（offset 8 + 12）
-    expect(coaxial.map((c) => (c.kind === 'coaxial' ? c.offset : null))).toEqual([-8, 20]);
+    for (const offset of [-8, 20]) {
+      const next = apply(scene, {
+        type: 'growGear',
+        mode: 'coaxial',
+        shaftId: scene.gears.gear_s?.shaftId as string,
+        offset,
+        size: 'M',
+        teeth: 24,
+        kind: 'internal',
+      });
+      const added = Object.values(next.gears).find((g) => g.id !== 'gear_s') as Gear;
+      expect(added).toMatchObject({ kind: 'internal', teeth: 24, offset, webSide: -1 });
+    }
   });
 });
 

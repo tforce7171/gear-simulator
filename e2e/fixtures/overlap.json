@@ -6,7 +6,8 @@
         "kind": "root",
         "origin": [0, 20, 0],
         "axis": "y"
-      }
+      },
+      "span": [-4, 8]
     },
     "shaft_2": {
       "id": "shaft_2",
@@ -14,7 +15,8 @@
         "kind": "root",
         "origin": [10, 20, 0],
         "axis": "y"
-      }
+      },
+      "span": [-4, 8]
     }
   },
   "gears": {

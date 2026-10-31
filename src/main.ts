@@ -202,6 +202,10 @@ const selectAt = (x: number, y: number): void => {
   const { scene } = store.getState();
   const hit = clickTargetAt(x, y);
   if (hit?.kind === 'handle') return;
+  // 選んでいるシャフト（とその上の仮の歯車）のクリックは、パレットの種類の歯車をその位置に置く（S4-03）
+  const placed = interactions.placeOnShaft({ x, y }, hit);
+  if (placed === 'blocked') showToast('shaftPlace.blocked', 'error');
+  if (placed !== null) return;
   if (hit?.kind === 'candidate') {
     interactions.grow(Number(hit.id));
     return;
@@ -461,6 +465,8 @@ const view = {
       hoverPoint === null || interactions.isDragging()
         ? null
         : clickTargetAt(hoverPoint.x, hoverPoint.y, false);
+    // 選んでいるシャフトの上なら、仮の歯車をポインターに合わせて動かす（S4-03）
+    interactions.setHover(interactions.isDragging() ? null : hoverPoint, hit);
     // マウスを乗せた候補は濃く表示する（S1-18）
     interactions.setHoveredCandidate(hit?.kind === 'candidate' ? Number(hit.id) : null);
     interactions.beforeRender();
@@ -513,6 +519,19 @@ installGearSim({
       .map((h) => ({ kind: h.kind, targetId: h.targetId, position: h.position })),
   getCandidates: () =>
     interactions.candidates().map((c, index) => ({ index, kind: c.kind, center: c.center })),
+  getShaftGhost: () => {
+    const g = interactions.shaftGhost();
+    return g === null
+      ? null
+      : {
+          shaftId: g.shaftId,
+          kind: g.kind,
+          size: g.size,
+          offset: g.offset,
+          center: g.spec.center,
+          blocked: g.blocked,
+        };
+  },
   getHand: () => store.getState().sim.hand,
   isPaused: () => store.getState().sim.paused,
   getWarningParts: () => {

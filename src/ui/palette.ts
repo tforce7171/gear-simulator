@@ -3,7 +3,7 @@
 // （描画領域の上か）の判断と、置く処理は受け取る側（app/interactions）が行う
 import { onLanguageChange, t } from '../app/i18n';
 import type { MessageKey } from '../core/i18n';
-import { PALETTE_KIND_LIST, type PaletteKind } from '../core/layout/candidates';
+import { isPaletteGearKind, PALETTE_KIND_LIST, type PaletteKind } from '../core/layout/candidates';
 import type { SizeKey } from '../core/scene/types';
 import { bindText, h } from './dom';
 import './palette.css';
@@ -106,7 +106,12 @@ export function createPalette(deps: PaletteDeps): Palette {
   const kindNote = h('p', 'gs-palette__note', 'palette-kind-note');
   kindNote.setAttribute('role', 'status');
   kindNote.hidden = true;
-  kindSection.append(kindLabel, kindGroup, kindNote, kindHint);
+  // ラック・遊星を選んでいるときの注記（S4-03）。シャフトの上には置かず、歯車の周りの候補から置く
+  const aroundNote = h('p', 'gs-palette__note', 'palette-kind-around-note');
+  aroundNote.setAttribute('role', 'status');
+  text(aroundNote, 'palette.kind.note.aroundGear');
+  aroundNote.hidden = true;
+  kindSection.append(kindLabel, kindGroup, kindNote, aroundNote, kindHint);
 
   // 置く部品
   const partsSection = h('section', 'gs-palette__section');
@@ -194,6 +199,8 @@ export function createPalette(deps: PaletteDeps): Palette {
       button.setAttribute('aria-checked', String(on));
       button.classList.toggle('is-selected', on);
     }
+    const around = isPaletteGearKind(kind);
+    if (aroundNote.hidden !== around) aroundNote.hidden = around;
     refreshNote();
   }
   refresh();

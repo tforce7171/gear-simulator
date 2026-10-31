@@ -13,7 +13,7 @@ import { expect, test } from './fixtures/test';
 
 // S4-02: 生やす候補をパレットで選んだ種類だけにする
 
-test('平歯車を選び、パレットでウォームを選ぶ → 同じ軸の候補だけが出て、かみ合える種類の注記が出る（日・英）', async ({
+test('平歯車を選び、パレットでウォームを選ぶ → 候補は出ず（S4-03 で同じ軸の候補は廃止）、かみ合える種類の注記が出る（日・英）', async ({
   page,
 }) => {
   await openApp(page, { scene: fixtureScene('one-root') });
@@ -25,9 +25,8 @@ test('平歯車を選び、パレットでウォームを選ぶ → 同じ軸の
   expect((await getCandidates(page)).some((c) => c.kind === 'perimeter')).toBe(true);
 
   await page.getByTestId('palette-kind-worm').click();
-  const kinds = (await getCandidates(page)).map((c) => c.kind);
-  expect(kinds.length).toBeGreaterThan(0);
-  expect(new Set(kinds)).toEqual(new Set(['coaxial']));
+  await nextFrames(page);
+  expect(await getCandidates(page)).toEqual([]);
   await expect(note).toBeVisible();
   await expect(note).toHaveText('この歯車とかみ合えるのは平歯車・内歯車・ラック・遊星歯車です');
   await page.evaluate(() => window.__gearSim?.setLanguage('en'));

@@ -184,7 +184,22 @@ export function parseScene(raw: unknown): SceneParseResult {
       shape(`${base}.kind`, `invalid placement kind "${String(p.kind)}"`, key);
       continue;
     }
-    shafts.push([key, { id, placement }]);
+    // 範囲（S4-03）。省いてもよい。値が正しいかは validateScene が確かめる
+    if (item.span === undefined) {
+      shafts.push([key, { id, placement }]);
+    } else {
+      const span: unknown = item.span;
+      if (
+        Array.isArray(span) &&
+        span.length === 2 &&
+        typeof span[0] === 'number' &&
+        typeof span[1] === 'number'
+      ) {
+        shafts.push([key, { id, placement, span: [span[0], span[1]] }]);
+      } else {
+        shape(`shafts.${key}.span`, 'span must be 2 numbers', key);
+      }
+    }
   }
 
   const gears: Array<[string, Gear]> = [];
@@ -196,6 +211,8 @@ export function parseScene(raw: unknown): SceneParseResult {
       size: size(item, base, key),
       teeth: num(item, 'teeth', base, key),
       offset: num(item, 'offset', base, key),
+      // 厚さ（S4-03。省いてもよい。省けば大きさごとの歯幅 gearWidth）
+      ...(item.width === undefined ? {} : { width: num(item, 'width', base, key) }),
     };
     // 種類ごとのフィールド（S2-01）。値が許された範囲か（hand が left・right か）は validateScene が確かめる
     const kind: unknown = item.kind;

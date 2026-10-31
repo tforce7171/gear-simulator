@@ -42,6 +42,10 @@ const ARC_KNOB_RADIUS = 3.5;
 const AXIAL_LENGTH = 22;
 const AXIAL_HEAD_RADIUS = 2.6;
 const AXIAL_HEAD_LENGTH = 6;
+// シャフトの伸縮のつまみ（S4-03）: シャフトの端に置く、軸に沿った短い円柱（シャフトより太い）
+const SPAN_KNOB_RADIUS = 3;
+const SPAN_KNOB_LENGTH = 3;
+const SPAN_PICK_RADIUS = 4.5;
 
 interface HandleMaterials {
   normal: MeshBasicMaterial;
@@ -172,11 +176,34 @@ const buildAxial: HandleBuilder = (materials) => {
   };
 };
 
+// シャフトの伸縮（S4-03）: シャフトの端（position）に、軸に沿った短い円柱のつまみ
+const buildSpan: HandleBuilder = (materials) => {
+  const group = new Group();
+  const knob = new Mesh(
+    new CylinderGeometry(SPAN_KNOB_RADIUS, SPAN_KNOB_RADIUS, SPAN_KNOB_LENGTH, 16),
+    materials.normal,
+  );
+  knob.renderOrder = HANDLE_RENDER_ORDER + 1;
+  const proxy = new Mesh(new SphereGeometry(SPAN_PICK_RADIUS, 12, 8), materials.pick);
+  // 円柱はローカルの y に沿うので、y を軸（ローカルの z = w）に向ける
+  knob.rotation.x = Math.PI / 2;
+  group.add(knob, proxy);
+  return {
+    object: group,
+    bodies: [knob],
+    place(spec) {
+      placeOnAxis(group, spec.position, spec.frame?.axis ?? 'y');
+    },
+  };
+};
+
 export const HANDLE_BUILDERS: Partial<Record<HandleKind, HandleBuilder>> = {
   move: buildMove,
   height: buildHeight,
   arc: buildArc,
   axial: buildAxial,
+  spanStart: buildSpan,
+  spanEnd: buildSpan,
 };
 
 export interface HandleView {

@@ -1,4 +1,5 @@
 import { MAX_SAVE_FILE_BYTES } from '../constants';
+import { withShaftSpans } from '../layout/resolve';
 import { parseScene } from '../scene/parse';
 import type { Scene } from '../scene/types';
 
@@ -10,7 +11,8 @@ import type { Scene } from '../scene/types';
 // 2: 段階 2 の歯車（ハスバ・かさ・ウォーム・ホイール・ねじ歯車）と bevel・skew の配置（S2-05）
 // 3: 段階 3 の部品（固定具 anchors・キャリア carriers・ラック racks のコレクションと、内歯車・concentric・planet・rack の
 //    配置）。3 つのコレクションは必須（S3-05）
-export const CURRENT_SAVE_VERSION = 3;
+// 4: シャフトの範囲 span（必須）と、歯車の省略できる厚さ width（S4-03。width は S4-05 で使う）
+export const CURRENT_SAVE_VERSION = 4;
 
 export interface SaveFile {
   readonly format: 'gear-simulator';
@@ -59,10 +61,34 @@ const v2ToV3: Migration = (raw) => {
   };
 };
 
-export const MIGRATIONS: Readonly<Record<number, Migration>> = { 1: v1ToV2, 2: v2ToV3 };
+// 3 → 4（S4-03）: 各シャフトに、version 3 までの長さ（載っている部品から求めた範囲。requiredShaftSpans、部品が無ければ
+// ±EMPTY_SHAFT_HALF_LENGTH）を span として入れる。範囲を求めるにはシーンを読む必要があるので、version 3 の parseScene
+// （span を省いたシャフトを受け付ける）で読み、読めなければそのまま渡して version 4 の検証で弾く。
+// width は省略できるので足さない（読むときに大きさごとの値になる）
+const v3ToV4: Migration = (raw) => {
+  const scene = raw.scene;
+  if (!isPlainObject(scene) || !isPlainObject(scene.shafts)) return raw;
+  const parsed = parseScene(scene);
+  if (!parsed.ok) return raw;
+  const spanned = withShaftSpans(parsed.scene);
+  const shafts: Record<string, unknown> = { ...scene.shafts };
+  for (const [key, shaft] of Object.entries(spanned.shafts)) {
+    const item = shafts[key];
+    if (!isPlainObject(item) || item.span !== undefined || shaft.span === undefined) continue;
+    shafts[key] = { ...item, span: [shaft.span[0], shaft.span[1]] };
+  }
+  return { ...raw, scene: { ...scene, shafts } };
+};
 
+export const MIGRATIONS: Readonly<Record<number, Migration>> = {
+  1: v1ToV2,
+  2: v2ToV3,
+  3: v3ToV4,
+};
+
+// 範囲を省いたシャフト（テストで組んだシーンなど）には、載っている部品から求めた範囲を入れて書く（version 4 では必須）
 export function toSaveFile(scene: Scene): SaveFile {
-  return { format: 'gear-simulator', version: CURRENT_SAVE_VERSION, scene };
+  return { format: 'gear-simulator', version: CURRENT_SAVE_VERSION, scene: withShaftSpans(scene) };
 }
 
 // 2 スペースの字下げ、末尾に改行
@@ -133,6 +159,10 @@ export function parseSaveFileObject(raw: unknown): ParseResult {
   if (!parsed.ok) {
     const path = parsed.errors[0]?.path;
     return fail('invalid-scene', path === '' ? undefined : path);
+  }
+  // version 4 ではシャフトの範囲は必須（S4-03。古い版は移行で入る）
+  for (const [key, shaft] of Object.entries(parsed.scene.shafts)) {
+    if (shaft.span === undefined) return fail('invalid-scene', `shafts.${key}.span`);
   }
   return {
     ok: true,

@@ -10,7 +10,7 @@ import {
 import { initialMotionState, solveMotion } from '../core/kinematics/motion';
 import type { HandConstraint, MotionState } from '../core/kinematics/types';
 import type { PaletteKind } from '../core/layout/candidates';
-import { resolveLayout } from '../core/layout/resolve';
+import { resolveLayout, withShaftSpans } from '../core/layout/resolve';
 import type { Layout } from '../core/layout/types';
 import { createRandomIdGenerator, type IdGenerator } from '../core/scene/ids';
 import type { Scene, SizeKey } from '../core/scene/types';
@@ -145,15 +145,18 @@ function mergeSettings(settings: Settings, patch: Partial<Settings>): Settings {
 
 function reduce(state: AppState, action: AppAction, ids: IdGenerator): AppState {
   switch (action.type) {
-    case 'loadScene':
+    case 'loadScene': {
+      // 範囲を省いたシャフト（テストのシーンなど）には、載っている部品から求めた範囲を入れる（S4-03）
+      const scene = withShaftSpans(action.scene);
       return {
         ...state,
-        scene: action.scene,
+        scene,
         history: emptyHistory(),
         // 一時停止は保つ（シーンを差し替えても切り替わらない。S1-22）
         sim: { ...state.sim, hand: null },
-        motion: initialMotion(action.scene, resolveLayout(action.scene), state.sim.paused),
+        motion: initialMotion(scene, resolveLayout(scene), state.sim.paused),
       };
+    }
     case 'command': {
       const options = action.coalesceKey === undefined ? {} : { coalesceKey: action.coalesceKey };
       const result = execute(state, action.command, { ids }, options);
@@ -220,8 +223,10 @@ function reduceWithSelection(state: AppState, action: AppAction, ids: IdGenerato
   return selection === next.selection ? next : { ...next, selection };
 }
 
-export function createStore(scene: Scene, options: StoreOptions = {}): Store {
+export function createStore(initialScene: Scene, options: StoreOptions = {}): Store {
   const ids = options.ids ?? createRandomIdGenerator();
+  // 範囲を省いたシャフトには、載っている部品から求めた範囲を入れる（S4-03。loadScene と同じ）
+  const scene = withShaftSpans(initialScene);
   let state: AppState = {
     scene,
     history: emptyHistory(),

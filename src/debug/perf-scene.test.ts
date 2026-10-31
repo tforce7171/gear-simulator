@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseSaveFileObject, toSaveFile } from '../core/io/save-file';
 import { initialMotionState, solveMotion } from '../core/kinematics/motion';
-import { resolveLayout } from '../core/layout/resolve';
+import { resolveLayout, withShaftSpans } from '../core/layout/resolve';
 import { validateScene } from '../core/scene/validate';
 import { generatePerfScene } from './perf-scene';
 
@@ -48,6 +48,7 @@ describe('generatePerfScene', () => {
   it('保存形式の読み込み（parseSaveFileObject）を通る', () => {
     const result = parseSaveFileObject(toSaveFile(scene));
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.file.scene).toEqual(scene);
+    // 保存するときに、範囲を省いたシャフトには載っている部品から求めた範囲が入る（S4-03）
+    if (result.ok) expect(result.file.scene).toEqual(withShaftSpans(scene));
   });
 });

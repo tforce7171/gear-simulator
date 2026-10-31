@@ -80,15 +80,73 @@ import type {
 // mesh のシャフトの位置・向き、歯車の中心・位相、シャフトの span、かみ合い（木の親子と偶然のかみ合い）、
 // 干渉の組を求める。検証済みのシーンを前提とし、根から到達できない部品は含めない（例外にしない）
 
-const cache = new WeakMap<Scene, Layout>();
+// シャフトの軸方向の区間 [始まり, 終わり]（シャフトの原点から。mm）
+export type ShaftSpan = readonly [number, number];
+
+interface Resolved {
+  readonly layout: Layout;
+  // 根から置けたシャフトごとの、載っている部品の範囲（余白込み。部品が無ければ null。S4-03）
+  readonly required: Readonly<Record<ShaftId, ShaftSpan | null>>;
+}
+
+const cache = new WeakMap<Scene, Resolved>();
+
+function resolved(scene: Scene): Resolved {
+  const hit = cache.get(scene);
+  if (hit !== undefined) return hit;
+  const result = compute(scene);
+  cache.set(scene, result);
+  return result;
+}
 
 // シーンの参照が同じなら、前回と同じ Layout のオブジェクトを返す
 export function resolveLayout(scene: Scene): Layout {
-  const hit = cache.get(scene);
-  if (hit !== undefined) return hit;
-  const layout = compute(scene);
-  cache.set(scene, layout);
-  return layout;
+  return resolved(scene).layout;
+}
+
+// シャフトに載っている部品の範囲（S4-03。余白込み。シャフトの範囲 Shaft.span はこれを含まなければならない）。
+// 歯車ごとの区間（requiredSpanOf）とキャリアの板・遊星のシャフトの支え（S3-03）の和で、S4-03 より前はこれがシャフトの長さだった。
+// 部品が無いシャフトは null。根から置けないシャフトは含めない
+export function requiredShaftSpans(scene: Scene): Readonly<Record<ShaftId, ShaftSpan | null>> {
+  return resolved(scene).required;
+}
+
+// 2 つの区間を含む最小の区間
+export function unionSpan(a: ShaftSpan | null, b: ShaftSpan | null): ShaftSpan | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  return [Math.min(a[0], b[0]), Math.max(a[1], b[1])];
+}
+
+// span が required を含むか（丸めの誤差は COLLISION_EPS まで許す）
+export function spanContains(span: ShaftSpan, required: ShaftSpan | null): boolean {
+  if (required === null) return true;
+  return span[0] <= required[0] + COLLISION_EPS && span[1] >= required[1] - COLLISION_EPS;
+}
+
+const EMPTY_SPAN: ShaftSpan = [-EMPTY_SHAFT_HALF_LENGTH, EMPTY_SHAFT_HALF_LENGTH];
+
+// 範囲を省いたシャフト（S4-03）の範囲: 載っている部品の範囲、部品が無ければ ±EMPTY_SHAFT_HALF_LENGTH
+export function defaultShaftSpan(required: ShaftSpan | null): ShaftSpan {
+  return required ?? EMPTY_SPAN;
+}
+
+// 範囲を省いたシャフトに、載っている部品から求めた範囲（defaultShaftSpan）を入れたシーン（S4-03）。
+// 保存形式の version 3 → 4 の移行、ストアに読み込むシーン、保存するシーンに使う。全てのシャフトが範囲を持っていれば同じ参照を返す。
+// 根から置けないシャフトはそのまま
+export function withShaftSpans(scene: Scene): Scene {
+  const missing = Object.values(scene.shafts).filter((s) => s.span === undefined);
+  if (missing.length === 0) return scene;
+  const required = requiredShaftSpans(scene);
+  const shafts: Record<ShaftId, Shaft> = { ...scene.shafts };
+  let changed = false;
+  for (const shaft of missing) {
+    if (!Object.hasOwn(required, shaft.id)) continue;
+    const span = defaultShaftSpan(required[shaft.id] ?? null);
+    shafts[shaft.id] = { ...shaft, span: [span[0], span[1]] };
+    changed = true;
+  }
+  return changed ? { ...scene, shafts } : scene;
 }
 
 // shaftId とその先（mesh・bevel・skew・planet で子孫になる。concentric の子、キャリアの遊星のシャフトも。S3-03）
@@ -185,9 +243,10 @@ interface QueueItem {
   readonly orbit?: Orbit; // 遊星のシャフト（S3-03）
 }
 
-function compute(scene: Scene): Layout {
+function compute(scene: Scene): Resolved {
   const index = indexScene(scene);
   const shafts: Record<ShaftId, ShaftLayout> = {};
+  const required: Record<ShaftId, ShaftSpan | null> = {};
   const gears: Record<GearId, GearLayout> = {};
   const treePairs: Array<[GearId, GearId]> = [];
 
@@ -269,10 +328,11 @@ function compute(scene: Scene): Layout {
       if (shafts[item.shaftId] !== undefined) continue;
       const { shaftId, origin, axis } = item;
       const onShaft = index.gearsByShaft.get(shaftId) ?? [];
+      required[shaftId] = requiredSpanOf(onShaft);
       shafts[shaftId] = {
         origin,
         axis,
-        span: spanOf(onShaft),
+        span: EMPTY_SPAN, // 下で、シャフトの範囲（省いていれば載っている部品の範囲）にする
         ...(item.orbit === undefined ? {} : { orbit: item.orbit }),
       };
 
@@ -316,12 +376,18 @@ function compute(scene: Scene): Layout {
   }
 
   const carriers = carriersOf(scene, index, shafts);
-  extendSpansForCarriers(index, shafts);
+  extendRequiredForCarriers(index, shafts, required);
+  // シャフトの範囲（S4-03）。省いたシャフトは載っている部品の範囲（無ければ ±EMPTY_SHAFT_HALF_LENGTH）
+  for (const [id, at] of Object.entries(shafts)) {
+    const stored = scene.shafts[id]?.span;
+    const span = stored ?? defaultShaftSpan(required[id] ?? null);
+    shafts[id] = { ...at, span: [span[0], span[1]] };
+  }
   const meshes = meshesOf(scene, gears, treePairs);
   phaseCoaxialPlanetPartners(scene, gears, meshes);
   const rackMeshes = rackMeshesOf(scene, gears, racks, rackTreeMeshes);
   const rackLayouts = rackLayoutsOf(scene, racks, rackMeshes);
-  return {
+  const layout: Layout = {
     shafts,
     gears,
     carriers,
@@ -330,6 +396,7 @@ function compute(scene: Scene): Layout {
     rackMeshes,
     interferences: interferencesOf(scene, shafts, gears, carriers, meshes, rackLayouts, rackMeshes),
   };
+  return { layout, required };
 }
 
 // 置いたラックの、travel を決める前の形（S3-04）
@@ -517,29 +584,31 @@ function carrierPlateRange(carrier: Carrier): readonly [number, number] {
   return [carrier.offset, carrier.offset + CARRIER_THICKNESS[carrier.size]];
 }
 
-// キャリアのシャフトの span に板（両面から SHAFT_END_MARGIN）を含め、遊星のシャフトの span を板の遠い側の面まで伸ばす（S3-03）
-function extendSpansForCarriers(index: SceneIndex, shafts: Record<ShaftId, ShaftLayout>): void {
+// キャリアのシャフトの部品の範囲に板（両面から SHAFT_END_MARGIN）を含め、遊星のシャフトの部品の範囲を
+// 板の遠い側の面まで伸ばす（S3-03。板を貫いて支えられる）
+function extendRequiredForCarriers(
+  index: SceneIndex,
+  shafts: Readonly<Record<ShaftId, ShaftLayout>>,
+  required: Record<ShaftId, ShaftSpan | null>,
+): void {
   for (const [shaftId, carriers] of index.carriersByShaft) {
     const at = shafts[shaftId];
     if (at === undefined) continue;
-    const hasGears = (index.gearsByShaft.get(shaftId) ?? []).length > 0;
-    let [lo, hi] = hasGears ? at.span : [Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY];
+    let span = required[shaftId] ?? null;
     for (const carrier of carriers) {
       const [plateLo, plateHi] = carrierPlateRange(carrier);
-      lo = Math.min(lo, plateLo - SHAFT_END_MARGIN);
-      hi = Math.max(hi, plateHi + SHAFT_END_MARGIN);
-      // 遊星のシャフトは板の遠い側の面まで伸ばす（板を貫いて支えられる）
+      span = unionSpan(span, [plateLo - SHAFT_END_MARGIN, plateHi + SHAFT_END_MARGIN]);
       for (const planet of index.planetsByCarrier.get(carrier.id) ?? []) {
         const pl = shafts[planet.id];
         if (pl === undefined) continue;
         const shift = dot(sub(at.origin, pl.origin), axisVector(pl.axis));
-        shafts[planet.id] = {
-          ...pl,
-          span: [Math.min(pl.span[0], plateLo + shift), Math.max(pl.span[1], plateHi + shift)],
-        };
+        required[planet.id] = unionSpan(required[planet.id] ?? null, [
+          plateLo + shift,
+          plateHi + shift,
+        ]);
       }
     }
-    shafts[shaftId] = { ...at, span: [lo, hi] };
+    required[shaftId] = span;
   }
 }
 
@@ -1116,12 +1185,23 @@ function resolveAdditionFully(
 ): Addition | null {
   if (shaft === null && base.shafts[gear.shaftId] === undefined) return null;
   if (shaft !== null && gear.shaftId !== shaft.id) return null;
+  // 範囲を持つ既存のシャフトに通すなら、足した歯車がはみ出す分だけ伸ばす（S4-03。編集コマンドの fitShaftSpans と同じ）
+  const host = shaft === null ? scene.shafts[gear.shaftId] : undefined;
+  const grown =
+    host?.span === undefined
+      ? null
+      : { ...host, span: unionSpan(host.span, requiredSpanOf([gear])) as ShaftSpan };
   const next: Scene = {
     ...scene,
-    shafts: shaft === null ? scene.shafts : { ...scene.shafts, [shaft.id]: shaft },
+    shafts:
+      shaft !== null
+        ? { ...scene.shafts, [shaft.id]: shaft }
+        : grown !== null
+          ? { ...scene.shafts, [grown.id]: grown }
+          : scene.shafts,
     gears: { ...scene.gears, [gear.id]: gear },
   };
-  const layout = compute(next);
+  const layout = compute(next).layout;
   const placed = layout.gears[gear.id];
   if (placed === undefined) return null;
   const changed = new Set<string>([gear.id, gear.shaftId]);
@@ -1149,17 +1229,25 @@ function placeAddition(
     // 既にあるシャフトに通す。位相は 0（mesh のシャフトの子ではないため）、span は載った歯車ごと求め直す
     const s = base.shafts[gear.shaftId];
     if (s === undefined) return null;
+    // 範囲を持つシャフトは、足した歯車がはみ出す分だけ伸びる（S4-03。編集コマンドの fitShaftSpans と同じ）。
+    // 省いたシャフトは載っている歯車から求め直す
+    const stored = scene.shafts[gear.shaftId]?.span;
     const onShaft = Object.values(scene.gears).filter((g) => g.shaftId === gear.shaftId);
     onShaft.push(gear);
+    const grown =
+      stored === undefined
+        ? defaultShaftSpan(requiredSpanOf(onShaft))
+        : (unionSpan(stored, requiredSpanOf([gear])) as ShaftSpan);
     return {
       layout: make(s.origin, s.axis, 0),
-      shaftLayout: { origin: s.origin, axis: s.axis, span: spanOf(onShaft) },
+      shaftLayout: { origin: s.origin, axis: s.axis, span: [grown[0], grown[1]] },
       treePartner: null,
     };
   }
 
   if (gear.shaftId !== shaft.id) return null;
-  const span = spanOf([gear]);
+  const own = unionSpan(shaft.span ?? null, requiredSpanOf([gear])) as ShaftSpan;
+  const span: [number, number] = [own[0], own[1]];
   const p = shaft.placement;
   if (p.kind === 'concentric') return null; // 同じ線上のシャフトは足す候補にしない（S3-03）
   if (p.kind === 'rack') return null; // ラックのあるシーンは全体を解き直す（S3-04）
@@ -1188,9 +1276,9 @@ function placeAddition(
 // 載っている歯車ごとに、両面（offset と offset + 歯幅）から SHAFT_END_MARGIN ずつ伸ばした区間を求め、
 // その最小〜最大をとる。面は区画の両端（ウォームは長さを 4 の倍数に切り上げた区画。S2-03）。かさ歯車（S2-02）は、頂点側の端を「頂点 − BEVEL_APEX_CLEARANCE」より先へ伸ばさない
 // （頂点の先は相手のシャフトとぶつかるため）。同じシャフトの頂点側にほかの部品があれば、その部品の区間で伸びる。
-// 歯車が無ければ [−EMPTY_SHAFT_HALF_LENGTH, +EMPTY_SHAFT_HALF_LENGTH]
-export function spanOf(gears: readonly Gear[]): [number, number] {
-  if (gears.length === 0) return [-EMPTY_SHAFT_HALF_LENGTH, EMPTY_SHAFT_HALF_LENGTH];
+// 歯車が無ければ null（S4-03。シャフトの範囲は Shaft.span が持ち、これはそれが含まなければならない範囲）
+export function requiredSpanOf(gears: readonly Gear[]): ShaftSpan | null {
+  if (gears.length === 0) return null;
   let lo = Number.POSITIVE_INFINITY;
   let hi = Number.NEGATIVE_INFINITY;
   for (const gear of gears) {

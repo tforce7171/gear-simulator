@@ -1,7 +1,7 @@
 ---
 id: S4-03
 title: シャフトの長さを持たせ、伸縮とシャフト上の好きな位置への配置
-status: todo
+status: doing
 depends: [S4-02]
 ---
 

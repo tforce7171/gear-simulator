@@ -26,6 +26,8 @@ const CANDIDATE_COLOR = 0x8fd8ff;
 const CANDIDATE_OPACITY = 0.3;
 const CANDIDATE_HOVER_OPACITY = 0.7;
 const CANDIDATE_HOVER_EMISSIVE = 0x2a8fd0;
+// 置けない仮の歯車（S4-03）の色
+const BLOCKED_COLOR = 0xff4d4d;
 const SHAFT_RADIUS = 1.5; // render/sync.ts の本物のシャフトと同じ
 // 半透明の部品は不透明な部品の後に描く。ハンドル（10〜）より先
 const CANDIDATE_RENDER_ORDER = 5;
@@ -52,6 +54,8 @@ export interface CandidateSpec {
     readonly grooveOffset: number;
   };
   readonly withShaft: boolean; // 仮のシャフトも描く（外周の候補）
+  // 置けない（S4-03 のシャフトの上の仮の歯車が、ほかの部品と重なる）。赤く描く
+  readonly blocked?: boolean;
   // 遊星歯車機構の候補（S3-03）。本体はリング（歯を省いた輪。ウェブは描かず、太陽の上のクリックを奪わない）で、
   // 遊星を選べない仮の歯車として添える
   readonly planets?: {
@@ -82,9 +86,13 @@ interface Entry {
   proxy: Mesh | null; // 見えない当たり判定（遊星歯車機構。S3-03）
 }
 
-function material(opacity: number, emissive: number): MeshStandardMaterial {
+function material(
+  opacity: number,
+  emissive: number,
+  color: number = CANDIDATE_COLOR,
+): MeshStandardMaterial {
   return new MeshStandardMaterial({
-    color: CANDIDATE_COLOR,
+    color,
     emissive,
     metalness: 0.1,
     roughness: 0.6,
@@ -98,6 +106,7 @@ export function createCandidateView(cache: GeometryCache): CandidateView {
   const root = new Group();
   const normal = material(CANDIDATE_OPACITY, 0x000000);
   const hover = material(CANDIDATE_HOVER_OPACITY, CANDIDATE_HOVER_EMISSIVE);
+  const blocked = material(CANDIDATE_HOVER_OPACITY, 0x000000, BLOCKED_COLOR);
   // 当たり判定だけの形（描かないがレイキャストには当たる。外向きの面だけ）
   const pickProxyMaterial = new MeshBasicMaterial({ visible: false });
   let entries: Entry[] = [];
@@ -241,7 +250,7 @@ export function createCandidateView(cache: GeometryCache): CandidateView {
         entries = candidates.map(build);
       }
       entries.forEach((entry, i) => {
-        const m = i === hovered ? hover : normal;
+        const m = entry.spec.blocked === true ? blocked : i === hovered ? hover : normal;
         entry.body.material = m;
         if (entry.shaft !== null) entry.shaft.material = m;
       });

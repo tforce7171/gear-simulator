@@ -118,3 +118,9 @@ export function axialExtent(gear: Gear): readonly [number, number] {
   if (gear.kind === 'internal') return internalExtent(gear);
   return [gear.offset, gear.offset + sectionWidth(gear)];
 }
+
+// 歯車の厚さ（S4-03 で保存形式に入れた、省略できる width）。省けば大きさごとの歯幅（GEAR_SIZES の faceWidth）。
+// S4-03 の時点では読み書きするだけで、形・干渉・かみ合いは大きさごとの歯幅のまま（使う所の切り替えは S4-05）
+export function gearWidth(gear: { readonly size: SizeKey; readonly width?: number }): number {
+  return gear.width ?? GEAR_SIZES[gear.size].faceWidth;
+}

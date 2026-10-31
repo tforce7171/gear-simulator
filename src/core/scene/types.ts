@@ -23,6 +23,10 @@ export interface Scene {
 export interface Shaft {
   readonly id: ShaftId;
   readonly placement: ShaftPlacement;
+  // シャフトの軸方向の範囲（S4-03）。シャフトの原点からの [始まり, 終わり]（mm）。編集コマンドで変えた端は AXIAL_SNAP の倍数。
+  // 載っている部品の範囲（余白込み。requiredShaftSpans）を含まなければならない（検証の spanTooShort）。
+  // 保存形式 version 4 では必ず持つ。省いたシャフト（テストで組んだシーンなど）は、載っている部品から求めた範囲を使う
+  readonly span?: readonly [number, number];
 }
 
 export type ShaftPlacement =
@@ -101,6 +105,8 @@ export interface GearBase {
   readonly size: SizeKey;
   readonly teeth: number;
   readonly offset: number; // シャフトの原点から、歯幅の負側の面までの軸方向の位置（mm）。AXIAL_SNAP の倍数
+  // 歯車の厚さ（mm。S4-03 で保存形式に入れた省略できる欄。S4-05 で使う）。省くと大きさごとの歯幅（gearWidth）
+  readonly width?: number;
 }
 
 export interface SpurGear extends GearBase {

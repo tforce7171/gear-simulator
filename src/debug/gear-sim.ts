@@ -8,7 +8,7 @@ import type { Lang } from '../core/i18n';
 import type { HandConstraint, MotionState } from '../core/kinematics/types';
 import type { Layout } from '../core/layout/types';
 import type { Vec3 } from '../core/math/vec3';
-import type { GearId, Scene, ShaftId } from '../core/scene/types';
+import type { GearId, GearKind, Scene, ShaftId, SizeKey } from '../core/scene/types';
 import type { Quality, ThemeId } from '../core/theme';
 import type { CameraPose } from '../input/camera';
 import type { HandleKind } from '../input/handle-drag';
@@ -80,6 +80,18 @@ export interface GearSimDebug {
    * index はピッキングの ID（pick の結果の kind: 'candidate' の id は String(index)）
    */
   getCandidates(): Array<{ index: number; kind: CandidateKind; center: Vec3 }>;
+  /**
+   * シャフトの上の仮の歯車（S4-03）。シャフトを選んでいて、パレットが歯車の種類で、そのシャフトにマウスを乗せている間だけ出る。
+   * offset は置く位置（歯幅の負側の面）、center は仮の歯車の中心のワールド座標、blocked は重なって置けない（赤）。無ければ null
+   */
+  getShaftGhost(): {
+    shaftId: ShaftId;
+    kind: GearKind;
+    size: SizeKey;
+    offset: number;
+    center: Vec3;
+    blocked: boolean;
+  } | null;
   /** 手で回しているシャフトと目標の角度（S1-21）。手で回していなければ null */
   getHand(): HandConstraint | null;
   /** 全モーターの一時停止中か（S1-22。Space の押して離すで切り替わる） */

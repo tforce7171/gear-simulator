@@ -258,8 +258,6 @@ describe('S3-04 ラック＆ピニオン: 運動', () => {
     const scene: Scene = { ...basic, racks: {} };
     const candidates = listGrowCandidates(scene, 'gear_p', {
       perimeterTeeth: DEFAULT_TEETH.M,
-      coaxialSize: 'M',
-      coaxialTeeth: DEFAULT_TEETH.M,
       kind: 'rack',
     }).filter((c) => c.kind === 'rack');
     expect(
@@ -397,16 +395,23 @@ describe('S3-04 ラック＆ピニオン: 編集', () => {
   });
 
   it('growRack: 平歯車でない・無い歯車・範囲外の歯数は失敗', () => {
-    const scene = apply(basic, {
-      type: 'growGear',
-      mode: 'coaxial',
-      shaftId: 'shaft_p',
-      offset: 8,
-      size: 'M',
-      teeth: 20,
-      kind: 'helical',
-    });
-    const helical = Object.values(scene.gears).find((g) => g.kind === 'helical')?.id as string;
+    // ピニオンのシャフトのハスバ歯車（S4-03 から干渉を生む位置にはコマンドで置けないので、シーンに直接足す）
+    const scene: Scene = {
+      ...basic,
+      gears: {
+        ...basic.gears,
+        gear_h: {
+          id: 'gear_h',
+          kind: 'helical',
+          hand: 'right',
+          shaftId: 'shaft_p',
+          size: 'M',
+          teeth: 20,
+          offset: 8,
+        },
+      },
+    };
+    const helical = 'gear_h';
     const grow = (gearId: string, teeth = 30): ReturnType<typeof applyCommand> =>
       applyCommand(scene, { type: 'growRack', gearId, axisStep: 1, normalSign: 1, teeth }, ctx());
     expect(grow(helical)).toMatchObject({ ok: false, error: { code: 'notAllowed' } });

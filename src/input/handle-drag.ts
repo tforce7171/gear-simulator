@@ -1,5 +1,5 @@
 import { GRID_SNAP, PERIMETER_CANDIDATE_COUNT } from '../core/constants';
-import { applyCommand, type Command } from '../core/edit/commands';
+import { applyCommand, type Command, stretchShaftSpan } from '../core/edit/commands';
 import { centerDistance, gearEnvelope } from '../core/geometry/dimensions';
 import { newInterferences } from '../core/layout/interference-diff';
 import { meshSnapTargets } from '../core/layout/mesh-snap';
@@ -34,12 +34,14 @@ import { closestHeightOnVerticalLine, intersectRayPlane, snap } from './placemen
 // 共通の振る舞い: ドラッグ中は履歴に積まない仮のシーンを見せ、ドラッグ開始時に無かった干渉を新たに生む
 // 値では invalid（赤）にし、離したら最後の「新たな干渉の無い」値を 1 つのコマンドで確定する
 
-export type HandleKind = 'move' | 'height' | 'arc' | 'axial';
+// S4-03: シャフトの伸縮のつまみ（'spanStart'・'spanEnd'。範囲の始まり・終わりの端）
+export type HandleKind = 'move' | 'height' | 'arc' | 'axial' | 'spanStart' | 'spanEnd';
 
 // 円弧・軸方向のハンドルの置き方（描画が形を作るのに使う）。
 // position = center + radialDirection(axis, angle) × radius
 export interface HandleFrame {
-  readonly center: Vec3; // arc: 親の歯車の中心、axial: 選んだ歯車の中心
+  // arc: 親の歯車の中心、axial: 選んだ歯車の中心、spanStart・spanEnd: シャフトの端（radius・angle は 0）
+  readonly center: Vec3;
   readonly axis: Axis;
   readonly radius: number; // arc: 円弧の半径、axial: 矢印を置く軸からの距離
   readonly angle: number; // arc: 今の角度（つまみの位置）、axial: 矢印を置く向き
@@ -47,10 +49,10 @@ export interface HandleFrame {
 
 export interface HandleSpec {
   readonly kind: HandleKind;
-  // move・height・arc はシャフトの ID、axial は歯車の ID
+  // move・height・arc・spanStart・spanEnd はシャフトの ID、axial は歯車の ID
   readonly targetId: string;
   readonly position: Vec3; // ドラッグを始めるのに適した点（ハンドルの見た目の中心）
-  readonly frame?: HandleFrame; // arc・axial だけ
+  readonly frame?: HandleFrame; // arc・axial・spanStart・spanEnd だけ
 }
 
 export interface Ray {
@@ -142,11 +144,12 @@ function axialHandleAngle(scene: Scene, gearId: GearId): number {
   return best;
 }
 
-// 選択に応じて出すハンドル（並びは move → height → arc → axial）。
+// 選択に応じて出すハンドル（並びは move → height → arc → axial → spanStart → spanEnd）。
 // - root・detached のシャフト（またはその上の歯車）: 位置（原点の真下の床）と高さ（その上の縦の線の先。
 //   部品と重ならないよう、部品の最も低い所の下）
 // - mesh のシャフト（またはその上の歯車）: 外周の角度の円弧（親の軸まわり、子の歯車の外側）
 // - 歯車で、mesh・bevel のシャフトの childGearId でないもの: シャフト上の位置の矢印（歯先円の少し外）
+// - シャフトそのもの（S4-03）: 範囲の両端の伸縮のつまみ。遊星のシャフトは公転して描く位置と合わないので出さない
 export function listHandles(scene: Scene, layout: Layout, selection: string | null): HandleSpec[] {
   const shaftId = selectedShaftId(scene, selection);
   if (shaftId === null) return [];
@@ -199,6 +202,21 @@ export function listHandles(scene: Scene, layout: Layout, selection: string | nu
         angle: axialHandleAngle(scene, gear.id),
       }),
     );
+  }
+  if (selection === shaftId && p.kind !== 'planet') {
+    const w = axisVector(placed.axis);
+    for (const [kind, end] of [
+      ['spanStart', placed.span[0]],
+      ['spanEnd', placed.span[1]],
+    ] as const) {
+      const center = add(placed.origin, scale(w, end));
+      handles.push({
+        kind,
+        targetId: shaftId,
+        position: center,
+        frame: { center, axis: placed.axis, radius: 0, angle: 0 },
+      });
+    }
   }
   return handles;
 }
@@ -368,11 +386,36 @@ const axialDrag: HandleDragFactory = (scene, layout, handle, startRay) => {
   };
 };
 
+// シャフトの伸縮（S4-03）: レイに最も近い軸の直線上の点の、ドラッグ開始時からの軸方向の移動量を端に足し、
+// stretchShaftSpan で 4 mm 刻みにして、部品より短くならず・ほかの部品にぶつかる手前で止める
+const spanDrag: HandleDragFactory = (scene, layout, handle, startRay) => {
+  const shaftId = handle.targetId;
+  const placed = layout.shafts[shaftId];
+  if (placed === undefined || scene.shafts[shaftId] === undefined) return null;
+  const end = handle.kind === 'spanStart' ? 0 : 1;
+  const w = axisVector(placed.axis);
+  const paramOf = (ray: Ray): number | null => {
+    if (Math.abs(dot(normalized(ray.direction), w)) > AXIAL_PARALLEL_DOT) return null;
+    return closestParamOnLine(ray.origin, ray.direction, placed.origin, w);
+  };
+  const start = paramOf(startRay);
+  if (start === null) return null;
+  const from = placed.span[end];
+  return (ray) => {
+    const t = paramOf(ray);
+    if (t === null) return null;
+    const span = stretchShaftSpan(scene, shaftId, end, from + t - start);
+    return span === null ? null : { type: 'setShaftSpan', shaftId, span };
+  };
+};
+
 export const HANDLE_DRAGS: Partial<Record<HandleKind, HandleDragFactory>> = {
   move: moveDrag,
   height: heightDrag,
   arc: arcDrag,
   axial: axialDrag,
+  spanStart: spanDrag,
+  spanEnd: spanDrag,
 };
 
 // ドラッグで動いて見える部品（そのシャフトとその先のシャフト、その上の歯車とモーター）
@@ -389,6 +432,8 @@ export function movedParts(scene: Scene, shaftId: ShaftId): Set<string> {
 // ハンドルのドラッグで動いて見える部品。move・height・arc はそのシャフトとその先、
 // axial はその歯車と、その歯車の外周に生やしたシャフトとその先
 export function handleMovedParts(scene: Scene, handle: HandleSpec): Set<string> {
+  // 伸縮（S4-03）で変わるのはそのシャフトだけ
+  if (handle.kind === 'spanStart' || handle.kind === 'spanEnd') return new Set([handle.targetId]);
   if (handle.kind !== 'axial') return movedParts(scene, handle.targetId);
   const ids = new Set<string>([handle.targetId]);
   for (const shaft of Object.values(scene.shafts)) {

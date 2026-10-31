@@ -261,3 +261,67 @@ export async function selectPaletteKind(page: Page, kind: string): Promise<void>
   await button.click();
   await expect(button).toHaveAttribute('aria-checked', 'true');
 }
+
+export const getShaftGhost = (page: Page): Promise<ReturnType<GearSimDebug['getShaftGhost']>> =>
+  read(page, 'getShaftGhost');
+
+// シャフトの原点から軸方向に along（mm）の点のワールド座標（S4-03）
+export async function shaftPoint(page: Page, shaftId: string, along: number): Promise<Vec3> {
+  const shaft = (await getLayout(page)).shafts[shaftId];
+  if (shaft === undefined) throw new Error(`${shaftId} がレイアウトに無い`);
+  const i = shaft.axis === 'x' ? 0 : shaft.axis === 'y' ? 1 : 2;
+  const p: [number, number, number] = [shaft.origin[0], shaft.origin[1], shaft.origin[2]];
+  p[i] += along;
+  return p;
+}
+
+/**
+ * シャフトを選び、伸縮のつまみ（S4-03。'spanStart'・'spanEnd'）を軸に沿って amount（mm。軸の正の向き）だけドラッグする。
+ * 押す点で pick がそのつまみに当たることを確かめる
+ */
+export async function dragShaftEnd(
+  page: Page,
+  shaftId: string,
+  end: 'spanStart' | 'spanEnd',
+  amount: number,
+): Promise<void> {
+  await page.evaluate((id) => window.__gearSim?.select(id), shaftId);
+  await nextFrames(page);
+  const handle = (await getHandles(page)).find((h) => h.kind === end && h.targetId === shaftId);
+  if (handle === undefined) throw new Error(`${shaftId} の ${end} が無い`);
+  const shaft = (await getLayout(page)).shafts[shaftId];
+  if (shaft === undefined) throw new Error(`${shaftId} がレイアウトに無い`);
+  const i = shaft.axis === 'x' ? 0 : shaft.axis === 'y' ? 1 : 2;
+  const target: [number, number, number] = [...handle.position];
+  target[i] += amount;
+  const from = await project(page, handle.position);
+  const to = await project(page, target);
+  const hit = await page.evaluate(({ x, y }) => window.__gearSim?.pick(x, y), from);
+  expect(hit).toMatchObject({ kind: 'handle', id: `${end}:${shaftId}` });
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  for (let k = 1; k <= 12; k++) {
+    await page.mouse.move(from.x + ((to.x - from.x) * k) / 12, from.y + ((to.y - from.y) * k) / 12);
+  }
+  await page.mouse.up();
+}
+
+/**
+ * シャフトを選び、原点から軸方向に along の点にマウスを乗せてクリックする（S4-03。パレットの種類の歯車をシャフトの上に置く）。
+ * 乗せた点で仮の歯車が出て、置けることを確かめる。置いた歯車の ID を返す
+ */
+export async function placeOnShaft(page: Page, shaftId: string, along: number): Promise<string> {
+  await page.evaluate((id) => window.__gearSim?.select(id), shaftId);
+  await nextFrames(page);
+  const p = await project(page, await shaftPoint(page, shaftId, along));
+  await page.mouse.move(p.x, p.y);
+  await expect.poll(async () => (await getShaftGhost(page))?.shaftId).toBe(shaftId);
+  expect((await getShaftGhost(page))?.blocked).toBe(false);
+  const before = new Set(Object.keys((await getScene(page)).gears));
+  await page.mouse.click(p.x, p.y);
+  await expect
+    .poll(async () => Object.keys((await getScene(page)).gears).length)
+    .toBe(before.size + 1);
+  const added = Object.keys((await getScene(page)).gears).filter((id) => !before.has(id));
+  return added[0] ?? '';
+}

@@ -52,6 +52,18 @@ function apexPoint(scene: Scene, layout: Layout, id: string): Vec3 {
   return bevelApexOf(g.center, g.axis, bevel(scene, id));
 }
 
+// シャフトに平歯車 gear_x を直接足したシーン（コマンドの干渉の拒否を通さずにレイアウトを確かめる。S4-03）
+function withSpur(
+  scene: Scene,
+  shaftId: string,
+  offset: number,
+  size: Gear['size'],
+  teeth: number,
+): Scene {
+  const gear: Gear = { id: 'gear_x', kind: 'spur', shaftId, size, teeth, offset };
+  return { ...scene, gears: { ...scene.gears, gear_x: gear } };
+}
+
 function apply(scene: Scene, command: Command, ids = createSequentialIdGenerator()): Scene {
   const result = applyCommand(scene, command, { ids });
   if (!result.ok) throw new Error(`${command.type}: ${result.error.message}`);
@@ -327,14 +339,20 @@ describe('干渉', () => {
   });
 
   it('B のシャフトに、頂点を越える位置まで平歯車を通す → A のシャフトとの干渉が出る', () => {
-    const scene = apply(bevelPair, {
+    const command: Command = {
       type: 'growGear',
       mode: 'coaxial',
       shaftId: 'shaft_b',
       offset: 16,
       size: 'M',
       teeth: 20,
+    };
+    // S4-03 から、干渉を生む位置にはコマンドで置けない。干渉の判定はシーンに直接足して確かめる
+    expect(applyCommand(bevelPair, command, { ids: createSequentialIdGenerator() })).toMatchObject({
+      ok: false,
+      error: { code: 'notAllowed' },
     });
+    const scene = withSpur(bevelPair, 'shaft_b', 16, 'M', 20);
     const interferences = resolveLayout(scene).interferences;
     expect(interferences.some(([a, b]) => a === 'shaft_a' || b === 'shaft_a')).toBe(true);
   });
@@ -416,14 +434,8 @@ describe('シャフトの頂点側の端', () => {
   });
 
   it('小・12 歯の組の A のシャフトの頂点側に平歯車を足す → 平歯車の面 + 4 mm まで伸び、相手のシャフトとの干渉が出る', () => {
-    const scene = apply(pair('S', 12), {
-      type: 'growGear',
-      mode: 'coaxial',
-      shaftId: 'shaft_a',
-      offset: 4,
-      size: 'S',
-      teeth: 12,
-    });
+    // S4-03 から干渉を生む位置にはコマンドで置けないので、シーンに直接足す（シャフトの範囲は省いて、部品から求める）
+    const scene = withSpur(pair('S', 12), 'shaft_a', 4, 'S', 12);
     const layout = resolveLayout(scene);
     expect(layout.shafts.shaft_a?.span).toEqual([-4, 4 + 4 + 4]);
     expect(layout.interferences.some(([a, b]) => a === 'shaft_b' || b === 'shaft_b')).toBe(true);
@@ -481,8 +493,6 @@ describe('偶然のかみ合い（contact）', () => {
 describe('候補', () => {
   const spec = {
     perimeterTeeth: 20,
-    coaxialSize: 'M',
-    coaxialTeeth: 20,
     kind: 'bevel',
   } as const;
 
