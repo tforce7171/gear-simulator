@@ -1,7 +1,7 @@
 ---
 id: S4-02
 title: 生やす候補をパレットで選んだ種類だけにする
-status: todo
+status: doing
 depends: []
 ---
 
