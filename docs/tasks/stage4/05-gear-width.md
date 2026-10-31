@@ -1,7 +1,7 @@
 ---
 id: S4-05
 title: 歯車の厚さを変えられるようにする
-status: todo
+status: doing
 depends: [S4-03]
 ---
 
