@@ -1,7 +1,7 @@
 ---
 id: S4-04
 title: 起点のシャフトを歯車なしで置く
-status: todo
+status: doing
 depends: [S4-03]
 ---
 
