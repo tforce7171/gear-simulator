@@ -13,7 +13,12 @@ depends: [S4-03]
 ## 範囲
 - 調査で分かった今の作り
   - 厚さは `GEAR_SIZES` の固定値（S 4 mm / M 8 mm / L 12 mm、`src/core/constants.ts`）。`GearBase` に厚さの欄は無い（S4-03 で省略できる `width` を足した）
-  - 厚さを使う所: 描画（`gear-geometry.ts:37,113,137,218`、`rack.ts:53`）、干渉（`collision.ts:66` の `halfWidth`）、かみ合いの重なり（`mesh-snap.ts:26`、`resolve.ts:648,823`）、シャフトの範囲（`resolve.ts:1193-1213`）、検証（`validate.ts:623`）、情報表示の矢印（`info-arrows.ts:46`）、性能のシーン（`perf-scene.ts:96`）
+  - 厚さを使う所: 描画（`gear-geometry.ts:37,113,137,218`、`rack.ts:53`）、干渉（`collision.ts:66` の `halfWidth`）、かみ合いの重なり（`mesh-snap.ts:26`、`resolve.ts:648,823`）、シャフトの範囲（`resolve.ts` の `requiredSpanOf`。S4-03 で `spanOf` から改名）、検証（`validate.ts:623`）、情報表示の矢印（`info-arrows.ts:46`）、性能のシーン（`perf-scene.ts:96`）
+  - S4-03 で決まったこと（このタスクの前提）:
+    - `GearBase.width?` は型（`src/core/scene/types.ts`）・読み込み（`parseScene`）・検証（`validateScene` の `invalidWidth`。今は `AXIAL_SNAP` の正の倍数だけを見る。範囲 4〜32 mm はこのタスクで足す）・保存形式 version 4 に入っている。省いたときの値は `gearWidth(gear)`（`src/core/geometry/dimensions.ts`）。形・干渉・かみ合い・シャフトの範囲はまだ大きさごとの歯幅（`sectionWidth`・`GEAR_SIZES`）を使う
+    - シャフトの範囲は `Shaft.span`。部品の範囲は `requiredShaftSpans`（`resolve.ts` の `requiredSpanOf`。区画の幅は `sectionWidth`）。`requiredSpanOf` を `width` に切り替えれば、厚くしてはみ出したときにシャフトが伸びるのは `applyCommand` の `fitShaftSpans` が自動で行う（伸縮したシャフトは伸ばすだけ、部品にぴったりのシャフトは部品についていく。design.md §4）
+    - コマンドは干渉を理由に失敗しない決まりだが、S4-03 の `growGear`（coaxial）と `setShaftSpan` は `newInterferences(前, 後)` が空でなければ `notAllowed` にしている。`setGearWidth` の「ぶつかる → 拒否」も同じ形にできる（シャフトが伸びる分も含めて確かめる）
+    - 保存するときに `width` を書くなら、`toSaveFile`（`withShaftSpans` を通している）で省いた歯車に `gearWidth` を入れるか、コマンドで作る歯車に `width` を持たせる
 - 歯車ごとの `width` を使う。省略時は大きさごとの値。上の使う所をすべて `width` に切り替える
 - 範囲: 4 mm 刻みで 4〜32 mm
 - 変えられる種類: 平歯車・はすば歯車・内歯車・ねじ歯車（`crossedHelical`）・ラック。かさ歯車・ウォーム・ウォームホイールは固定のまま（プロパティに出さない。コマンドは拒否）

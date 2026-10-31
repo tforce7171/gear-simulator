@@ -15,6 +15,11 @@ depends: [S4-03]
   - S1-17 の仕様で、起点の配置は「起点のシャフト 1 本と、その上の歯車 1 枚」（`docs/tasks/stage1/17-root-shaft-placement.md`）
   - `rootPlacementCommand`（`src/input/placement.ts:69-81`）が常に `gear: { size, teeth: DEFAULT_TEETH[size] }` を送る
   - `addRootShaft`（`src/core/edit/commands.ts:299-325`）は歯車が必須で、種類は `'spur'` 固定（:307）。design.md:642 に「起点の歯車はパレットの種類を無視する」とある
+  - S4-03 で決まったこと（このタスクの前提）:
+    - シャフトは範囲 `Shaft.span` を持つ（design.md §4）。コマンドで新しくできたシャフトには `applyCommand` の `fitShaftSpans` が部品の範囲を入れ、部品が無ければ ±`EMPTY_SHAFT_HALF_LENGTH`（`defaultShaftSpan`。`[-10, 10]`）になる。なので歯車の無い `addRootShaft` は、範囲を自分で入れなくても長さ 20 mm になる
+    - 歯車の無いシャフトの部品の範囲（`requiredShaftSpans`）は `null`。検証（`spanTooShort`）・伸縮（`stretchShaftSpan`。反対の端から 4 mm 以上）はこれを扱える。±10 の端は 4 の倍数でないが、`setShaftSpan` は変えない端の 4 の倍数を問わない
+    - シャフトの上に置く仮の歯車（`shaftGhostAt`、`Interactions.setHover`・`placeOnShaft`）は、**シャフトそのものを選んでいるとき** だけ出る（歯車を選んでいるときは出さない）。起点を置いたあと（`selectCreated`）に選ばれるのが新しいシャフトになれば、続けてシャフトをクリックして置ける
+    - `deleteParts` は歯車が 1 枚も残らなくなったシャフトを消す（`removeShaft`）。歯車の無いシャフトを残すなら、この規則（design.md §4 の「歯車が 1 枚も残らなくなったシャフトは、モーターごと削除する」）との関係を決める
 - パレットの「起点のシャフト」を床にドラッグすると、歯車の無いシャフトだけができる
 - 置いた直後のシャフトの長さは 20 mm（今の ±`EMPTY_SHAFT_HALF_LENGTH` と同じ）
 - 歯車はそのあと S4-03 のシャフト上の配置で置く
