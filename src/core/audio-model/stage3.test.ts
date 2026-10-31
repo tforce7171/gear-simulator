@@ -133,12 +133,12 @@ describe('ラックが端に当たった瞬間の検出（rackEndHits）', () =>
 });
 
 describe('音色（S3-05）', () => {
-  it('内歯車の組は平歯車と同じ音色で、うなりのローパスだけ下げる（こもらせる）', () => {
+  it('内歯車の組は平歯車と同じ音色で、粒の高さだけ下げる（こもらせる。S4-06 で連続音のローパスから置き換え）', () => {
     const spur = meshTimbre('spur');
     const internal = meshTimbre('internal');
-    expect({ ...internal, lowpass: 1 }).toEqual(spur);
-    expect(internal.lowpass).toBeGreaterThan(0);
-    expect(internal.lowpass).toBeLessThan(1);
+    expect({ ...internal, pitch: 1 }).toEqual(spur);
+    expect(internal.pitch).toBeGreaterThan(0);
+    expect(internal.pitch).toBeLessThan(1);
   });
 
   it('ラックの組は平歯車と同じ音色', () => {

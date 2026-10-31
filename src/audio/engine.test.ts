@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { clickToneMix, type MeshKind, type MeshVoice, type MotorHum } from '../core/audio-model';
+import {
+  CLICK_RATE_MAX,
+  clickPitch,
+  type MeshKind,
+  type MeshVoice,
+  type MotorVoice,
+} from '../core/audio-model';
 import type { LockInfo } from '../core/kinematics/types';
 import type { Vec3 } from '../core/math/vec3';
 import { type AudioFrame, createAudioEngine } from './engine';
@@ -19,7 +25,6 @@ function voice(
     shaftId: key,
     teeth: 12,
     frequency,
-    ...clickToneMix(frequency),
     position,
     kind,
     slide,
@@ -28,11 +33,11 @@ function voice(
 
 function frame(
   voices: MeshVoice[],
-  extra: Partial<Pick<AudioFrame, 'motors' | 'locks' | 'dt'>> & { at?: Vec3 } = {},
+  extra: Partial<Pick<AudioFrame, 'motors' | 'locks' | 'dt' | 'angles'>> & { at?: Vec3 } = {},
 ): AudioFrame {
   return {
     voices,
-    angles: {},
+    angles: extra.angles ?? {},
     dt: extra.dt ?? 1 / 60,
     listener: { position: extra.at ?? [0, 0, 0], forward: [0, 0, -1], up: [0, 1, 0] },
     motors: extra.motors ?? [],
@@ -40,15 +45,14 @@ function frame(
   };
 }
 
-function hum(motorId: string, x: number): MotorHum {
+function motorVoice(motorId: string, x: number): MotorVoice {
   return {
     motorId,
     size: 'S',
     position: [x, 0, 0],
-    frequency: 220,
-    level: 0.08,
     strain: 0,
     grind: 0,
+    grindFrequency: 660,
   };
 }
 
@@ -75,8 +79,9 @@ describe('createAudioEngine（開始前）', () => {
         {
           key: 'a',
           frequency: 12,
-          click: 1,
-          tone: 0,
+          rate: 12,
+          pitch: clickPitch(12, 'wood'),
+          clicks: 0,
           position: [0, 0, 0],
           kind: 'spur',
           slide: 0,
@@ -106,9 +111,9 @@ describe('createAudioEngine（開始前）', () => {
     expect(background).not.toBeNull();
   });
 
-  it('モーターのうなりはリスナーに近い 4 個まで（motorId の昇順で返す）', () => {
+  it('モーターの音源はリスナーに近い 4 個まで（motorId の昇順で返す）', () => {
     const engine = createAudioEngine();
-    const motors = Array.from({ length: 6 }, (_, i) => hum(`m${i}`, i * 100));
+    const motors = Array.from({ length: 6 }, (_, i) => motorVoice(`m${i}`, i * 100));
     engine.update(frame([], { motors, at: [500, 0, 0] }));
     expect(engine.state().motors.map((m) => m.motorId)).toEqual(['m2', 'm3', 'm4', 'm5']);
   });
@@ -194,5 +199,44 @@ describe('ラックが端に当たった音（S3-05）', () => {
     engine.update(frame([]));
     engine.update(frame([], { locks }));
     expect(engine.state().lockSounds.rackHits).toBe(2);
+  });
+});
+
+describe('粒の音（S4-06）', () => {
+  // f Hz の組（12 枚）を 1 秒（60 フレーム）回し、予約した粒の数を返す
+  function run(f: number, material: 'metal' | 'wood' = 'metal') {
+    const engine = createAudioEngine({ material, random: () => 0.5 });
+    const omega = (f * 2 * Math.PI) / 12;
+    let angle = 0;
+    for (let i = 0; i <= 60; i += 1) {
+      engine.update(frame([voice('a', f)], { angles: { a: angle } }));
+      angle += omega / 60;
+    }
+    return engine.state().voices[0];
+  }
+
+  it('遅い組（5 Hz）は歯の通過ごとに 1 粒（1 秒で 5 粒）', () => {
+    const v = run(5);
+    expect(v?.rate).toBe(5);
+    expect(v?.clicks).toBe(5);
+  });
+
+  it('速い組（1000 Hz）も連続音にせず粒で鳴らし、毎秒 40 回に間引く', () => {
+    const v = run(1000);
+    expect(v?.rate).toBe(CLICK_RATE_MAX);
+    expect(v?.clicks).toBe(CLICK_RATE_MAX);
+    expect(v).not.toHaveProperty('tone');
+  });
+
+  it('速いほど粒が高い。metal は wood より高い', () => {
+    expect(run(100)?.pitch ?? 0).toBeGreaterThan(run(5)?.pitch ?? 0);
+    expect(run(24, 'metal')?.pitch ?? 0).toBeGreaterThan(run(24, 'wood')?.pitch ?? 0);
+  });
+
+  it('背景にまとめた組の粒の数（rate）を返す', () => {
+    const engine = createAudioEngine();
+    const voices = Array.from({ length: 18 }, (_, i) => voice(`k${i}`, 5, [i * 10, 0, 0]));
+    engine.update(frame(voices));
+    expect(engine.state().background?.rate).toBeCloseTo(10, 9);
   });
 });
