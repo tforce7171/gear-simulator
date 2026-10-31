@@ -6,6 +6,7 @@ import type { MessageKey } from '../core/i18n';
 import { isPaletteGearKind, PALETTE_KIND_LIST, type PaletteKind } from '../core/layout/candidates';
 import type { SizeKey } from '../core/scene/types';
 import { bindText, h } from './dom';
+import { createIcon, PALETTE_KIND_ICONS, ROOT_SHAFT_ICON, SIZE_ICONS } from './icons';
 import './palette.css';
 
 export const PALETTE_SIZES: readonly SizeKey[] = ['S', 'M', 'L'];
@@ -52,6 +53,14 @@ export function createPalette(deps: PaletteDeps): Palette {
   const text = (el: HTMLElement, key: MessageKey, attr?: 'title' | 'aria-label'): void => {
     unbind.push(bindText(el, key, attr));
   };
+  // ボタンの中身（S4-08）: アイコンを上、文字を下に。文字は span に入れ、言語の切り替えで書き換える
+  const iconLabel = (markup: string, key: MessageKey): DocumentFragment => {
+    const label = h('span', 'gs-palette__button-label');
+    text(label, key);
+    const fragment = document.createDocumentFragment();
+    fragment.append(createIcon(markup, 'gs-palette__button-icon'), label);
+    return fragment;
+  };
 
   // 歯車の大きさ（小・中・大）
   const sizeSection = h('section', 'gs-palette__section');
@@ -67,7 +76,7 @@ export function createPalette(deps: PaletteDeps): Palette {
     button.type = 'button';
     button.setAttribute('role', 'radio');
     button.dataset.size = size;
-    text(button, `palette.size.${size}`);
+    button.append(iconLabel(SIZE_ICONS[size], `palette.size.${size}`));
     text(button, `palette.size.${size}.tooltip`, 'title');
     button.addEventListener('click', () => {
       deps.setSize(size);
@@ -92,7 +101,7 @@ export function createPalette(deps: PaletteDeps): Palette {
     button.type = 'button';
     button.setAttribute('role', 'radio');
     button.dataset.kind = kind;
-    text(button, paletteKindLabel(kind));
+    button.append(iconLabel(PALETTE_KIND_ICONS[kind], paletteKindLabel(kind)));
     button.addEventListener('click', () => {
       deps.setKind(kind);
       refresh();
@@ -117,16 +126,14 @@ export function createPalette(deps: PaletteDeps): Palette {
   const partsSection = h('section', 'gs-palette__section');
   const partsLabel = h('h3', 'gs-palette__label');
   text(partsLabel, 'palette.parts');
+  const partsGroup = h('div', 'gs-palette__parts');
   const rootItem = h('div', 'gs-palette__item', 'palette-root-shaft');
   rootItem.setAttribute('role', 'button');
   rootItem.setAttribute('aria-roledescription', 'draggable');
   text(rootItem, 'palette.rootShaft.tooltip', 'title');
-  const icon = h('span', 'gs-palette__icon');
-  icon.setAttribute('aria-hidden', 'true');
-  const label = h('span', 'gs-palette__item-label');
-  text(label, 'palette.rootShaft');
-  rootItem.append(icon, label);
-  partsSection.append(partsLabel, rootItem);
+  rootItem.append(iconLabel(ROOT_SHAFT_ICON, 'palette.rootShaft'));
+  partsGroup.append(rootItem);
+  partsSection.append(partsLabel, partsGroup);
 
   deps.body.append(sizeSection, kindSection, partsSection);
 
