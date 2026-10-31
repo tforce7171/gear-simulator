@@ -2,7 +2,11 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { gearWidth } from '../geometry/dimensions';
 import { requiredShaftSpans, resolveLayout, withShaftSpans } from '../layout/resolve';
+import { applyCommand, type Command } from '../edit/commands';
+import { createSequentialIdGenerator } from '../scene/ids';
+import { emptyScene } from '../scene/scene';
 import type { Scene } from '../scene/types';
+import { validateScene } from '../scene/validate';
 import {
   CURRENT_SAVE_VERSION,
   exportFileName,
@@ -176,6 +180,31 @@ describe('serializeSaveFile と parseSaveFile の往復', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.file.scene).toEqual(empty);
+    expect(result.migratedFrom).toBeNull();
+  });
+
+  it('歯車の無い起点のシャフト（S4-04）とそのモーター・固定具。検証を通り、往復で変わらない', () => {
+    const ctx = { ids: createSequentialIdGenerator() };
+    let scene = emptyScene();
+    const commands: Command[] = [
+      { type: 'addRootShaft', axis: 'x', origin: [10, 35, -5] },
+      { type: 'addMotor', shaftId: 'shaft_1', size: 'M' },
+      { type: 'addAnchor', shaftId: 'shaft_1' },
+    ];
+    for (const command of commands) {
+      const applied = applyCommand(scene, command, ctx);
+      if (!applied.ok) throw new Error(applied.error.message);
+      scene = applied.scene;
+    }
+    expect(Object.keys(scene.gears)).toEqual([]);
+    expect(scene.shafts.shaft_1?.span).toEqual([-10, 10]);
+    expect(validateScene(scene)).toEqual({ ok: true });
+    const file = toSaveFile(scene);
+    expect(file.scene).toEqual(scene);
+    const result = parseSaveFile(serializeSaveFile(file));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.file.scene).toEqual(scene);
     expect(result.migratedFrom).toBeNull();
   });
 

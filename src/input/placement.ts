@@ -64,18 +64,21 @@ export function closestHeightOnVerticalLine(
   return (a * ee - b * dd) / denom;
 }
 
-// 床の点 floorHit に、大きさ size の起点（歯数 DEFAULT_TEETH[size]）を向き axis で置くコマンド。
-// x・z は GRID_SNAP に吸着し、高さは rootHeight
+// 床の点 floorHit に、歯車の無い起点のシャフトを向き axis で置くコマンド（S4-04。歯車はあとでシャフトの上に置く）。
+// x・z は GRID_SNAP に吸着し、高さは rootHeight(size, DEFAULT_TEETH[size])（パレットの大きさの歯車を
+// あとで置いても、どの向きでも床にめり込まない高さ。S1-17 のまま）
 export function rootPlacementCommand(
   floorHit: Vec3,
   axis: Axis,
   size: SizeKey,
 ): Extract<Command, { type: 'addRootShaft' }> {
-  const teeth = DEFAULT_TEETH[size];
   return {
     type: 'addRootShaft',
     axis,
-    origin: [snap(floorHit[0], GRID_SNAP), rootHeight(size, teeth), snap(floorHit[2], GRID_SNAP)],
-    gear: { size, teeth },
+    origin: [
+      snap(floorHit[0], GRID_SNAP),
+      rootHeight(size, DEFAULT_TEETH[size]),
+      snap(floorHit[2], GRID_SNAP),
+    ],
   };
 }

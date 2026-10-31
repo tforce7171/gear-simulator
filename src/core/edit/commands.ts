@@ -70,12 +70,13 @@ import { validateScene } from '../scene/validate';
 // 干渉を理由には失敗しない（干渉は resolveLayout の interferences が赤い警告として出す）
 
 export type Command =
+  // gear は省くと歯車の無いシャフトだけを作る（S4-04。範囲は fitShaftSpans が ±EMPTY_SHAFT_HALF_LENGTH にする）。
   // gear.kind は省くと 'spur'。ハスバ歯車は hand 'right'（S2-01）。ウォームは teeth によらず 1 条（S2-03）
   | {
       type: 'addRootShaft';
       axis: Axis;
       origin: Vec3;
-      gear: { size: SizeKey; teeth: number; kind?: GearKind };
+      gear?: { size: SizeKey; teeth: number; kind?: GearKind };
     }
   // 子の種類は親から決まる（平歯車は平歯車、ハスバ歯車は逆の hand。S2-01）。かさ歯車の親は notAllowed。
   // 内歯車の親（S3-02）は内側に平歯車を生やす。歯数差が INTERNAL_MIN_TOOTH_DIFF 未満なら notAllowed
@@ -367,33 +368,35 @@ function addRootShaft(
 ): CommandResult {
   if (!isAxis(c.axis)) return fail('invalidValue', `invalid axis ${String(c.axis)}`);
   if (!isFiniteVec3(c.origin)) return fail('invalidValue', 'origin must be 3 finite numbers');
-  if (!isSizeKey(c.gear.size)) return fail('invalidValue', `invalid size ${String(c.gear.size)}`);
-  const kind = c.gear.kind ?? 'spur';
-  if (!isGearKind(kind)) return fail('invalidValue', `invalid gear kind ${String(kind)}`);
-  const bad = kind === 'worm' ? null : teethError(c.gear.size, c.gear.teeth, kind);
-  if (bad) return bad;
-  const teeth = kind === 'worm' ? WORM_THREADS : c.gear.teeth;
+  const spec = c.gear;
+  if (spec !== undefined) {
+    if (!isSizeKey(spec.size)) return fail('invalidValue', `invalid size ${String(spec.size)}`);
+    const kind = spec.kind ?? 'spur';
+    if (!isGearKind(kind)) return fail('invalidValue', `invalid gear kind ${String(kind)}`);
+    const bad = kind === 'worm' ? null : teethError(spec.size, spec.teeth, kind);
+    if (bad) return bad;
+  }
   const shaftId = ctx.ids('shaft');
-  const gearId = ctx.ids('gear');
   const shaft: Shaft = {
     id: shaftId,
     placement: { kind: 'root', origin: copyVec3(c.origin), axis: c.axis },
   };
+  const shafts = withEntry(scene.shafts, shaftId, shaft);
+  // 歯車の無い起点（S4-04）: シャフトだけ。範囲は applyCommand の fitShaftSpans が入れる
+  if (spec === undefined) {
+    return done({ ...scene, shafts }, [shaftId]);
+  }
+  const kind = spec.kind ?? 'spur';
+  const teeth = kind === 'worm' ? WORM_THREADS : spec.teeth;
+  const gearId = ctx.ids('gear');
   const gear = makeGear(
-    { id: gearId, shaftId, size: c.gear.size, teeth, offset: 0 },
+    { id: gearId, shaftId, size: spec.size, teeth, offset: 0 },
     newGearShape(kind),
   );
-  return done(
-    {
-      shafts: withEntry(scene.shafts, shaftId, shaft),
-      gears: withEntry(scene.gears, gearId, gear),
-      motors: scene.motors,
-      anchors: scene.anchors,
-      carriers: scene.carriers,
-      racks: scene.racks,
-    },
-    [shaftId, gearId],
-  );
+  return done({ ...scene, shafts, gears: withEntry(scene.gears, gearId, gear) }, [
+    shaftId,
+    gearId,
+  ]);
 }
 
 // 親と同じ大きさの歯車（offset 0）と、それを子に持つ mesh のシャフトを作る

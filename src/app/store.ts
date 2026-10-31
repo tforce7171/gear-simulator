@@ -72,7 +72,7 @@ export interface CurrentWork {
 // command: 編集コマンド（core/edit）を実行して履歴に積む。undo / redo: 履歴をたどる
 export type AppAction =
   | { readonly type: 'loadScene'; readonly scene: Scene }
-  // selectCreated: 成功して部品を作ったら、最後に作った部品を選ぶ（起点を置いたら歯車を選ぶ。S1-17）
+  // selectCreated: 成功して部品を作ったら、最後に作った部品を選ぶ（S1-17。起点を置いたら、歯車の無いそのシャフトを選ぶ。S4-04）
   | {
       readonly type: 'command';
       readonly command: Command;

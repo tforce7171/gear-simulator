@@ -88,18 +88,16 @@ describe('closestHeightOnVerticalLine', () => {
 });
 
 describe('rootPlacementCommand', () => {
-  it('床の交点を 5mm に吸着し、高さは rootHeight、歯数は DEFAULT_TEETH', () => {
+  it('床の交点を 5mm に吸着し、高さは rootHeight（大きさと DEFAULT_TEETH から）。歯車は付けない（S4-04）', () => {
     expect(rootPlacementCommand([12.4, 0, -7], 'y', 'M')).toEqual({
       type: 'addRootShaft',
       axis: 'y',
       origin: [10, 35, -5],
-      gear: { size: 'M', teeth: 20 },
     });
     expect(rootPlacementCommand([0, 0, 0], 'x', 'S')).toEqual({
       type: 'addRootShaft',
       axis: 'x',
       origin: [0, 30, 0],
-      gear: { size: 'S', teeth: 30 },
     });
   });
 });

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { initialMotionState, solveMotion } from '../kinematics/motion';
 import { resolveLayout } from '../layout/resolve';
 import type { Vec3 } from '../math/vec3';
 import { createSequentialIdGenerator } from '../scene/ids';
@@ -993,5 +994,68 @@ describe('かさ歯車（S2-02）', () => {
         }),
       ),
     ).toBe('notAllowed');
+  });
+});
+
+// S4-04: 起点のシャフトを歯車なしで置く
+describe('歯車の無い起点のシャフト（S4-04）', () => {
+  const ROOT_ONLY: Command = { type: 'addRootShaft', axis: 'y', origin: [0, 35, 0] };
+
+  it('addRootShaft を歯車なしで実行 → 歯車が増えず、シャフトの範囲が 20 mm', () => {
+    const result = ok(apply(emptyScene(), ROOT_ONLY));
+    expect(result.created).toEqual(['shaft_1']);
+    expect(result.scene.gears).toEqual({});
+    const shaft = result.scene.shafts.shaft_1;
+    expect(shaft).toEqual({
+      id: 'shaft_1',
+      placement: { kind: 'root', origin: [0, 35, 0], axis: 'y' },
+      span: [-10, 10],
+    });
+    const span = shaft?.span ?? [0, 0];
+    expect(span[1] - span[0]).toBe(20);
+    expect(resolveLayout(result.scene).shafts.shaft_1?.span).toEqual([-10, 10]);
+  });
+
+  it('歯車の無いシャフトを含むシーンが検証を通る。モーター・固定具も付けられ、その上に好きな種類の歯車を置ける', () => {
+    const ctx: CommandContext = { ids: createSequentialIdGenerator() };
+    let scene = ok(applyCommand(emptyScene(), ROOT_ONLY, ctx)).scene;
+    expect(validateScene(scene)).toEqual({ ok: true });
+    scene = ok(applyCommand(scene, { type: 'addMotor', shaftId: 'shaft_1', size: 'M' }, ctx)).scene;
+    // 回してもシャフトが回るだけ（ロックもしない）
+    const motion = solveMotion(scene, resolveLayout(scene), initialMotionState());
+    expect(motion.locks).toEqual([]);
+    expect(Math.abs(motion.omegas.shaft_1 ?? 0)).toBeGreaterThan(0);
+    scene = ok(
+      applyCommand(scene, { type: 'addAnchor', shaftId: 'shaft_1' }, ctx),
+    ).scene;
+    expect(validateScene(scene)).toEqual({ ok: true });
+    scene = ok(
+      applyCommand(
+        scene,
+        {
+          type: 'growGear',
+          mode: 'coaxial',
+          shaftId: 'shaft_1',
+          offset: 0,
+          size: 'M',
+          teeth: 20,
+          kind: 'helical',
+        },
+        ctx,
+      ),
+    ).scene;
+    expect(Object.values(scene.gears)).toEqual([
+      expect.objectContaining({ kind: 'helical', shaftId: 'shaft_1', offset: 0 }),
+    ]);
+    expect(validateScene(scene)).toEqual({ ok: true });
+  });
+
+  it('歯車を省いた addRootShaft でも、向き・原点の不正は invalidValue', () => {
+    expect(errorCode(apply(emptyScene(), { ...ROOT_ONLY, axis: 'w' as Axis }))).toBe(
+      'invalidValue',
+    );
+    expect(
+      errorCode(apply(emptyScene(), { ...ROOT_ONLY, origin: [0, Number.NaN, 0] as Vec3 })),
+    ).toBe('invalidValue');
   });
 });
