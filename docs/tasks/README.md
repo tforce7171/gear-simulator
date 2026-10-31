@@ -85,7 +85,7 @@
 | [S4-05](stage4/05-gear-width.md) | 歯車の厚さを変えられるようにする | S4-03 | done |
 | [S4-06](stage4/06-gear-click-sound.md) | モーターのうなりをやめ、歯車のカタカタという音にする | - | done |
 | [S4-07](stage4/07-motor-model.md) | モーターを本物らしい形にする | S4-03 | done |
-| [S4-08](stage4/08-palette-icons.md) | パレットにアイコンを付ける | S4-02 | doing |
+| [S4-08](stage4/08-palette-icons.md) | パレットにアイコンを付ける | S4-02 | done |
 
 ## タスク資料のひな形
 
