@@ -32,9 +32,13 @@ import { assertNever } from '../core/scene/gear-shape';
 import type { GearShape, Hand, SizeKey } from '../core/scene/types';
 
 // 2D 輪郭を、ローカルの z 方向に歯幅の分だけ押し出す。z は −faceWidth/2 〜 +faceWidth/2
-// ローカルの x・y は 2D 輪郭の x・y と同じ
-export function buildSpurGeometry(size: SizeKey, teeth: number): BufferGeometry {
-  const { module, faceWidth } = GEAR_SIZES[size];
+// ローカルの x・y は 2D 輪郭の x・y と同じ。faceWidth は厚さ（S4-05。省けば大きさごとの歯幅）
+export function buildSpurGeometry(
+  size: SizeKey,
+  teeth: number,
+  faceWidth: number = GEAR_SIZES[size].faceWidth,
+): BufferGeometry {
+  const { module } = GEAR_SIZES[size];
   const outline = spurOutline(module, teeth);
   const shape = new Shape(outline.map(([x, y]) => new Vector2(x, y)));
   const geometry = new ExtrudeGeometry(shape, {
@@ -127,16 +131,18 @@ export function buildBevelGeometry(size: SizeKey, teeth: number): BufferGeometry
 // ハスバ歯車（S2-01）。軸直角断面（平歯車と同じ 2D 輪郭）を、歯幅の方向に押し出しながらねじる
 // （core/geometry/helical.ts の helicalTwistAt。歯幅の中央の断面が平歯車の歯形と一致する）。
 // 両端の面は平歯車と同じ輪郭を三角形に分け、その断面のねじれの分だけ回す
-// helixAngle は省くと HELIX_ANGLE（ウォームホイールは進み角 WORM_LEAD_ANGLE・右。S2-03）
+// helixAngle は省くと HELIX_ANGLE（ウォームホイールは進み角 WORM_LEAD_ANGLE・右。S2-03）。
+// faceWidth は厚さ（S4-05。省けば大きさごとの歯幅）。ねじれ角はそのままで、厚いほど全体のねじれが大きい
 export function buildHelicalGeometry(
   size: SizeKey,
   teeth: number,
   hand: Hand,
   helixAngle: number = HELIX_ANGLE,
+  faceWidth: number = GEAR_SIZES[size].faceWidth,
 ): BufferGeometry {
-  const { module, faceWidth } = GEAR_SIZES[size];
+  const { module } = GEAR_SIZES[size];
   const outline = spurOutline(module, teeth);
-  const slices = helicalSliceCount(size, teeth, helixAngle);
+  const slices = helicalSliceCount(size, teeth, helixAngle, faceWidth);
   const zAt = (k: number) => -faceWidth / 2 + (faceWidth * k) / slices;
   const sections = Array.from({ length: slices + 1 }, (_, k) => ({
     points: rotateOutline(outline, helicalTwistAt(size, teeth, hand, zAt(k), helixAngle)),
@@ -214,8 +220,13 @@ export function buildWormGeometry(size: SizeKey): BufferGeometry {
 // - つなぎの筒: リングの −z の面から INTERNAL_WEB_GAP、半径 R + 2.25m 〜 R + 3.25m の薄い筒
 // - ウェブ: 筒の端に厚さ m の円板（半径 R + 3.25m）
 // - ボス: ウェブの外側の面から、ウェブと合わせて INTERNAL_WEB_THICKNESS になるまでの短い円柱（シャフトを通す）
-export function buildInternalGeometry(size: SizeKey, teeth: number): BufferGeometry {
-  const { module, faceWidth } = GEAR_SIZES[size];
+// faceWidth はリングの厚さ（S4-05。省けば大きさごとの歯幅）
+export function buildInternalGeometry(
+  size: SizeKey,
+  teeth: number,
+  faceWidth: number = GEAR_SIZES[size].faceWidth,
+): BufferGeometry {
+  const { module } = GEAR_SIZES[size];
   const rim = internalRimRadius(size, teeth);
   const tubeInner = internalRootRadius(size, teeth) + module;
   const circle = (r: number, n: number): Vector2[] =>
@@ -265,19 +276,28 @@ function signedArea(outline: readonly Vec2[], [a, b, c]: readonly number[]): num
   return (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
 }
 
-// 形状データの共有。キーは (種類, 大きさ, 歯数, 形を変える属性)（core/geometry/shape-key.ts）
+// 形状データの共有。キーは (種類, 大きさ, 歯数, 形を変える属性, 厚さ)（core/geometry/shape-key.ts）。
+// width は厚さ（S4-05。gearWidth の値。省けば大きさごとの歯幅）
 export interface GeometryCache {
-  acquire(shape: GearShape, size: SizeKey, teeth: number): BufferGeometry; // 同じキーなら同じインスタンス
-  release(shape: GearShape, size: SizeKey, teeth: number): void; // 使う所が 0 になったら dispose
+  // 同じキーなら同じインスタンス
+  acquire(shape: GearShape, size: SizeKey, teeth: number, width?: number): BufferGeometry;
+  // 使う所が 0 になったら dispose
+  release(shape: GearShape, size: SizeKey, teeth: number, width?: number): void;
   size(): number; // 保持しているキーの数（テスト用）
 }
 
-function buildGeometry(shape: GearShape, size: SizeKey, teeth: number): BufferGeometry {
+// 厚さを変えられない種類（かさ歯車・ウォーム・ホイール）は width を使わない
+function buildGeometry(
+  shape: GearShape,
+  size: SizeKey,
+  teeth: number,
+  width: number = GEAR_SIZES[size].faceWidth,
+): BufferGeometry {
   switch (shape.kind) {
     case 'spur':
-      return buildSpurGeometry(size, teeth);
+      return buildSpurGeometry(size, teeth, width);
     case 'helical':
-      return buildHelicalGeometry(size, teeth, shape.hand);
+      return buildHelicalGeometry(size, teeth, shape.hand, HELIX_ANGLE, width);
     case 'bevel':
       return buildBevelGeometry(size, teeth);
     case 'worm':
@@ -287,9 +307,9 @@ function buildGeometry(shape: GearShape, size: SizeKey, teeth: number): BufferGe
       return buildHelicalGeometry(size, teeth, 'right', WORM_LEAD_ANGLE);
     case 'crossedHelical':
       // ねじれ角 45° の右ねじれ（S2-04）。歯幅 b でのねじれの角度は b / r
-      return buildHelicalGeometry(size, teeth, 'right', CROSSED_HELIX_ANGLE);
+      return buildHelicalGeometry(size, teeth, 'right', CROSSED_HELIX_ANGLE, width);
     case 'internal':
-      return buildInternalGeometry(size, teeth);
+      return buildInternalGeometry(size, teeth, width);
     default:
       return assertNever(shape);
   }
@@ -298,19 +318,19 @@ function buildGeometry(shape: GearShape, size: SizeKey, teeth: number): BufferGe
 export function createGeometryCache(): GeometryCache {
   const entries = new Map<string, { geometry: BufferGeometry; refs: number }>();
   return {
-    acquire(shape, size, teeth) {
-      const key = gearShapeKey(shape, size, teeth);
+    acquire(shape, size, teeth, width) {
+      const key = gearShapeKey(shape, size, teeth, width);
       const entry = entries.get(key);
       if (entry !== undefined) {
         entry.refs++;
         return entry.geometry;
       }
-      const geometry = buildGeometry(shape, size, teeth);
+      const geometry = buildGeometry(shape, size, teeth, width);
       entries.set(key, { geometry, refs: 1 });
       return geometry;
     },
-    release(shape, size, teeth) {
-      const key = gearShapeKey(shape, size, teeth);
+    release(shape, size, teeth, width) {
+      const key = gearShapeKey(shape, size, teeth, width);
       const entry = entries.get(key);
       if (entry === undefined) return; // 持っていないキーは何もしない
       entry.refs--;

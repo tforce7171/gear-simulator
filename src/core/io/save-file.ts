@@ -11,7 +11,9 @@ import type { Scene } from '../scene/types';
 // 2: 段階 2 の歯車（ハスバ・かさ・ウォーム・ホイール・ねじ歯車）と bevel・skew の配置（S2-05）
 // 3: 段階 3 の部品（固定具 anchors・キャリア carriers・ラック racks のコレクションと、内歯車・concentric・planet・rack の
 //    配置）。3 つのコレクションは必須（S3-05）
-// 4: シャフトの範囲 span（必須）と、歯車の省略できる厚さ width（S4-03。width は S4-05 で使う）
+// 4: シャフトの範囲 span（必須）と、歯車の省略できる厚さ width（S4-03）。S4-05 で厚さを使うようにし、ラックにも
+//    省略できる width を足した（version は上げない。省いた値は大きさごとの歯幅）。厚さを変えた歯車・ラックは width を
+//    持つのでそのまま書かれ、変えていないものは省いたまま書く（読み込むと同じシーンに戻る）
 export const CURRENT_SAVE_VERSION = 4;
 
 export interface SaveFile {

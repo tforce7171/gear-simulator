@@ -19,8 +19,10 @@ import {
 import { canMesh, meshGeometryOf, meshKindOf } from '../geometry/can-mesh';
 import {
   centerDistance,
+  faceOverlaps,
   gearEnvelope,
   gearPitchRadius,
+  gearWidth,
   sectionWidth,
 } from '../geometry/dimensions';
 import {
@@ -36,6 +38,7 @@ import {
   rackPitch,
   rackSectionCircle,
   rackTravel,
+  rackWidth,
   wrapCentered,
 } from '../geometry/rack';
 import {
@@ -469,7 +472,7 @@ function remaining(a: Axis, b: Axis): Axis {
 
 // ラックとピニオンのかみ合い（S3-04）。木（pinion の配置のピニオンと、'rack' のシャフトのピニオン）に、偶然のかみ合い（contact）を
 // 足す: 同じ大きさの平歯車で、軸がラックの歯幅の方向、中心がピッチ線から歯の側へ r（MESH_DISTANCE_EPS 以内）、歯幅の区画が
-// 重なり、接点が s = 0 のラックの長さの範囲にある。公転する歯車は除く。位相は問わない。並びはラックの ID、歯車の ID の昇順
+// 重なり（ラックと歯車の厚さが違っても、少しでも重なればよい。S4-05）、接点が s = 0 のラックの長さの範囲にある。公転する歯車は除く。位相は問わない。並びはラックの ID、歯車の ID の昇順
 function rackMeshesOf(
   scene: Scene,
   gears: Readonly<Record<GearId, GearLayout>>,
@@ -484,7 +487,7 @@ function rackMeshesOf(
     const d = axisVector(at.direction);
     const n = axisVector(at.normal);
     const w = axisVector(at.width);
-    const faceWidth = GEAR_SIZES[rack.size].faceWidth;
+    const width = rackWidth(rack);
     for (const [gearId, g] of Object.entries(gears)) {
       const gear = scene.gears[gearId];
       if (gear === undefined || gear.kind !== 'spur' || gear.size !== rack.size) continue;
@@ -492,7 +495,7 @@ function rackMeshesOf(
       if (treeKeys.has(pairKey(gearId, rackId))) continue;
       const rel = sub(g.center, at.origin);
       if (Math.abs(dot(rel, n) * at.normalSign - g.pitchRadius) > MESH_DISTANCE_EPS) continue;
-      if (faceWidth - Math.abs(dot(rel, w)) <= COLLISION_EPS) continue;
+      if (!faceOverlaps(dot(rel, w), width, gearWidth(gear))) continue;
       const position = dot(rel, d);
       if (Math.abs(position) > half) continue;
       out.push({ gear: gearId, rack: rackId, position, source: 'contact' });
@@ -524,7 +527,7 @@ function rackLayoutsOf(
 export function rackCollider(rack: Rack, at: RackLayout): Collider {
   const d = axisVector(at.direction);
   const n = scale(axisVector(at.normal), at.normalSign);
-  const { radius, height } = rackSectionCircle(rack.size);
+  const { radius, height } = rackSectionCircle(rack.size, rackWidth(rack));
   const [lo, hi] = at.travel;
   return {
     kind: 'cylinder',
@@ -889,8 +892,8 @@ function inContact(a: Gear, la: GearLayout, b: Gear, lb: GearLayout): boolean {
   const w = axisVector(la.axis);
   const d = sub(lb.center, la.center);
   const axial = dot(d, w);
-  const faceWidth = GEAR_SIZES[a.size].faceWidth;
-  if (faceWidth - Math.abs(axial) <= COLLISION_EPS) return false;
+  // 厚さの違う 2 枚も、厚さの方向に少しでも重なっていればかみ合う（S4-05）
+  if (!faceOverlaps(axial, gearWidth(a), gearWidth(b))) return false;
   const radial = Math.sqrt(Math.max(0, dot(d, d) - axial * axial));
   // 外歯車同士は r_a + r_b、内歯車と外歯車は R − r（S3-02）
   if (Math.abs(radial - centerDistance(a, b)) > MESH_DISTANCE_EPS) return false;
@@ -1069,7 +1072,7 @@ function gearCollidersOf(gear: Gear, layout: GearLayout): Collider[] {
   if (gear.kind !== 'internal') return [gearColliderOf(gear, layout)];
   const w = axisVector(layout.axis);
   // 歯車の中心はリングの中心（offset + 歯幅/2）。軸方向の範囲を中心からの相対に直す
-  const ringMid = gear.offset + GEAR_SIZES[gear.size].faceWidth / 2;
+  const ringMid = gear.offset + gearWidth(gear) / 2;
   const part = ([lo, hi]: readonly [number, number]) => ({
     center: add(layout.center, scale(w, (lo + hi) / 2 - ringMid)),
     halfWidth: (hi - lo) / 2,
@@ -1103,7 +1106,15 @@ function gearColliderOf(gear: Gear, layout: GearLayout): Collider {
       ...gearEnvelope(gear),
     };
   }
-  return gearCollider(gear.id, gear.shaftId, layout.center, layout.axis, gear.size, gear.teeth);
+  return gearCollider(
+    gear.id,
+    gear.shaftId,
+    layout.center,
+    layout.axis,
+    gear.size,
+    gear.teeth,
+    gearWidth(gear),
+  );
 }
 
 function shaftCollider(id: ShaftId, s: ShaftLayout): Collider {

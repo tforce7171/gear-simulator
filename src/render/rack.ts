@@ -10,9 +10,14 @@ import { ANCHOR_BASE_SIZE, ANCHOR_BASE_THICKNESS, ANCHOR_FLOOR_Y } from './ancho
 // z が歯幅の方向。原点はピッチ線の中央、歯溝の中心が x = k·π·m（k は整数）。歯形は圧力角 20° の直線歯（台形）。
 // 本体は x が [−L/2, L/2] で、本体からはみ出す歯は描かない
 
-// 1 つのラックの形（大きさ、歯数）。形状データのキー
-export function rackShapeKey(size: SizeKey, teeth: number): string {
-  return `rack:${size}:${teeth}`;
+// 1 つのラックの形（大きさ、歯数、厚さ）。形状データのキー。厚さ（S4-05）が大きさごとの歯幅と違えば `:w厚さ` を足す
+export function rackShapeKey(
+  size: SizeKey,
+  teeth: number,
+  width: number = GEAR_SIZES[size].faceWidth,
+): string {
+  const base = `rack:${size}:${teeth}`;
+  return width === GEAR_SIZES[size].faceWidth ? base : `${base}:w${width}`;
 }
 
 // 断面の輪郭（反時計回り）。背 → 歯底 → 歯（右から左）
@@ -41,8 +46,12 @@ export function rackOutline(size: SizeKey, teeth: number): Array<readonly [numbe
   return points;
 }
 
-// 断面を歯幅だけ押し出した形（z は −歯幅/2 〜 歯幅/2）
-export function buildRackGeometry(size: SizeKey, teeth: number): ExtrudeGeometry {
+// 断面を歯幅だけ押し出した形（z は −歯幅/2 〜 歯幅/2）。width は厚さ（S4-05。省けば大きさごとの歯幅）
+export function buildRackGeometry(
+  size: SizeKey,
+  teeth: number,
+  width: number = GEAR_SIZES[size].faceWidth,
+): ExtrudeGeometry {
   const shape = new Shape();
   const outline = rackOutline(size, teeth);
   outline.forEach(([x, y], i) => {
@@ -50,7 +59,6 @@ export function buildRackGeometry(size: SizeKey, teeth: number): ExtrudeGeometry
     else shape.lineTo(x, y);
   });
   shape.closePath();
-  const width = GEAR_SIZES[size].faceWidth;
   const geometry = new ExtrudeGeometry(shape, { depth: width, bevelEnabled: false });
   geometry.translate(0, 0, -width / 2);
   geometry.computeVertexNormals();

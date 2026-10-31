@@ -48,6 +48,13 @@ p.gs-prop__hint {
   gap: 4px;
 }
 
+/* 厚さの欄の単位（S4-05） */
+.gs-prop__unit {
+  align-self: center;
+  color: var(--gs-text-muted);
+  font-size: 11px;
+}
+
 .gs-prop__button {
   height: 28px;
   padding: 0 8px;

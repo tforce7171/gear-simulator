@@ -39,7 +39,7 @@ export interface InfoArrowSpec {
 
 // 歯車の形と配置から、矢印の置き方を決める
 export function infoArrowSpec(
-  gear: Pick<Gear, 'id' | 'size' | 'teeth'> & { readonly kind?: GearKind },
+  gear: Pick<Gear, 'id' | 'size' | 'teeth' | 'width'> & { readonly kind?: GearKind },
   layout: Pick<GearLayout, 'center' | 'axis'>,
   direction: 1 | -1,
 ): InfoArrowSpec {
@@ -47,8 +47,16 @@ export function infoArrowSpec(
   // 種類が分かれば、歯車を囲む円柱（ウォームは長さ 5πm・半径 6m。S2-03）の外に出す
   const envelope =
     gear.kind === undefined
-      ? { radius: spurDimensions(module, gear.teeth).addendumRadius, halfWidth: faceWidth / 2 }
-      : gearEnvelope({ kind: gear.kind, size: gear.size, teeth: gear.teeth });
+      ? {
+          radius: spurDimensions(module, gear.teeth).addendumRadius,
+          halfWidth: (gear.width ?? faceWidth) / 2,
+        }
+      : gearEnvelope({
+          kind: gear.kind,
+          size: gear.size,
+          teeth: gear.teeth,
+          ...(gear.width === undefined ? {} : { width: gear.width }),
+        });
   const addendumRadius = envelope.radius;
   const lift = envelope.halfWidth + FACE_GAP_PER_MODULE * module;
   return {

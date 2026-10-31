@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { gearWidth } from '../geometry/dimensions';
 import { parseSaveFile, serializeSaveFile, toSaveFile } from '../io/save-file';
 import { initialMotionState, solveMotion } from '../kinematics/motion';
 import { resolveLayout } from '../layout/resolve';
@@ -70,7 +71,10 @@ describe('setGearWidth', () => {
   it('4〜32 mm の 4 mm の倍数 → 通り、width がその値になる', () => {
     for (let width = 4; width <= 32; width += 4) {
       const next = ok(apply(single, { type: 'setGearWidth', gearId: 'gear_a', width }));
-      expect(next.gears.gear_a?.width).toBe(width);
+      // 8 mm は省いたときの値と同じなので、シーンは変わらない（width を省いたまま）
+      const gear = next.gears.gear_a;
+      expect(gear === undefined ? undefined : gearWidth(gear)).toBe(width);
+      if (width !== 8) expect(gear?.width).toBe(width);
       expect(validateScene(next)).toEqual({ ok: true });
     }
   });
@@ -293,9 +297,12 @@ describe('検証', () => {
   });
 
   it('ラックの width が 4〜32 の 4 の倍数でない → invalidWidth', () => {
-    const s = scene([root('shaft_a', [0, 0, 0])], [spur('gear_a', 'shaft_a')], [], [
-      { ...pinionRack(), width: 36 },
-    ]);
+    const s = scene(
+      [root('shaft_a', [0, 0, 0])],
+      [spur('gear_a', 'shaft_a')],
+      [],
+      [{ ...pinionRack(), width: 36 }],
+    );
     const result = validateScene(s);
     expect(result.ok ? [] : result.errors.map((e) => e.code)).toContain('invalidWidth');
   });
@@ -335,41 +342,29 @@ describe('保存と読み込み', () => {
     expect(parsed.file.scene.gears.gear_a?.width).toBe(20);
     expect(parsed.file.scene.shafts.shaft_a?.span).toEqual([-4, 24]);
     const withRack = ok(
-      apply(
-        scene([root('shaft_a', [0, 0, 0])], [spur('gear_a', 'shaft_a')], [], [pinionRack()]),
-        { type: 'setRackWidth', rackId: 'rack_a', width: 12 },
-      ),
+      apply(scene([root('shaft_a', [0, 0, 0])], [spur('gear_a', 'shaft_a')], [], [pinionRack()]), {
+        type: 'setRackWidth',
+        rackId: 'rack_a',
+        width: 12,
+      }),
     );
     const parsedRack = parseSaveFile(serializeSaveFile(toSaveFile(withRack)));
     if (!parsedRack.ok) throw new Error(parsedRack.error.code);
     expect(parsedRack.file.scene.racks.rack_a?.width).toBe(12);
   });
 
-  it('保存するときは、width を省いた歯車・ラックにも大きさごとの値を書く', () => {
+  it('厚さを変えていない歯車・ラックは width を省いたまま書き、読み込むと大きさごとの値になる', () => {
     const withRack = scene(
       [root('shaft_a', [0, 0, 0])],
       [spur('gear_a', 'shaft_a')],
       [],
       [pinionRack()],
     );
-    const file = toSaveFile(withRack);
-    expect(file.scene.gears.gear_a?.width).toBe(8);
-    expect(file.scene.racks.rack_a?.width).toBe(8);
-    // かさ歯車など厚さを変えられない種類には書かない
-    const bevel = scene(
-      [root('shaft_a', [0, 0, 0])],
-      [
-        {
-          id: 'gear_b',
-          kind: 'bevel',
-          shaftId: 'shaft_a',
-          size: 'M',
-          teeth: 20,
-          offset: 0,
-          apex: 1,
-        },
-      ],
-    );
-    expect(toSaveFile(bevel).scene.gears.gear_b?.width).toBeUndefined();
+    const parsed = parseSaveFile(serializeSaveFile(toSaveFile(withRack)));
+    if (!parsed.ok) throw new Error(parsed.error.code);
+    const gear = parsed.file.scene.gears.gear_a;
+    expect(gear?.width).toBeUndefined();
+    expect(gear === undefined ? undefined : gearWidth(gear)).toBe(8);
+    expect(parsed.file.scene.racks.rack_a?.width).toBeUndefined();
   });
 });

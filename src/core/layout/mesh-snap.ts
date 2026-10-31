@@ -1,6 +1,5 @@
-import { COLLISION_EPS, GEAR_SIZES } from '../constants';
 import { canMesh } from '../geometry/can-mesh';
-import { centerDistance } from '../geometry/dimensions';
+import { centerDistance, faceOverlaps, gearWidth } from '../geometry/dimensions';
 import { axisVector } from '../math/axis';
 import { dot, sub, type Vec3 } from '../math/vec3';
 import type { GearId, Scene, ShaftId } from '../scene/types';
@@ -9,7 +8,7 @@ import type { Layout } from './types';
 
 // 外周の角度の円弧ハンドル（S1-19）の、かみ合いへの吸着の相手。
 // mesh のシャフト shaftId の子の歯車とかみ合える（canMesh。同じ大きさで種類と形が合う。S2-01）、軸が平行（Layout の axis が同じ）、
-// 歯幅が軸方向に重なる歯車（偶然のかみ合い contact の条件のうち、距離以外のもの。design.md §5）。
+// 歯幅（厚さ。S4-05 から歯車ごと）が軸方向に重なる歯車（偶然のかみ合い contact の条件のうち、距離以外のもの。design.md §5）。
 // 親の歯車と、動かすシャフトとその先（descendantShafts）に載った歯車は除く。並びは歯車の ID の昇順
 export function meshSnapTargets(
   scene: Scene,
@@ -23,7 +22,7 @@ export function meshSnapTargets(
   if (child === undefined || childLayout === undefined) return [];
   const moving = new Set(descendantShafts(scene, shaftId));
   const w = axisVector(childLayout.axis);
-  const faceWidth = GEAR_SIZES[child.size].faceWidth;
+  const childWidth = gearWidth(child);
   const targets: Array<{
     gearId: GearId;
     center: Vec3;
@@ -36,7 +35,7 @@ export function meshSnapTargets(
     const g = layout.gears[gear.id];
     if (g === undefined || g.axis !== childLayout.axis) continue;
     const axial = dot(sub(g.center, childLayout.center), w);
-    if (faceWidth - Math.abs(axial) <= COLLISION_EPS) continue;
+    if (!faceOverlaps(axial, gearWidth(gear), childWidth)) continue;
     targets.push({
       gearId: gear.id,
       center: g.center,

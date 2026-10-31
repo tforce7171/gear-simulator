@@ -3,18 +3,32 @@
 // 歯車は種類の名前と、種類ごとの表示（ハスバのねじれの向き、かさ歯車の注記と向きの反転、ウォームの条数。S2-05）を出す。
 // 固定具（S3-01）は「固定する」のチェック（addAnchor・removeAnchor。歯車ならそのシャフトを固定する）。
 // 設定の変更はすべて編集コマンド（setGearTeeth・flipBevelApex・addMotor・updateMotor・removeMotor）で行い、
-// 1 回の確定を 1 回のコマンド（Undo 1 回）にする。値が変わらない確定ではコマンドを出さない
+// 1 回の確定を 1 回のコマンド（Undo 1 回）にする。値が変わらない確定ではコマンドを出さない。
+// 厚さ（S4-05。setGearWidth・setRackWidth）は、ぶつかって変えられないときにトーストで理由を出す
 import { onLanguageChange, t } from '../app/i18n';
 import type { AppAction, AppState } from '../app/store';
-import { MOTOR_RPM_RANGE, PLANET_COUNT_RANGE, RACK_TEETH } from '../core/constants';
-import { allowedPlanetCounts, type Command, planetaryTeethChoices } from '../core/edit/commands';
-import { teethRange } from '../core/geometry/dimensions';
+import {
+  AXIAL_SNAP,
+  GEAR_WIDTH_RANGE,
+  MOTOR_RPM_RANGE,
+  PLANET_COUNT_RANGE,
+  RACK_TEETH,
+} from '../core/constants';
+import {
+  allowedPlanetCounts,
+  applyCommand,
+  type Command,
+  planetaryTeethChoices,
+} from '../core/edit/commands';
+import { gearWidth, isWidthAdjustable, teethRange } from '../core/geometry/dimensions';
+import { rackWidth } from '../core/geometry/rack';
 import type { MessageKey, MessageParams } from '../core/i18n';
 import type { Layout } from '../core/layout/types';
 import { anchorOfRack, anchorOfShaft, planetShaftsOf } from '../core/scene/scene';
 import type { Axis, Gear, Motor, Rack, Scene, ShaftId, SizeKey } from '../core/scene/types';
 import { h } from './dom';
 import { parseClampedInt } from './number-input';
+import { showToast } from './toast';
 import './properties.css';
 
 export const PROPERTY_SIZES: readonly SizeKey[] = ['S', 'M', 'L'];
@@ -129,6 +143,14 @@ export function createProperties(deps: PropertiesDeps): Properties {
         text('span', 'gs-prop__value', `properties.size.${gear.size}`, undefined, 'prop-size'),
       ),
     );
+    // 厚さ（S4-05）。かさ歯車・ウォーム・ホイールは固定なので出さない
+    if (isWidthAdjustable(gear.kind)) {
+      section.append(
+        ...widthRows('prop-width', gearWidth(gear), (width) =>
+          tryCommand(scene, { type: 'setGearWidth', gearId: gear.id, width }),
+        ),
+      );
+    }
     // 種類ごとの表示（S2-05）
     if (gear.kind === 'helical') {
       // ねじれの向きは表示だけ（外周の子は親の逆、同じ軸は右ねじれで決まる）
@@ -246,6 +268,41 @@ export function createProperties(deps: PropertiesDeps): Properties {
       section.append(flip);
     }
     return section;
+  }
+
+  // 厚さの変更（S4-05）: 先に今のシーンで試し、ほかの部品とぶつかる（notAllowed）ならコマンドを出さずに理由を出す
+  function tryCommand(scene: Scene, c: Command): void {
+    const result = applyCommand(scene, c, { ids: () => '__probe' });
+    if (!result.ok) {
+      if (result.error.code === 'notAllowed') showToast('properties.width.blocked', 'error');
+      return;
+    }
+    command(c);
+  }
+
+  // 厚さの欄（S4-05）: [−] 入力 [＋]（AXIAL_SNAP 刻み、GEAR_WIDTH_RANGE）と範囲の説明。
+  // 入力した値は範囲に丸め、AXIAL_SNAP の倍数に四捨五入する
+  function widthRows(prefix: string, value: number, commit: (next: number) => void): HTMLElement[] {
+    const { min, max } = GEAR_WIDTH_RANGE;
+    const step = AXIAL_SNAP;
+    const snap = (x: number) => Math.min(max, Math.max(min, Math.round(x / step) * step));
+    const dec = button('gs-prop__step', `${prefix}-dec`, '−', t('properties.width.dec', { step }));
+    dec.disabled = value <= min;
+    dec.addEventListener('click', () => commit(snap(value - step)));
+    const inc = button('gs-prop__step', `${prefix}-inc`, '+', t('properties.width.inc', { step }));
+    inc.disabled = value >= max;
+    inc.addEventListener('click', () => commit(snap(value + step)));
+    const input = numberField(prefix, value, min, max, 'properties.width', (next) => {
+      const snapped = snap(next);
+      if (snapped !== value) commit(snapped);
+    });
+    const unit = text('span', 'gs-prop__unit', 'properties.width.unit');
+    const stepper = h('div', 'gs-prop__stepper');
+    stepper.append(dec, input, inc, unit);
+    return [
+      row('properties.width', stepper),
+      text('span', 'gs-prop__hint', 'properties.width.range', { min, max, step }),
+    ];
   }
 
   // 内歯車のウェブの向き（S3-05）: 今の向きの表示と反転ボタン（setWebSide を −webSide で呼ぶ）
@@ -530,8 +587,8 @@ export function createProperties(deps: PropertiesDeps): Properties {
     return section;
   }
 
-  // ラック（S3-04）: 大きさと歯数（S3-05 で編集できるようにした。RACK_TEETH の範囲。setRackTeeth）
-  function rackSection(rack: Rack): HTMLElement {
+  // ラック（S3-04）: 大きさと歯数（S3-05 で編集できるようにした。RACK_TEETH の範囲。setRackTeeth）、厚さ（S4-05）
+  function rackSection(scene: Scene, rack: Rack): HTMLElement {
     const section = h('section', 'gs-prop__section');
     section.append(text('h3', 'gs-prop__heading', 'properties.rack', undefined, 'prop-heading'));
     const { min, max } = RACK_TEETH;
@@ -554,6 +611,9 @@ export function createProperties(deps: PropertiesDeps): Properties {
       ),
       row('properties.teeth', stepper),
       text('span', 'gs-prop__hint', 'properties.teeth.range', { min, max }),
+      ...widthRows('prop-rack-width', rackWidth(rack), (width) =>
+        tryCommand(scene, { type: 'setRackWidth', rackId: rack.id, width }),
+      ),
     );
     return section;
   }
@@ -592,7 +652,7 @@ export function createProperties(deps: PropertiesDeps): Properties {
     const rack = scene.racks[selection];
     if (rack !== undefined) {
       // ラック（S3-04）にはモーターを付けない
-      content.append(rackSection(rack), anchorSection(scene, { rackId: rack.id }, false));
+      content.append(rackSection(scene, rack), anchorSection(scene, { rackId: rack.id }, false));
       return content;
     }
     return null;

@@ -88,6 +88,13 @@ export const ja = {
   'properties.teeth.range': '{min}〜{max}',
   'properties.teeth.dec': '歯数を 1 減らす',
   'properties.teeth.inc': '歯数を 1 増やす',
+  // 歯車・ラックの厚さ（S4-05）
+  'properties.width': '厚さ',
+  'properties.width.unit': 'mm',
+  'properties.width.range': '{min}〜{max} mm（{step} mm 刻み）',
+  'properties.width.dec': '{step} mm 薄くする',
+  'properties.width.inc': '{step} mm 厚くする',
+  'properties.width.blocked': 'ほかの部品とぶつかるので、この厚さにはできない',
   'properties.axis': '向き',
   'properties.axis.y': '縦',
   'properties.axis.x': '横（X）',

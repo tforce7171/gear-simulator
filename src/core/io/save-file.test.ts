@@ -805,6 +805,9 @@ describe('version 4 の検証（S4-03）', () => {
   it('width のある歯車を読む → その値のまま、往復でも保たれる', () => {
     const copy = structuredClone(raw);
     (copy.gears.gear_1 as Record<string, unknown>).width = 12;
+    // S4-05 から厚さはシャフトの範囲に効くので、厚くした 8 mm の分だけシャフトも伸ばしておく（spanTooShort にしない）
+    const span = (copy.shafts.shaft_1 as Record<string, unknown>).span as [number, number];
+    (copy.shafts.shaft_1 as Record<string, unknown>).span = [span[0], span[1] + 8];
     const result = parseSaveFile(v4(copy));
     expect(result.ok).toBe(true);
     if (!result.ok) return;

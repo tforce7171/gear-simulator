@@ -2,6 +2,7 @@ import {
   AXIAL_SNAP,
   DEFAULT_PLANET_COUNT,
   GEAR_SIZES,
+  GEAR_WIDTH_RANGE,
   MOTOR_RPM_RANGE,
   MOTOR_SIZES,
   PLANET_COUNT_RANGE,
@@ -9,9 +10,15 @@ import {
   WORM_THREADS,
 } from '../constants';
 import { canMesh, meshGeometryOf } from '../geometry/can-mesh';
-import { teethInRange, teethRange } from '../geometry/dimensions';
+import {
+  gearWidth,
+  isWidthAdjustable,
+  teethInRange,
+  teethRange,
+  widthInRange,
+} from '../geometry/dimensions';
 import { defaultPlanetTeeth, planetaryOk, planetCountInRange } from '../geometry/planetary';
-import { rackTeethInRange, snapRackPosition } from '../geometry/rack';
+import { rackTeethInRange, rackWidth, snapRackPosition } from '../geometry/rack';
 import { newInterferences } from '../layout/interference-diff';
 import {
   defaultShaftSpan,
@@ -125,6 +132,12 @@ export type Command =
   | { type: 'growRack'; gearId: GearId; axisStep: 1 | 2; normalSign: 1 | -1; teeth: number }
   // ラックの歯数を変える（S3-04。RACK_TEETH の範囲）。長さと s の範囲が変わる（今の s が範囲外なら運動の側で端に寄せる）
   | { type: 'setRackTeeth'; rackId: RackId; teeth: number }
+  // 歯車の厚さを変える（S4-05）。GEAR_WIDTH_RANGE の AXIAL_SNAP の倍数でなければ invalidValue、厚さを変えられない種類
+  // （かさ歯車・ウォーム・ホイール）は notAllowed。シャフトからはみ出せばシャフトが伸び（fitShaftSpans）、
+  // 伸びる分も含めて新しい干渉を生む（同じシャフトのほかの歯車やほかの部品にぶつかる）なら notAllowed
+  | { type: 'setGearWidth'; gearId: GearId; width: number }
+  // ラックの厚さを変える（S4-05。範囲・ぶつかるときは setGearWidth と同じ）
+  | { type: 'setRackWidth'; rackId: RackId; width: number }
   | { type: 'deleteParts'; ids: string[] }
   // キャリアの遊星の数を変える（S3-03）。遊星のシャフトを作り直して等配にする（1 本目の遊星のシャフトの歯車の並びを写す）。
   // 範囲外・配置の条件（planetaryConditions）を満たさない数は notAllowed
@@ -319,6 +332,10 @@ function applyRaw(scene: Scene, command: Command, ctx: CommandContext): CommandR
       return growRack(scene, command, ctx);
     case 'setRackTeeth':
       return setRackTeeth(scene, command);
+    case 'setGearWidth':
+      return setGearWidth(scene, command);
+    case 'setRackWidth':
+      return setRackWidth(scene, command);
     case 'deleteParts':
       return deleteParts(scene, command.ids);
     case 'setPlanetCount':
@@ -708,6 +725,48 @@ function setRackTeeth(scene: Scene, c: Extract<Command, { type: 'setRackTeeth' }
   if (bad) return bad;
   if (rack.teeth === c.teeth) return done(scene);
   return done({ ...scene, racks: withEntry(scene.racks, rack.id, { ...rack, teeth: c.teeth }) });
+}
+
+function widthError(width: number): Failure | null {
+  if (typeof width === 'number' && widthInRange(width)) return null;
+  return fail(
+    'invalidValue',
+    `width ${String(width)} is not a multiple of ${AXIAL_SNAP} in [${GEAR_WIDTH_RANGE.min}, ${GEAR_WIDTH_RANGE.max}]`,
+  );
+}
+
+// 厚さを変えたシーン next を、シャフトの範囲を合わせて（はみ出せば伸ばす）返す。新しい干渉を生めば notAllowed（S4-05）
+function withoutNewInterference(scene: Scene, changed: Scene, what: string): CommandResult {
+  const next = fitShaftSpans(scene, changed);
+  if (newInterferences(resolveLayout(scene), resolveLayout(next)).length > 0) {
+    return fail('notAllowed', `${what} hits other parts`);
+  }
+  return done(next);
+}
+
+// 歯車の厚さ（S4-05）。厚さは見た目と干渉・かみ合いの判定にだけ使い、音・運動には影響しない
+function setGearWidth(scene: Scene, c: Extract<Command, { type: 'setGearWidth' }>): CommandResult {
+  const gear = scene.gears[c.gearId];
+  if (gear === undefined) return fail('notFound', `gear ${c.gearId} not found`);
+  if (!isWidthAdjustable(gear.kind)) {
+    return fail('notAllowed', `${gear.kind} ${gear.id} has a fixed width`);
+  }
+  const bad = widthError(c.width);
+  if (bad) return bad;
+  if (gearWidth(gear) === c.width) return done(scene);
+  const changed = { ...scene, gears: withEntry(scene.gears, gear.id, { ...gear, width: c.width }) };
+  return withoutNewInterference(scene, changed, `gear ${gear.id} with width ${c.width}`);
+}
+
+// ラックの厚さ（S4-05）
+function setRackWidth(scene: Scene, c: Extract<Command, { type: 'setRackWidth' }>): CommandResult {
+  const rack = scene.racks[c.rackId];
+  if (rack === undefined) return fail('notFound', `rack ${c.rackId} not found`);
+  const bad = widthError(c.width);
+  if (bad) return bad;
+  if (rackWidth(rack) === c.width) return done(scene);
+  const changed = { ...scene, racks: withEntry(scene.racks, rack.id, { ...rack, width: c.width }) };
+  return withoutNewInterference(scene, changed, `rack ${rack.id} with width ${c.width}`);
 }
 
 // 遊星歯車機構の部品（S3-03）。sun は遊星の親の歯車（外歯車）、planets は遊星のシャフトの親とかみ合う歯車、
