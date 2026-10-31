@@ -1,5 +1,5 @@
-import { isBlankImage } from './fixtures/blank';
-import { expect, test } from './fixtures/test';
+import { describe, expect, it } from 'vitest';
+import { isBlankImage } from './blank';
 
 function solid(width: number, height: number, value: number): Uint8Array {
   const data = new Uint8Array(width * height * 4);
@@ -27,16 +27,16 @@ function checker(size: number): Uint8Array {
   return data;
 }
 
-test.describe('isBlankImage', () => {
-  test('64×64 の真っ黒は一色とみなす', () => {
+describe('blank.spec: isBlankImage', () => {
+  it('64×64 の真っ黒は一色とみなす', () => {
     expect(isBlankImage(solid(64, 64, 0))).toBe(true);
   });
 
-  test('64×64 の真っ白は一色とみなす', () => {
+  it('64×64 の真っ白は一色とみなす', () => {
     expect(isBlankImage(solid(64, 64, 255))).toBe(true);
   });
 
-  test('8×8 の白黒の市松模様は一色ではない', () => {
+  it('8×8 の白黒の市松模様は一色ではない', () => {
     expect(isBlankImage(checker(8))).toBe(false);
   });
 });

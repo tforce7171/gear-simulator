@@ -208,8 +208,8 @@
   - Playwright（見た目）: 決めた場面のスクリーンショットを撮り、人が目で確かめるために保存する。前回との画像比較はしない。自動で判定するのは、画面が真っ黒・真っ白でないこと、コンソールにエラーが出ていないことだけ。
     - 場面の例: 真鍮と木製の各テーマ、かみ合っている歯車の拡大、ロック中の赤い表示、情報表示の ON、日本語と英語の UI。
   - 性能（歯車 200 個で 60fps）は自動テストにせず、手元で計測するスクリプトを用意する。
-  - Playwright は Chromium のみ（WebGL はソフトウェア描画の SwiftShader）。アプリの状態は、開発用とテスト用のビルドに限り公開する `window.__gearSim` から読む。
-- **進め方**: 開発は `docs/tasks/` のタスク単位で進める。各タスクで `pnpm verify`（biome check → tsc → vitest → playwright）が通ったらコミットする。
+  - Playwright は Chromium のみ（WebGL は GPU が使えれば GPU、使えなければソフトウェア描画の SwiftShader）。アプリの状態は、開発用とテスト用のビルドに限り公開する `window.__gearSim` から読む。
+- **進め方**: 開発は `docs/tasks/` のタスク単位で進める。各タスクで `pnpm verify`（biome check → tsc → vitest → 変えた範囲の playwright）が通ったらコミットする。段階の節目には `pnpm verify:all`（playwright を全部）を流す。
 
 ## 13. 開発の段階
 

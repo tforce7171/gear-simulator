@@ -6,7 +6,7 @@
 
 1. 依存するタスクがすべて `done` になっているタスクを 1 つ選び、資料の `status` を `doing` にする。
 2. 資料の「テストケース」を先に書き、実装して通す。
-3. `pnpm verify` が通ったら、`status` を `done` にしてコミットする（`feat(S1-05): ...`）。
+3. `pnpm verify` が通ったら、`status` を `done` にしてコミットする（`feat(S1-05): ...`）。`pnpm verify` の Playwright は main から変わった spec だけを流すので、既存の通しテストに影響しそうなら関係する spec を引数で渡す（design.md §10）。見た目に関わる変更は、`e2e/visual/` の spec を流して撮れた画像を開いて確かめる。段階の最後のタスクの後には `pnpm verify:all` を流す。
 4. 実装中に前提（design.md や後続のタスク資料）が変わったら、同じコミットで資料も書き換える。
 
 ### 自動実行
