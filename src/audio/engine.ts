@@ -1,23 +1,23 @@
 import {
-  backgroundToneLevel,
   CLICK_LATENCY,
   canPlayImpact,
   clickParams,
+  clickPitch,
+  clickRate,
   diffLocks,
+  grainLevel,
   LOCK_IMPACT_WINDOW_SEC,
   lockKey,
   MASTER_GAIN,
   MAX_MOTOR_VOICES,
   type MeshVoice,
-  type MotorHum,
+  type MotorVoice,
   MUTE_RAMP_SEC,
+  meshGrainTimes,
   meshTimbre,
   rackEndHits,
   selectVoices,
-  shouldScheduleClicks,
   summarizeBackground,
-  toneParams,
-  toothPassTimes,
   type VoiceKind,
 } from '../core/audio-model';
 import { MAX_AUDIO_VOICES } from '../core/constants';
@@ -28,11 +28,11 @@ import type { AudioMaterialId } from '../core/theme';
 import { type BackgroundSynth, createBackgroundSynth } from './background';
 import { createLockRattle, type LockRattle, playLockImpact, playRackHit } from './lock-sound';
 import { createMeshVoiceSynth, type MeshVoiceSynth } from './mesh-voice';
-import { createMotorHumSynth, type MotorHumSynth } from './motor-hum';
+import { createMotorGrindSynth, type MotorGrindSynth } from './motor-grind';
 import { applyListener, type ListenerPose } from './panner';
 
 // 音の再生（S1-25・S1-26）。AudioContext の開始、主音量とミュート、かみ合いごとの音源の出し入れと毎フレームの更新、
-// リスナー（カメラ）、背景のうなり、モーターのうなり、ロックの音。
+// リスナー（カメラ）、背景のざわざわ、モーターのきしみ、ロックの音（S4-06 で連続音とモーターのうなりをやめ、粒の音にした）。
 // 何を鳴らすかの計算は core/audio-model に任せ、ここは結果をノードに流すだけ
 
 // ノイズの素（白色雑音）の長さ（秒）。実行時に作る（録音素材は使わない）
@@ -43,20 +43,23 @@ export interface AudioState {
   muted: boolean;
   material: AudioMaterialId;
   // 今鳴らしている（鳴らす対象の）かみ合い。frequency は歯の通過頻度（Hz）、position は接点、
-  // kind はかみ合いの種類（音色。S2-05。ラックの組は 'rack'。S3-05）、slide はすべりの雑音の強さ（0〜1。S2-05）
+  // kind はかみ合いの種類（音色。S2-05。ラックの組は 'rack'。S3-05）、slide はすべりの雑音の強さ（0〜1。S2-05）。
+  // S4-06: rate は毎秒の粒の数（clickRate）、pitch は粒の中心周波数（Hz。clickPitch × 種類の pitch）、
+  // clicks はこの組で予約した粒の数（鳴らし始めてからの累計）
   voices: Array<{
     key: string;
     frequency: number;
-    click: number;
-    tone: number;
+    rate: number;
+    pitch: number;
+    clicks: number;
     position: Vec3;
     kind: VoiceKind;
     slide: number;
   }>;
-  // 選ばれなかった組をまとめた背景のうなり。無ければ null
-  background: { level: number; frequency: number } | null;
-  // 今鳴らしているモーターのうなり（motorId の昇順）
-  motors: Array<{ motorId: MotorId; frequency: number; strain: number; grind: number }>;
+  // 選ばれなかった組をまとめた背景（粒のざわざわ。rate は毎秒の粒の数。S4-06）。無ければ null
+  background: { level: number; frequency: number; rate: number } | null;
+  // 今鳴らしているモーターの音源（motorId の昇順）。strain が負荷、grind が過負荷のきしみの強さ（S4-06 でうなりの周波数をやめた）
+  motors: Array<{ motorId: MotorId; strain: number; grind: number }>;
   // 起動からの衝撃音の回数と、ガタガタ中のロックのキー（昇順）。rackHits はラックが端に当たった音の回数（S3-05。
   // 端のロックはロックの衝撃音の代わりにこれを鳴らすので impacts には数えない）
   lockSounds: { impacts: number; rattling: string[]; rackHits: number };
@@ -68,7 +71,7 @@ export interface AudioFrame {
   readonly angles: Readonly<Record<ShaftId, number>>; // シャフトの角度（クリックの時刻）
   readonly dt: number; // 前のフレームからの経過時間（秒）
   readonly listener: ListenerPose; // カメラ
-  readonly motors: readonly MotorHum[]; // computeMotorHums（一時停止中は空）
+  readonly motors: readonly MotorVoice[]; // computeMotorVoices（一時停止中は空）
   // 今のロックと、その音の位置（ロックしている歯車の中心の平均。求まらなければ null）
   readonly locks: ReadonlyArray<{ readonly info: LockInfo; readonly position: Vec3 | null }>;
 }
@@ -85,7 +88,7 @@ export interface AudioEngine {
 
 export interface AudioEngineOptions {
   readonly createContext?: () => AudioContext;
-  readonly random?: () => number; // クリックの高さの揺らぎ、きしみの振幅変調
+  readonly random?: () => number; // 粒の高さ・時刻の揺らぎ、きしみの振幅変調
   readonly material?: AudioMaterialId;
   readonly muted?: boolean;
 }
@@ -106,6 +109,7 @@ interface Graph {
 }
 
 type Selected = MeshVoice & { readonly level: number };
+type Background = { level: number; frequency: number; rate: number };
 
 export function createAudioEngine(options: AudioEngineOptions = {}): AudioEngine {
   const createContext = options.createContext ?? (() => new AudioContext());
@@ -114,13 +118,16 @@ export function createAudioEngine(options: AudioEngineOptions = {}): AudioEngine
   let material: AudioMaterialId = options.material ?? 'metal';
   let graph: Graph | null = null;
   let active: Selected[] = [];
-  let background: { level: number; frequency: number } | null = null;
-  let activeMotors: MotorHum[] = [];
+  let background: Background | null = null;
+  let activeMotors: MotorVoice[] = [];
   const synths = new Map<string, MeshVoiceSynth>();
-  const motorSynths = new Map<MotorId, MotorHumSynth>();
+  const motorSynths = new Map<MotorId, MotorGrindSynth>();
   const rattles = new Map<string, LockRattle>();
-  // 前のフレームで鳴らしていた組の、クリックの時刻を求める歯車のシャフトの角度
+  // 前のフレームで鳴らしていた組の、粒の時刻を求める歯車のシャフトの角度
   const prevAngles = new Map<string, number>();
+  // 鳴らしている組の、間引いて打つときの端数（meshGrainTimes の carry）と、予約した粒の数
+  const carries = new Map<string, number>();
+  const clickCounts = new Map<string, number>();
   let prevLocks: readonly LockInfo[] = [];
   let rattling: string[] = [];
   let impacts = 0;
@@ -140,7 +147,7 @@ export function createAudioEngine(options: AudioEngineOptions = {}): AudioEngine
   const updateMeshVoices = (frame: AudioFrame, listener: Vec3): void => {
     const candidates: Selected[] = frame.voices.map((v) => ({
       ...v,
-      level: backgroundToneLevel(v.frequency, material),
+      level: grainLevel(v.frequency, material),
     }));
     const previous = new Set(active.map((v) => v.key));
     const { selected, rest } = selectVoices(candidates, listener, previous, MAX_AUDIO_VOICES);
@@ -152,10 +159,12 @@ export function createAudioEngine(options: AudioEngineOptions = {}): AudioEngine
       synth.dispose();
       synths.delete(key);
     }
-    for (const key of [...prevAngles.keys()]) {
-      if (!keys.has(key)) prevAngles.delete(key);
+    for (const map of [prevAngles, carries, clickCounts]) {
+      for (const key of [...map.keys()]) {
+        if (!keys.has(key)) map.delete(key);
+      }
     }
-    graph?.background.set(background);
+    graph?.background.set(background, frame.dt);
     const ctx = graph?.ctx;
     for (const voice of active) {
       // 遊星のかみ合い（S3-05）は、キャリアに対する相対の角度で歯の通過を数える
@@ -164,6 +173,22 @@ export function createAudioEngine(options: AudioEngineOptions = {}): AudioEngine
       const angle = (frame.angles[voice.shaftId] ?? 0) - carrierAngle;
       const prev = prevAngles.get(voice.key);
       prevAngles.set(voice.key, angle);
+      // 粒の時刻（S4-06）: 遅ければ歯の通過ごと、速ければ毎秒 CLICK_RATE_MAX 粒に間引き、時刻を少し揺らす
+      let times: number[] = [];
+      if (prev !== undefined) {
+        const grains = meshGrainTimes(
+          prev,
+          angle,
+          voice.teeth,
+          frame.dt,
+          voice.frequency,
+          carries.get(voice.key) ?? 0,
+          random,
+        );
+        carries.set(voice.key, grains.carry);
+        times = grains.times;
+        clickCounts.set(voice.key, (clickCounts.get(voice.key) ?? 0) + times.length);
+      }
       if (graph === null || ctx === undefined) continue;
       let synth = synths.get(voice.key);
       if (synth === undefined) {
@@ -172,26 +197,25 @@ export function createAudioEngine(options: AudioEngineOptions = {}): AudioEngine
       } else {
         synth.setPosition(voice.position);
       }
-      // 種類ごとの音色（S2-05）: 連続音とクリックの音量に倍率を掛け、すべりの雑音を足す
+      // 種類ごとの音色（S2-05）: 粒の音量と高さに倍率を掛け、すべりの雑音を足す
       const timbre = meshTimbre(voice.kind);
-      const tone = toneParams(voice.frequency, material);
-      synth.setTone(tone.frequency, tone.level * timbre.hum);
-      synth.setLowpassScale(timbre.lowpass);
       synth.setSlide(voice.slide);
-      if (prev === undefined || voice.click <= 0) continue;
       // 歯の境目を跨いだ時刻をフレームの中で補間し、遅れを足して予約する
-      const times = toothPassTimes(prev, angle, voice.teeth, frame.dt);
-      if (!shouldScheduleClicks(times.length, frame.dt)) continue;
       const now = ctx.currentTime;
       for (const t of times) {
         const time = Math.max(now, now - frame.dt + t + CLICK_LATENCY);
-        synth.click(clickParams(material, random), time, voice.click * timbre.click);
+        synth.click(
+          clickParams(material, random, voice.frequency, timbre.pitch),
+          time,
+          timbre.click,
+        );
       }
     }
   };
 
   const updateMotors = (frame: AudioFrame, listener: Vec3): void => {
-    const candidates = frame.motors.map((m) => ({ ...m, key: m.motorId }));
+    // 選び方は距離だけで決める（モーターの音源には歯の通過頻度が無いので、動いている候補として 1 を渡す）
+    const candidates = frame.motors.map((m) => ({ ...m, key: m.motorId, frequency: 1, level: 0 }));
     const previous = new Set(activeMotors.map((m) => m.motorId));
     const { selected } = selectVoices(candidates, listener, previous, MAX_MOTOR_VOICES);
     activeMotors = selected.sort((a, b) => (a.motorId < b.motorId ? -1 : 1));
@@ -205,30 +229,10 @@ export function createAudioEngine(options: AudioEngineOptions = {}): AudioEngine
     for (const m of activeMotors) {
       let synth = motorSynths.get(m.motorId);
       if (synth === undefined) {
-        synth = createMotorHumSynth(
-          graph.ctx,
-          graph.master,
-          graph.noise,
-          m.size,
-          m.position,
-          random,
-        );
+        synth = createMotorGrindSynth(graph.ctx, graph.master, graph.noise, m.position, random);
         motorSynths.set(m.motorId, synth);
       }
       synth.update(m, frame.dt);
-    }
-  };
-
-  // 大きさが変わったモーターは、ローパスの周波数が変わるので音源を作り直す
-  const motorSizes = new Map<MotorId, string>();
-  const dropResizedMotors = (motors: readonly MotorHum[]): void => {
-    for (const m of motors) {
-      const before = motorSizes.get(m.motorId);
-      if (before !== undefined && before !== m.size) {
-        motorSynths.get(m.motorId)?.dispose();
-        motorSynths.delete(m.motorId);
-      }
-      motorSizes.set(m.motorId, m.size);
     }
   };
 
@@ -299,8 +303,8 @@ export function createAudioEngine(options: AudioEngineOptions = {}): AudioEngine
       limiter.ratio.value = 12;
       master.connect(limiter).connect(ctx.destination);
       const noise = createNoiseBuffer(ctx);
-      // 背景のうなりはパンなしで主音量に直接つなぐ（ミュートが効く）
-      const bg = createBackgroundSynth(ctx, master, noise, material);
+      // 背景のざわざわはパンなしで主音量に直接つなぐ（ミュートが効く）
+      const bg = createBackgroundSynth(ctx, master, noise, material, random);
       graph = { ctx, master, noise, background: bg };
       resume(ctx);
     },
@@ -326,7 +330,6 @@ export function createAudioEngine(options: AudioEngineOptions = {}): AudioEngine
       const listener = frame.listener.position;
       if (graph !== null) applyListener(graph.ctx, frame.listener);
       updateMeshVoices(frame, listener);
-      dropResizedMotors(frame.motors);
       updateMotors(frame, listener);
       updateLocks(frame);
     },
@@ -338,8 +341,9 @@ export function createAudioEngine(options: AudioEngineOptions = {}): AudioEngine
         voices: active.map((v) => ({
           key: v.key,
           frequency: v.frequency,
-          click: v.click,
-          tone: v.tone,
+          rate: clickRate(v.frequency),
+          pitch: clickPitch(v.frequency, material) * meshTimbre(v.kind).pitch,
+          clicks: clickCounts.get(v.key) ?? 0,
           position: v.position,
           kind: v.kind,
           slide: v.slide,
@@ -347,7 +351,6 @@ export function createAudioEngine(options: AudioEngineOptions = {}): AudioEngine
         background: background === null ? null : { ...background },
         motors: activeMotors.map((m) => ({
           motorId: m.motorId,
-          frequency: m.frequency,
           strain: m.strain,
           grind: m.grind,
         })),

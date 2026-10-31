@@ -9,21 +9,22 @@ import type { Vec3 } from '../math/vec3';
 import type { Scene } from '../scene/types';
 import {
   BACKGROUND_MAX_LEVEL,
-  backgroundToneLevel,
+  BACKGROUND_MAX_RATE,
+  CLICK_RATE_MAX,
   canPlayImpact,
-  computeMotorHums,
+  computeMotorVoices,
   diffLocks,
   distanceGain,
+  grainLevel,
   LOCK_IMPACT_LIMIT,
   lockKey,
   lockPosition,
   MATERIALS,
   MAX_MOTOR_VOICES,
   meshContactPoint,
-  motorHumParams,
+  motorLoadParams,
   selectVoices,
   summarizeBackground,
-  toneParams,
   VOICE_HYSTERESIS,
   type VoiceCandidate,
 } from './index';
@@ -169,17 +170,28 @@ describe('summarizeBackground', () => {
     expect(summarizeBackground([candidate('a', 0, 5, 0.1)], [0, 0, 0])?.frequency).toBe(30);
     expect(summarizeBackground([candidate('a', 0, 5000, 0.1)], [0, 0, 0])?.frequency).toBe(2000);
   });
+
+  it('粒の数（S4-06）: 各組の clickRate の和。上限 BACKGROUND_MAX_RATE', () => {
+    const two = summarizeBackground(
+      [candidate('a', 0, 5, 0.1), candidate('b', 0, 24, 0.1)],
+      [0, 0, 0],
+    );
+    expect(two?.rate).toBeCloseTo(29, 9);
+    const many = Array.from({ length: 10 }, (_, i) => candidate(`k${i}`, 0, 1000, 0.1));
+    expect(summarizeBackground(many, [0, 0, 0])?.rate).toBe(BACKGROUND_MAX_RATE);
+    expect(BACKGROUND_MAX_RATE).toBeGreaterThan(CLICK_RATE_MAX);
+  });
 });
 
-describe('backgroundToneLevel', () => {
-  it('連続音の範囲では toneParams の level と同じ', () => {
-    expect(backgroundToneLevel(100, 'metal')).toBeCloseTo(toneParams(100, 'metal').level, 12);
-    expect(backgroundToneLevel(800, 'wood')).toBeCloseTo(toneParams(800, 'wood').level, 12);
-  });
-
-  it('クリックの範囲（f < 15 Hz）の組も連続音とみなす（0.6 × 材質の連続音の音量）。止まっていれば 0', () => {
-    expect(backgroundToneLevel(10, 'metal')).toBeCloseTo(0.6 * MATERIALS.metal.tone.gain, 12);
-    expect(backgroundToneLevel(0, 'metal')).toBe(0);
+describe('grainLevel（S4-06）', () => {
+  it('動いている組は材質の粒の音量に比例、止まっていれば 0', () => {
+    expect(grainLevel(10, 'metal')).toBeGreaterThan(0);
+    expect(grainLevel(800, 'wood')).toBeCloseTo(grainLevel(10, 'wood'), 12);
+    expect(grainLevel(10, 'metal') / grainLevel(10, 'wood')).toBeCloseTo(
+      MATERIALS.metal.click.gain / MATERIALS.wood.click.gain,
+      12,
+    );
+    expect(grainLevel(0, 'metal')).toBe(0);
   });
 });
 
@@ -237,62 +249,89 @@ describe('canPlayImpact', () => {
   });
 });
 
-describe('motorHumParams', () => {
-  it('小、60 rpm、+1: ω = 2π → strain 0、frequency 220、grind 0', () => {
-    const p = motorHumParams('S', 60, 1, 2 * Math.PI);
+// S4-06: モーターのうなり（のこぎり波）はやめ、過負荷のきしみ（帯域雑音）だけ残す
+describe('motorLoadParams', () => {
+  it('小、60 rpm、+1: ω = 2π → strain 0、grind 0', () => {
+    const p = motorLoadParams('S', 60, 1, 2 * Math.PI);
     expect(p.strain).toBeCloseTo(0, 12);
-    expect(p.frequency).toBeCloseTo(220, 9);
     expect(p.grind).toBe(0);
-    expect(p.level).toBeCloseTo(0.08, 12);
+    expect(p.grindFrequency).toBeCloseTo(660, 9);
   });
 
-  it('ω = 0 → strain 1、frequency 132', () => {
-    const p = motorHumParams('S', 60, 1, 0);
+  it('ω = 0 → strain 1、grind 0', () => {
+    const p = motorLoadParams('S', 60, 1, 0);
     expect(p.strain).toBeCloseTo(1, 12);
-    expect(p.frequency).toBeCloseTo(132, 9);
-    expect(p.level).toBeCloseTo(0.15, 12);
+    expect(p.grind).toBe(0);
   });
 
-  it('ω = −π → strain 1.5、grind 0.5、frequency 176', () => {
-    const p = motorHumParams('S', 60, 1, -Math.PI);
+  it('ω = −π → strain 1.5、grind 0.5、きしみの帯域は 528 Hz（前と同じ）', () => {
+    const p = motorLoadParams('S', 60, 1, -Math.PI);
     expect(p.strain).toBeCloseTo(1.5, 12);
     expect(p.grind).toBeCloseTo(0.5, 12);
-    expect(p.frequency).toBeCloseTo(176, 9);
+    expect(p.grindFrequency).toBeCloseTo(528, 9);
   });
 
-  it('中は 140 Hz、大は 90 Hz が基準。向き −1 で −ω0 なら strain 0', () => {
-    expect(motorHumParams('M', 30, 1, Math.PI).frequency).toBeCloseTo(140, 9);
-    expect(motorHumParams('L', 15, 1, Math.PI / 2).frequency).toBeCloseTo(90, 9);
-    expect(motorHumParams('S', 60, -1, -2 * Math.PI).strain).toBeCloseTo(0, 12);
-    expect(motorHumParams('S', 60, -1, 0).strain).toBeCloseTo(1, 12);
+  it('中は 420 Hz、大は 270 Hz が基準。向き −1 で −ω0 なら strain 0', () => {
+    expect(motorLoadParams('M', 30, 1, Math.PI).grindFrequency).toBeCloseTo(420, 9);
+    expect(motorLoadParams('L', 15, 1, Math.PI / 2).grindFrequency).toBeCloseTo(270, 9);
+    expect(motorLoadParams('S', 60, -1, -2 * Math.PI).strain).toBeCloseTo(0, 12);
+    expect(motorLoadParams('S', 60, -1, 0).strain).toBeCloseTo(1, 12);
+  });
+
+  it('うなりの周波数・音量は含まない', () => {
+    const p = motorLoadParams('S', 60, 1, -Math.PI);
+    expect(Object.keys(p).sort()).toEqual(['grind', 'grindFrequency', 'strain']);
   });
 });
 
-describe('computeMotorHums', () => {
+describe('computeMotorVoices', () => {
   const at = (): Vec3 => [0, 0, 0];
 
   it('back-driven.json: 大が勝ち、小は strain ≈ 1.22・grind ≈ 0.22、大の grind は 0', () => {
     const scene = fixture('back-driven');
     const layout = resolveLayout(scene);
     const motion = solveMotion(scene, layout, initialMotionState());
-    const hums = computeMotorHums(scene, motion, false, at);
-    const small = hums.find((h) => h.size === 'S');
-    const large = hums.find((h) => h.size === 'L');
+    const voices = computeMotorVoices(scene, motion, false, at);
+    const small = voices.find((h) => h.size === 'S');
+    const large = voices.find((h) => h.size === 'L');
     expect(motion.backDriven).toEqual([small?.motorId]);
     expect(small?.strain).toBeCloseTo(50 / 41, 9);
     expect(small?.grind).toBeCloseTo(9 / 41, 9);
     expect(large?.grind).toBe(0);
   });
 
+  it('モーターの音源の値に、うなりの周波数が含まれない（過負荷の雑音は含まれる）', () => {
+    const scene = fixture('back-driven');
+    const layout = resolveLayout(scene);
+    const motion = solveMotion(scene, layout, initialMotionState());
+    const voices = computeMotorVoices(scene, motion, false, at);
+    expect(voices).toHaveLength(2);
+    for (const v of voices) {
+      expect(v).not.toHaveProperty('frequency');
+      expect(v).not.toHaveProperty('level');
+      expect(Object.keys(v).sort()).toEqual([
+        'grind',
+        'grindFrequency',
+        'motorId',
+        'position',
+        'size',
+        'strain',
+      ]);
+    }
+    const small = voices.find((h) => h.size === 'S');
+    expect(small?.grind).toBeGreaterThan(0);
+    expect(small?.grindFrequency).toBeGreaterThan(0);
+  });
+
   it('一時停止中は空。OFF のモーターは除く', () => {
     const scene = fixture('lock-opposed');
     const layout = resolveLayout(scene);
     const motion = solveMotion(scene, layout, initialMotionState());
-    expect(computeMotorHums(scene, motion, true, at)).toEqual([]);
-    expect(computeMotorHums(scene, motion, false, at)).toHaveLength(2);
+    expect(computeMotorVoices(scene, motion, true, at)).toEqual([]);
+    expect(computeMotorVoices(scene, motion, false, at)).toHaveLength(2);
     const motor = scene.motors.motor_2;
     if (motor === undefined) throw new Error('motor_2 が無い');
     const off: Scene = { ...scene, motors: { ...scene.motors, motor_2: { ...motor, on: false } } };
-    expect(computeMotorHums(off, motion, false, at).map((h) => h.motorId)).toEqual(['motor_1']);
+    expect(computeMotorVoices(off, motion, false, at).map((h) => h.motorId)).toEqual(['motor_1']);
   });
 });

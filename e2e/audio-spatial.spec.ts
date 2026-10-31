@@ -53,7 +53,7 @@ async function splitByX(page: Page): Promise<{ selected: number[]; others: numbe
   return { selected, others };
 }
 
-test('chain-22 では 16 組を個別に鳴らし、残りは背景のうなりになる', async ({ page }) => {
+test('chain-22 では 16 組を個別に鳴らし、残りは背景（粒のざわざわ）になる', async ({ page }) => {
   await open(page, fixture('chain-22'));
   await startAudio(page);
   await expect.poll(async () => (await getAudio(page)).voices.length).toBe(16);
@@ -134,7 +134,7 @@ test('小と大のモーターを逆向きにつなぐと、大が勝ち、負�
   expect(large?.grind).toBe(0);
 });
 
-test('Space で一時停止すると、モーターのうなりもかみ合いの音も止まる', async ({ page }) => {
+test('Space で一時停止すると、モーターの音もかみ合いの音も止まる', async ({ page }) => {
   await open(page, fixture('back-driven'));
   await startAudio(page);
   await expect.poll(async () => (await getAudio(page)).motors.length).toBe(2);

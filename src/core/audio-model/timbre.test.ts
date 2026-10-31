@@ -31,8 +31,8 @@ describe('meshTimbre', () => {
   });
 
   it("'spur'・'bevel' は段階 1 と同じ（1, 1, 0）", () => {
-    expect(meshTimbre('spur')).toEqual({ click: 1, hum: 1, slideNoise: 0, lowpass: 1 });
-    expect(meshTimbre('bevel')).toEqual({ click: 1, hum: 1, slideNoise: 0, lowpass: 1 });
+    expect(meshTimbre('spur')).toEqual({ click: 1, slideNoise: 0, pitch: 1 });
+    expect(meshTimbre('bevel')).toEqual({ click: 1, slideNoise: 0, pitch: 1 });
   });
 
   it("'worm' の slideNoise > 0、'spur'・'bevel'・'helical' の slideNoise = 0", () => {
@@ -52,12 +52,10 @@ describe('meshTimbre', () => {
     expect(meshTimbre('helical').click).toBeCloseTo(0.4, 12);
     expect(meshTimbre('worm').click).toBeCloseTo(0.2, 12);
     expect(meshTimbre('crossedHelical').click).toBe(meshTimbre('helical').click);
-    expect(meshTimbre('crossedHelical').hum).toBe(meshTimbre('helical').hum);
     expect(meshTimbre('crossedHelical').slideNoise).toBeCloseTo(
       0.3 * meshTimbre('worm').slideNoise,
       12,
     );
-    expect(meshTimbre('helical').hum).toBeGreaterThan(meshTimbre('spur').hum);
   });
 
   it('すべての MeshKind に係数がある', () => {
@@ -73,7 +71,9 @@ describe('meshTimbre', () => {
     for (const kind of kinds) {
       const t = meshTimbre(kind);
       expect(t.click).toBeGreaterThan(0);
-      expect(t.hum).toBeGreaterThan(0);
+      expect(t.pitch).toBeGreaterThan(0);
+      // S4-06: 連続音（うなり）の欄は無い
+      expect(t).not.toHaveProperty('hum');
       expect(t.slideNoise).toBeGreaterThanOrEqual(0);
     }
   });

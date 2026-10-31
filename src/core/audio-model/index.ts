@@ -11,23 +11,24 @@ import type { Vec3 } from '../math/vec3';
 import { scale, sub } from '../math/vec3';
 import type { GearId, Motor, MotorId, Scene, ShaftId, SizeKey } from '../scene/types';
 import type { AudioMaterialId } from '../theme';
-import { lockKey, meshContactPoint, motorHumParams } from './spatial';
+import { CLICK_RATE_MAX, lockKey, meshContactPoint, motorLoadParams } from './spatial';
 
 export * from './spatial';
 
 // 音の計算（S1-25、要件 §9）。Web Audio には触れず、src/audio/ がこの結果をノードに流す
 
-// 歯の通過頻度の境目（Hz）。CLICK_MAX_HZ 以下はクリックだけ、TONE_MIN_HZ 以上は連続音だけ、
-// その間は等パワーでクロスフェードする
-export const CLICK_MAX_HZ = 15;
-export const TONE_MIN_HZ = 30;
-// 連続音の基本周波数の上限（Hz）。歯の通過頻度はこれを超えうるが、それ以上は耳障りなだけ
-export const TONE_MAX_HZ = 2000;
-// 連続音の音量が 1.0 に達する歯の通過頻度（Hz）
-export const TONE_FULL_LEVEL_HZ = 400;
-// クリックの高さの揺らぎ（±3%）
+// 粒の音（S4-06）: かみ合いの音は速さによらず粒（カタカタ）で鳴らす（連続音への切り替えは無い）。
+// 粒を打つ回数は歯の通過頻度に従い、CLICK_RATE_MAX（毎秒 40。spatial.ts）を超えたら間引く
+// 粒の高さ: clickPitch = 材質の基準 × (1 + CLICK_PITCH_SLOPE × log2(1 + f / CLICK_PITCH_REF_HZ))
+export const CLICK_PITCH_REF_HZ = 10;
+export const CLICK_PITCH_SLOPE = 0.2;
+// 粒の時刻の揺らぎ: 間隔の ±CLICK_TIME_JITTER 倍（ただし ±CLICK_TIME_JITTER_MAX_SEC 秒まで）。一定の間隔で打つと
+// ブーという音（間隔の周波数の連続音）に聞こえるため
+export const CLICK_TIME_JITTER = 0.25;
+export const CLICK_TIME_JITTER_MAX_SEC = 0.006;
+// 粒の高さの揺らぎ（±3%）
 export const CLICK_JITTER = 0.03;
-// クリックを予約するときに足す遅れ（秒）
+// 粒を予約するときに足す遅れ（秒）
 export const CLICK_LATENCY = 0.03;
 // 主音量
 export const MASTER_GAIN = 0.5;
@@ -42,22 +43,27 @@ export interface ClickPartial {
 }
 
 export interface ClickNoise {
-  readonly type: 'highpass' | 'lowpass';
+  readonly type: 'highpass' | 'lowpass' | 'bandpass';
   readonly frequency: number; // フィルタの周波数（Hz）
+  readonly q?: number; // フィルタの Q（省けば既定のまま）
   readonly decay: number; // 秒
 }
 
+// 1 回のクリック（粒・衝撃音のクリック）の合成のパラメータ
 export interface ClickParams {
   readonly partials: readonly ClickPartial[]; // 共鳴の部分音
   readonly noise: ClickNoise;
   readonly gain: number; // クリックの音量
 }
 
-export interface ToneMaterial {
-  readonly harmonics: readonly number[]; // 1, 2, 3, … 倍音の振幅
-  readonly lowpass: number; // Hz
-  readonly noise: number; // 加えるノイズ（ざらつき）の量。連続音の音量に対する比
-  readonly gain: number; // 連続音の音量
+// 粒 1 つの材質（S4-06）。ノイズを共鳴フィルタ（帯域通過、中心 = clickPitch、Q = q）に通し、
+// 中心周波数の ratio 倍の減衰する部分音を重ねる
+export interface GrainMaterial {
+  readonly pitch: number; // 止まりかけ（f → 0）の粒の中心周波数（Hz）
+  readonly partials: readonly { readonly ratio: number; readonly decay: number }[];
+  readonly q: number; // 共鳴フィルタの Q（大きいほど硬く鳴る）
+  readonly noiseDecay: number; // ノイズの減衰（秒）
+  readonly gain: number; // 粒の音量
 }
 
 // すべりの雑音（S2-05）: ループするノイズ → 帯域通過フィルタ。強さ 0〜1 に gain を掛ける。
@@ -70,36 +76,38 @@ export interface SlideNoiseMaterial {
 }
 
 export interface AudioMaterialParams {
-  readonly click: ClickParams;
-  readonly tone: ToneMaterial;
+  readonly click: GrainMaterial;
   readonly slide: SlideNoiseMaterial;
 }
 
-// 材質のパラメータ（S1-25 の資料の表）。時間は秒
+// 材質のパラメータ（S4-06 で粒の音色にした）。時間は秒。metal は硬く高めのカタカタ（鋭い共鳴と高い部分音）、
+// wood は柔らかく低めのコトコト（ゆるい共鳴）
 export const MATERIALS: Readonly<Record<AudioMaterialId, AudioMaterialParams>> = {
   metal: {
     click: {
+      pitch: 2400,
       partials: [
-        { frequency: 2400, decay: 0.08 },
-        { frequency: 3900, decay: 0.06 },
-        { frequency: 6100, decay: 0.04 },
+        { ratio: 1, decay: 0.025 },
+        { ratio: 1.63, decay: 0.018 },
+        { ratio: 2.54, decay: 0.012 },
       ],
-      noise: { type: 'highpass', frequency: 3000, decay: 0.008 },
+      q: 10,
+      noiseDecay: 0.004,
       gain: 0.5,
     },
-    tone: { harmonics: [1, 0.6, 0.45, 0.3, 0.2, 0.12], lowpass: 4000, noise: 0.05, gain: 0.25 },
     slide: { frequency: 2600, q: 4, spread: 0.4, gain: 0.12 },
   },
   wood: {
     click: {
+      pitch: 520,
       partials: [
-        { frequency: 420, decay: 0.025 },
-        { frequency: 950, decay: 0.015 },
+        { ratio: 1, decay: 0.018 },
+        { ratio: 2.26, decay: 0.01 },
       ],
-      noise: { type: 'lowpass', frequency: 1200, decay: 0.012 },
+      q: 3,
+      noiseDecay: 0.008,
       gain: 0.6,
     },
-    tone: { harmonics: [1, 0.3, 0.1], lowpass: 900, noise: 0.15, gain: 0.2 },
     slide: { frequency: 900, q: 3, spread: 0.4, gain: 0.14 },
   },
 };
@@ -107,39 +115,33 @@ export const MATERIALS: Readonly<Record<AudioMaterialId, AudioMaterialParams>> =
 // 音源の種類（S3-05）: かみ合いの種類（MeshKind）と、ラックとピニオンの組 'rack'
 export type VoiceKind = MeshKind | 'rack';
 
-// かみ合いの種類ごとの音色（S2-05）。平歯車を 1 とした倍率で、click はクリックの音量、hum は連続音の音量、
-// slideNoise はすべりの雑音の強さの上限（0〜1）、lowpass は連続音のローパスの周波数に掛ける倍率
-// （1 未満でこもる。S3-05 の内歯車）。手で聞いて調整したら資料（S2-05・S3-05）の表も直す
+// かみ合いの種類ごとの音色（S2-05）。平歯車を 1 とした倍率で、click は粒の音量、
+// slideNoise はすべりの雑音の強さの上限（0〜1）、pitch は粒の中心周波数に掛ける倍率
+// （1 未満でこもる。S3-05 の内歯車。S4-06 で連続音の hum・lowpass をやめて pitch にした）。
+// 手で聞いて調整したら資料（S2-05・S3-05）の表も直す
 export interface MeshTimbre {
   readonly click: number;
-  readonly hum: number;
   readonly slideNoise: number;
-  readonly lowpass: number;
+  readonly pitch: number;
 }
 
 // ねじ歯車のすべりの雑音は、ウォームのこの倍
 const CROSSED_SLIDE_RATIO = 0.3;
 const WORM_SLIDE = 1;
-// ハスバ・ねじ歯車・ウォームの連続音の倍率（なめらかにかみ合ってうなりが勝つ）
-const SMOOTH_HUM = 1.5;
-// 内歯車の組のこもり（S3-05）: 連続音のローパスを材質の値のこの倍にする（高域を落とす）
-const INTERNAL_LOWPASS = 0.45;
+// 内歯車の組のこもり（S3-05）: 粒の中心周波数を材質の値のこの倍にする（S4-06。前は連続音のローパスの倍率 0.45）
+const INTERNAL_PITCH = 0.6;
 
 export const MESH_TIMBRES: Readonly<Record<VoiceKind, MeshTimbre>> = {
-  spur: { click: 1, hum: 1, slideNoise: 0, lowpass: 1 },
-  bevel: { click: 1, hum: 1, slideNoise: 0, lowpass: 1 },
-  helical: { click: 0.4, hum: SMOOTH_HUM, slideNoise: 0, lowpass: 1 },
-  crossedHelical: {
-    click: 0.4,
-    hum: SMOOTH_HUM,
-    slideNoise: CROSSED_SLIDE_RATIO * WORM_SLIDE,
-    lowpass: 1,
-  },
-  worm: { click: 0.2, hum: SMOOTH_HUM, slideNoise: WORM_SLIDE, lowpass: 1 },
-  // 内歯車の組（S3-02）: 平歯車と同じ音色で、うなりを少しこもらせる（S3-05）
-  internal: { click: 1, hum: 1, slideNoise: 0, lowpass: INTERNAL_LOWPASS },
+  spur: { click: 1, slideNoise: 0, pitch: 1 },
+  bevel: { click: 1, slideNoise: 0, pitch: 1 },
+  // ハスバ・ねじ歯車・ウォーム: なめらかにかみ合うので粒を小さく
+  helical: { click: 0.4, slideNoise: 0, pitch: 1 },
+  crossedHelical: { click: 0.4, slideNoise: CROSSED_SLIDE_RATIO * WORM_SLIDE, pitch: 1 },
+  worm: { click: 0.2, slideNoise: WORM_SLIDE, pitch: 1 },
+  // 内歯車の組（S3-02）: 平歯車と同じ音色で、少しこもらせる（S3-05）
+  internal: { click: 1, slideNoise: 0, pitch: INTERNAL_PITCH },
   // ラックとピニオンの組（S3-05）: 平歯車と同じ
-  rack: { click: 1, hum: 1, slideNoise: 0, lowpass: 1 },
+  rack: { click: 1, slideNoise: 0, pitch: 1 },
 };
 
 export const VOICE_KINDS = Object.keys(MESH_TIMBRES) as readonly VoiceKind[];
@@ -197,41 +199,87 @@ export function planetToothPassFrequency(
   return toothPassFrequency(teeth, omega - carrierOmega);
 }
 
-// クリックと連続音の重み（それぞれ 0〜1、click² + tone² = 1）
-export function clickToneMix(f: number): { click: number; tone: number } {
-  if (f <= CLICK_MAX_HZ) return { click: 1, tone: 0 };
-  if (f >= TONE_MIN_HZ) return { click: 0, tone: 1 };
-  const w = (f - CLICK_MAX_HZ) / (TONE_MIN_HZ - CLICK_MAX_HZ);
-  return { click: Math.cos((w * Math.PI) / 2), tone: Math.sin((w * Math.PI) / 2) };
-}
-
 function clamp(x: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, x));
 }
 
-// 連続音の音量の素（30 Hz で 0.6、400 Hz 以上で 1.0。その間は log2 で直線。30 Hz 未満も 0.6）
-function toneLevelOf(f: number): number {
-  const rise = Math.log2(f / TONE_MIN_HZ) / Math.log2(TONE_FULL_LEVEL_HZ / TONE_MIN_HZ);
-  return 0.6 + 0.4 * clamp(rise, 0, 1);
+// 毎秒の粒の数（S4-06）: 歯の通過頻度のまま、CLICK_RATE_MAX で頭打ち（超えたら間引く）。止まっていれば 0
+export function clickRate(toothPassHz: number): number {
+  if (!(toothPassHz > 0)) return 0;
+  return Math.min(toothPassHz, CLICK_RATE_MAX);
 }
 
-// 連続音の基本周波数（クランプ済み）と音量（toneLevel × 材質の音量 × クロスフェードの重み）。
-// toneLevel は 30 Hz で 0.6、400 Hz 以上で 1.0（その間は log2 で直線）
-export function toneParams(
-  f: number,
-  material: AudioMaterialId,
-): { frequency: number; level: number } {
-  const frequency = clamp(f, TONE_MIN_HZ, TONE_MAX_HZ);
-  const { tone } = clickToneMix(f);
-  if (tone === 0) return { frequency, level: 0 };
-  return { frequency, level: toneLevelOf(f) * MATERIALS[material].tone.gain * tone };
+// 粒の中心周波数（Hz。S4-06）: 回転が速いほど高い（f について単調に増える）。材質の基準 × (1 + 0.2 × log2(1 + f/10))
+export function clickPitch(toothPassHz: number, material: AudioMaterialId): number {
+  const f = Math.max(0, toothPassHz || 0); // NaN・負は 0
+  return (
+    MATERIALS[material].click.pitch *
+    (1 + CLICK_PITCH_SLOPE * Math.log2(1 + f / CLICK_PITCH_REF_HZ))
+  );
 }
 
-// 背景のうなりに使う推定の音量（S1-26）: クリックの範囲の組も連続音とみなした、連続音の level
-// （クロスフェードの重みを掛けない toneLevel × 材質の連続音の音量）
-export function backgroundToneLevel(f: number, material: AudioMaterialId): number {
-  if (!(f > 0)) return 0;
-  return toneLevelOf(f) * MATERIALS[material].tone.gain;
+// 背景にまとめるときの組の音量の素（S4-06）: 動いている組は材質の粒の音量 × BACKGROUND_GRAIN_SCALE、止まっていれば 0
+export const BACKGROUND_GRAIN_SCALE = 0.4;
+export function grainLevel(toothPassHz: number, material: AudioMaterialId): number {
+  if (!(toothPassHz > 0)) return 0;
+  return MATERIALS[material].click.gain * BACKGROUND_GRAIN_SCALE;
+}
+
+const GRAIN_EPSILON = 1e-9;
+
+// 一定の割合 rate（毎秒）で粒を打つ時刻（前のフレームからの秒、昇順）。carry は前のフレームまでの端数（0〜1 の粒）で、
+// 返した carry を次のフレームに渡すと、フレームの長さによらず 1 秒に rate 粒になる
+export function grainTimes(
+  rate: number,
+  dt: number,
+  carry: number,
+): { times: number[]; carry: number } {
+  if (!(rate > 0) || !(dt > 0)) return { times: [], carry: rate > 0 ? carry : 0 };
+  const p0 = carry;
+  const p1 = carry + rate * dt;
+  // 端数の足し合わせの丸めの誤差で、ちょうど整数になる粒を次のフレームに回さない
+  const last = Math.floor(p1 + GRAIN_EPSILON);
+  const times: number[] = [];
+  for (let k = Math.floor(p0) + 1; k <= last; k += 1) times.push(Math.min(dt, (k - p0) / rate));
+  return { times, carry: Math.max(0, p1 - last) };
+}
+
+// 時刻を ±amount × 間隔（±maxSec まで）だけ揺らす（random() が 0 → 早く、0.5 → そのまま、1 → 遅く）。0 未満は 0、昇順に並べ直す
+export function jitterTimes(
+  times: readonly number[],
+  interval: number,
+  amount: number,
+  maxSec: number,
+  random: () => number,
+): number[] {
+  const width = Math.min(amount * interval, maxSec);
+  return times
+    .map((t) => Math.max(0, t + width * (2 * clamp(random(), 0, 1) - 1)))
+    .sort((a, b) => a - b);
+}
+
+// かみ合い 1 組の、1 フレームで打つ粒の時刻（S4-06）。frequency は歯の通過頻度。上限（CLICK_RATE_MAX）以下なら
+// 歯の通過（toothPassTimes）ごとに 1 粒（回転の見た目と合う）、超えたら毎秒 CLICK_RATE_MAX 粒に間引く（grainTimes。
+// carry を持ち越す）。どちらも時刻に揺らぎを入れる
+export function meshGrainTimes(
+  prevAngle: number,
+  nextAngle: number,
+  teeth: number,
+  dt: number,
+  frequency: number,
+  carry: number,
+  random: () => number,
+): { times: number[]; carry: number } {
+  const rate = clickRate(frequency);
+  if (rate === 0 || !(dt > 0)) return { times: [], carry: 0 };
+  const base =
+    frequency <= CLICK_RATE_MAX
+      ? { times: toothPassTimes(prevAngle, nextAngle, teeth, dt), carry: 0 }
+      : grainTimes(rate, dt, carry);
+  return {
+    times: jitterTimes(base.times, 1 / rate, CLICK_TIME_JITTER, CLICK_TIME_JITTER_MAX_SEC, random),
+    carry: base.carry,
+  };
 }
 
 // 前後のフレームの角度から、歯の通過（シャフトの角度 × z / 2π が整数を跨いだ点）の時刻を返す。
@@ -256,15 +304,21 @@ export function toothPassTimes(
   return times.sort((a, b) => a - b);
 }
 
-// 1 回のクリックのパラメータ。部分音とノイズのフィルタの周波数を同じ割合で ±3% ずらす
-// （random() が 0 → −3%、0.5 → 0、1 → +3%）
-export function clickParams(material: AudioMaterialId, random: () => number): ClickParams {
-  const base = MATERIALS[material].click;
+// 粒 1 つのパラメータ（S4-06）。共鳴フィルタの中心 = clickPitch(f) × pitchScale（種類の音色の pitch）を、
+// 部分音とまとめて ±3% ずらす（random() が 0 → −3%、0.5 → 0、1 → +3%）
+export function clickParams(
+  material: AudioMaterialId,
+  random: () => number,
+  toothPassHz: number,
+  pitchScale = 1,
+): ClickParams {
+  const m = MATERIALS[material].click;
   const factor = 1 + CLICK_JITTER * (2 * clamp(random(), 0, 1) - 1);
+  const pitch = clickPitch(toothPassHz, material) * pitchScale * factor;
   return {
-    partials: base.partials.map((p) => ({ frequency: p.frequency * factor, decay: p.decay })),
-    noise: { ...base.noise, frequency: base.noise.frequency * factor },
-    gain: base.gain,
+    partials: m.partials.map((p) => ({ frequency: pitch * p.ratio, decay: p.decay })),
+    noise: { type: 'bandpass', frequency: pitch, q: m.q, decay: m.noiseDecay },
+    gain: m.gain,
   };
 }
 
@@ -278,8 +332,6 @@ export interface MeshVoice {
   // 遊星のかみ合い（S3-05）のキャリアのシャフト。クリックはこのシャフトに対する相対の角度で数える
   readonly carrierShaftId?: ShaftId;
   readonly frequency: number; // 歯の通過頻度（Hz。クランプしない）
-  readonly click: number; // clickToneMix の重み
-  readonly tone: number;
   readonly position: Vec3; // かみ合いの接点（meshContactPoint。S1-26）
   readonly kind: VoiceKind; // かみ合いの種類（音色を決める。S2-05。ラックの組は 'rack'。S3-05）
   readonly slide: number; // すべりの雑音の強さ（slideNoiseLevel。S2-05）
@@ -314,7 +366,6 @@ export function computeMeshVoices(scene: Scene, layout: Layout, motion: MotionSt
       shaftId: gear.shaftId,
       teeth: gear.teeth,
       frequency,
-      ...clickToneMix(frequency),
       position: meshContactPoint(layout, mesh, motion),
       kind: mesh.kind,
       slide: slideNoiseLevel(mesh.kind, speed),
@@ -343,7 +394,6 @@ export function computeMeshVoices(scene: Scene, layout: Layout, motion: MotionSt
       shaftId: gear.shaftId,
       teeth: gear.teeth,
       frequency,
-      ...clickToneMix(frequency),
       position,
       kind: 'rack',
       slide: 0,
@@ -361,32 +411,26 @@ export function rackEndHits(prev: readonly LockInfo[], next: readonly LockInfo[]
     .sort((a, b) => (lockKey(a) < lockKey(b) ? -1 : lockKey(a) > lockKey(b) ? 1 : 0));
 }
 
-// 1 フレームで跨いだ歯の数が多い（f ≥ TONE_MIN_HZ 相当）ときはクリックを予約しない
-export function shouldScheduleClicks(count: number, dt: number): boolean {
-  return count > 0 && dt > 0 && count / dt < TONE_MIN_HZ;
-}
-
-// モーターのうなりの音源（S1-26）
-export interface MotorHum {
+// モーターの音源（S1-26。S4-06 でうなりをやめ、過負荷のきしみだけにした）
+export interface MotorVoice {
   readonly motorId: MotorId;
   readonly size: SizeKey;
   readonly position: Vec3; // モーターの描画位置
-  readonly frequency: number;
-  readonly level: number;
   readonly strain: number;
   readonly grind: number; // backDriven に入っていないモーターは 0
+  readonly grindFrequency: number; // きしみの帯域の中心（Hz）
 }
 
-// ON のモーターのうなり（ID の昇順）。一時停止中は空。位置が求まらない（シャフトが無い）モーターは除く
-export function computeMotorHums(
+// ON のモーターの音源（ID の昇順）。一時停止中は空。位置が求まらない（シャフトが無い）モーターは除く
+export function computeMotorVoices(
   scene: Scene,
   motion: MotionState,
   paused: boolean,
   positionOf: (motor: Motor) => Vec3 | null,
-): MotorHum[] {
+): MotorVoice[] {
   if (paused) return [];
   const backDriven = new Set(motion.backDriven);
-  const hums: MotorHum[] = [];
+  const voices: MotorVoice[] = [];
   const motors = Object.values(scene.motors).sort((a, b) =>
     a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
   );
@@ -395,16 +439,15 @@ export function computeMotorHums(
     const position = positionOf(motor);
     if (position === null) continue;
     const omega = motion.omegas[motor.shaftId] ?? 0;
-    const p = motorHumParams(motor.size, motor.rpm, motor.direction, omega);
-    hums.push({
+    const p = motorLoadParams(motor.size, motor.rpm, motor.direction, omega);
+    voices.push({
       motorId: motor.id,
       size: motor.size,
       position,
-      frequency: p.frequency,
-      level: p.level,
       strain: p.strain,
       grind: backDriven.has(motor.id) ? p.grind : 0,
+      grindFrequency: p.grindFrequency,
     });
   }
-  return hums;
+  return voices;
 }
