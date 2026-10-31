@@ -84,7 +84,7 @@
 | [S4-04](stage4/04-root-shaft-without-gear.md) | 起点のシャフトを歯車なしで置く | S4-03 | done |
 | [S4-05](stage4/05-gear-width.md) | 歯車の厚さを変えられるようにする | S4-03 | done |
 | [S4-06](stage4/06-gear-click-sound.md) | モーターのうなりをやめ、歯車のカタカタという音にする | - | done |
-| [S4-07](stage4/07-motor-model.md) | モーターを本物らしい形にする | S4-03 | todo |
+| [S4-07](stage4/07-motor-model.md) | モーターを本物らしい形にする | S4-03 | doing |
 | [S4-08](stage4/08-palette-icons.md) | パレットにアイコンを付ける | S4-02 | todo |
 
 ## タスク資料のひな形

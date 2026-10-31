@@ -1,7 +1,7 @@
 ---
 id: S4-07
 title: モーターを本物らしい形にする
-status: todo
+status: doing
 depends: [S4-03]
 ---
 
