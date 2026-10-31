@@ -25,6 +25,7 @@ import type { Aabb } from '../core/layout/bounds';
 import { GEAR_KIND_LIST } from '../core/scene/gear-shape';
 import type { GearKind } from '../core/scene/types';
 import { QUALITY_PROFILES, type Quality, type ThemeId } from '../core/theme';
+import { MOTOR_PARTS, type MotorPart } from './motor';
 import type { BaseMaterials } from './sync';
 
 // テーマと品質（S1-24、要件 §8）。テーマごとの見た目の値と、テーマ・品質の適用
@@ -52,7 +53,7 @@ export const GEAR_MATERIAL_LOOKS: Readonly<Record<MaterialId, PartLook>> = {
 };
 export const MATERIAL_LOOKS = GEAR_MATERIAL_LOOKS;
 
-// 歯車以外の部品の種類（S3-05）。シャフト・モーターはテーマの ThemeLook のまま
+// 歯車以外の部品の種類（S3-05）。シャフトはテーマの ThemeLook のまま、モーターは部分ごとの表（S4-07）
 export type PartKind = 'carrier' | 'rack' | 'anchor';
 export const PART_KINDS: readonly PartKind[] = ['carrier', 'rack', 'anchor'];
 
@@ -86,10 +87,38 @@ export function gearLook(theme: ThemeId, kind: GearKind): PartLook {
   return GEAR_MATERIAL_LOOKS[GEAR_KIND_MATERIALS[kind][theme]];
 }
 
+// モーターの部分ごとの見た目（S4-07）。Record<MotorPart, …> なので、部分を足すと書き忘れが型で分かる。
+// 真鍮のテーマは銀色の金属の缶と黒い樹脂の端の蓋、木製のテーマは塗った木のおもちゃ
+export const MOTOR_PART_LOOKS: Readonly<Record<MotorPart, Readonly<Record<ThemeId, PartLook>>>> = {
+  body: {
+    brass: { color: 0xc4c8cc, metalness: 1, roughness: 0.3 }, // 銀色の缶（軸受けも）
+    wood: { color: 0xc8553d, metalness: 0, roughness: 0.7 }, // 赤く塗った木
+  },
+  endCap: {
+    brass: { color: 0x1e1e20, metalness: 0, roughness: 0.55 }, // 黒い樹脂
+    wood: { color: 0xb07a45, metalness: 0, roughness: 0.75, woodGrain: true }, // 明るい木
+  },
+  terminal: {
+    brass: { color: 0xc9a24a, metalness: 1, roughness: 0.35 }, // 真鍮の端子
+    wood: { color: 0x7a4a28, metalness: 0, roughness: 0.78, woodGrain: true }, // 濃い木の釘
+  },
+  coupling: {
+    brass: { color: 0x3a3c40, metalness: 0.8, roughness: 0.45 }, // 黒っぽい鋼
+    wood: { color: 0xe0c060, metalness: 0, roughness: 0.7 }, // 黄色く塗った木
+  },
+  mark: {
+    brass: { color: 0xe8402a, metalness: 0, roughness: 0.5 }, // 赤い線
+    wood: { color: 0x2f6fb0, metalness: 0, roughness: 0.6 }, // 青い線
+  },
+};
+
+export function motorLook(theme: ThemeId, part: MotorPart): PartLook {
+  return MOTOR_PART_LOOKS[part][theme];
+}
+
 export interface ThemeLook {
-  // 歯車の見た目は種類ごとに gearLook（S2-05）
+  // 歯車の見た目は種類ごとに gearLook（S2-05）、モーターは部分ごとに motorLook（S4-07）
   readonly shaft: PartLook;
-  readonly motor: PartLook;
   readonly floor: number;
   readonly gridLine: number;
   readonly gridCenterLine: number; // x = 0・z = 0 の線
@@ -102,7 +131,6 @@ export interface ThemeLook {
 export const THEME_LOOKS: Readonly<Record<ThemeId, ThemeLook>> = {
   brass: {
     shaft: { color: 0x9aa0a6, metalness: 1, roughness: 0.25 }, // 鋼
-    motor: { color: 0x2b2b2e, metalness: 0.3, roughness: 0.5 }, // 黒い塗装
     floor: 0x2a2c30,
     gridLine: 0x3a3d42,
     gridCenterLine: 0x4a4e55,
@@ -113,7 +141,6 @@ export const THEME_LOOKS: Readonly<Record<ThemeId, ThemeLook>> = {
   },
   wood: {
     shaft: { color: 0x6b4426, metalness: 0, roughness: 0.8 }, // 濃い木
-    motor: { color: 0x3d4a3a, metalness: 0, roughness: 0.7 }, // 濃い緑の塗装
     floor: 0xe8dcc6,
     gridLine: 0xcdbd9f,
     gridCenterLine: 0xb9a783,
@@ -202,10 +229,11 @@ function createWoodTexture(size: number, anisotropy: number): CanvasTexture {
 
 // テーマに木目のテクスチャを使う部品があるか
 export function usesWoodGrain(theme: ThemeId): boolean {
-  const { shaft, motor } = THEME_LOOKS[theme];
+  const { shaft } = THEME_LOOKS[theme];
   const gears = GEAR_KIND_LIST.map((kind) => gearLook(theme, kind));
   const parts = PART_KINDS.map((kind) => partLook(theme, kind));
-  return [...gears, ...parts, shaft, motor].some((part) => part.woodGrain === true);
+  const motor = MOTOR_PARTS.map((part) => motorLook(theme, part));
+  return [...gears, ...parts, ...motor, shaft].some((part) => part.woodGrain === true);
 }
 
 // 種類ごとの歯車・部品の基の材質。同じ材質の種類は同じ MeshStandardMaterial を共有する（歯車と部品の間でも）
@@ -397,7 +425,9 @@ export function createThemeController(targets: ThemeTargets): ThemeController {
           gear,
           part,
           shaft: materialOf(look.shaft, woodTexture),
-          motor: materialOf(look.motor, woodTexture),
+          motor: Object.fromEntries(
+            MOTOR_PARTS.map((part) => [part, materialOf(motorLook(theme, part), woodTexture)]),
+          ) as Record<MotorPart, MeshStandardMaterial>,
         });
       }
       if (applied === null || applied.theme !== theme) applyStage(look);

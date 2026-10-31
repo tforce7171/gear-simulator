@@ -2,15 +2,19 @@ import { describe, expect, it } from 'vitest';
 import { GEAR_KIND_LIST } from '../core/scene/gear-shape';
 import type { GearKind } from '../core/scene/types';
 import { THEME_IDS, type ThemeId } from '../core/theme';
+import { MOTOR_PARTS, type MotorPart } from './motor';
 import {
   GEAR_KIND_MATERIALS,
   GEAR_MATERIAL_LOOKS,
   type GearMaterialId,
   gearLook,
   type MaterialId,
+  MOTOR_PART_LOOKS,
+  motorLook,
   PART_KIND_MATERIALS,
   PART_KINDS,
   type PartKind,
+  type PartLook,
   partLook,
   usesWoodGrain,
 } from './themes';
@@ -102,5 +106,48 @@ describe('部品の種類ごとの材質の表（S3-05）', () => {
     expect(iron.color).toBeLessThan(0x404040);
     expect(iron.metalness).toBeGreaterThan(0.5);
     expect(iron.woodGrain).toBeUndefined();
+  });
+});
+
+// S4-07: モーターの部分ごとの材質の表
+describe('モーターの部分ごとの材質の表（S4-07）', () => {
+  it('型: モーターのすべての部分に、両テーマの見た目がある（Record<MotorPart, Record<ThemeId, …>>）', () => {
+    const table: Readonly<Record<MotorPart, Readonly<Record<ThemeId, PartLook>>>> =
+      MOTOR_PART_LOOKS;
+    expect(table).toBe(MOTOR_PART_LOOKS);
+  });
+
+  it('実行時: モーターのすべての部分（本体・端の蓋・端子・継手・線）に、両テーマの材質がある', () => {
+    expect(Object.keys(MOTOR_PART_LOOKS).sort()).toEqual([...MOTOR_PARTS].sort());
+    for (const part of MOTOR_PARTS) {
+      for (const theme of THEME_IDS) {
+        const look = motorLook(theme, part);
+        expect(look, `${part}/${theme}`).toBeDefined();
+        expect(look).toBe(MOTOR_PART_LOOKS[part][theme]);
+      }
+    }
+  });
+
+  it('真鍮のテーマは銀色の金属の本体と黒い端の蓋', () => {
+    const body = motorLook('brass', 'body');
+    expect(body.metalness).toBe(1);
+    const channels = [(body.color >> 16) & 0xff, (body.color >> 8) & 0xff, body.color & 0xff];
+    // 銀色: 明るく、色味が少ない
+    expect(Math.min(...channels)).toBeGreaterThan(0xa0);
+    expect(Math.max(...channels) - Math.min(...channels)).toBeLessThan(0x18);
+    expect(motorLook('brass', 'endCap').color).toBeLessThan(0x303030);
+  });
+
+  it('テーマを切り替えると、モーターの本体・端の蓋・継手の色が変わる。木製は木のおもちゃ（金属でない）', () => {
+    for (const part of ['body', 'endCap', 'coupling'] as const) {
+      expect(motorLook('wood', part).color, part).not.toBe(motorLook('brass', part).color);
+      expect(motorLook('wood', part).metalness, part).toBe(0);
+    }
+  });
+
+  it('継手の線は継手と違う色（回転が見える）', () => {
+    for (const theme of THEME_IDS) {
+      expect(motorLook(theme, 'mark').color).not.toBe(motorLook(theme, 'coupling').color);
+    }
   });
 });

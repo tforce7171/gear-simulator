@@ -1,7 +1,7 @@
 ---
 id: S4-07
 title: モーターを本物らしい形にする
-status: todo
+status: done
 depends: [S4-03]
 ---
 
@@ -51,6 +51,6 @@ depends: [S4-03]
 - モーターに見えること、継手の回転が見えること
 
 ## 完了の条件
-- [ ] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
-- [ ] design.md と後続のタスク資料に、必要な変更を反映した
-- [ ] `status: done` にしてコミットした
+- [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
+- [x] design.md と後続のタスク資料に、必要な変更を反映した
+- [x] `status: done` にしてコミットした

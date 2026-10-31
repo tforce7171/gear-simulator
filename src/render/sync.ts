@@ -7,6 +7,7 @@ import {
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
+  type Object3D,
   Quaternion,
   Vector3,
 } from 'three';
@@ -48,6 +49,16 @@ import {
 import { buildCarrierGeometries, carrierShapeKey } from './carrier';
 import { placeOnAxis } from './frame';
 import { createGeometryCache, type GeometryCache, gearBodyScaleZ } from './gear-geometry';
+import {
+  buildMotorModel,
+  createMotorGeometries,
+  MOTOR_GAP,
+  MOTOR_PARTS,
+  type MotorModel,
+  type MotorPart,
+  motorLength,
+  setCouplingRadius,
+} from './motor';
 import { setPickTarget } from './picking';
 import {
   buildRackGeometry,
@@ -92,15 +103,13 @@ export function shaftNestRanks(scene: Scene): Map<ShaftId, number> {
 export function shaftRadiusOf(rank: number): number {
   return SHAFT_RADIUS + rank * SHAFT_NEST_STEP;
 }
-// モーターの箱の一辺（大きさごと。S1-20）
-export const MOTOR_BOX: Readonly<Record<SizeKey, number>> = { S: 6, M: 8, L: 11 };
-const MOTOR_GAP = 1; // シャフトの端とモーターの箱のすき間
 // 細いシャフトをクリックしやすくする、見えない当たり判定の円柱の半径（S1-16）
 export const SHAFT_PICK_RADIUS = 3;
 
-// モーターの箱の中心: シャフトの負側の端のさらに外（モーターの音の位置にも使う。S1-26）
+// モーターの本体の中心: シャフトの負側の端のさらに外（モーターの音の位置にも使う。S1-26）。
+// 形は render/motor.ts（S4-07。直径 MOTOR_DIAMETER、長さ motorLength = 直径 × 1.3）
 export function motorCenter(placed: ShaftLayout, size: SizeKey): Vec3 {
-  const along = placed.span[0] - MOTOR_GAP - MOTOR_BOX[size] / 2;
+  const along = placed.span[0] - MOTOR_GAP - motorLength(size) / 2;
   return add(placed.origin, scale(axisVector(placed.axis), along));
 }
 
@@ -210,12 +219,13 @@ function pulseLocked(set: MaterialSet, timeSec: number): void {
 }
 
 // 部品の種類ごとの基の材質（テーマが決める。S1-24）。歯車は種類ごと（S2-05。同じ材質を共有してよい）、
-// キャリア・ラック・固定具は part（S3-05。render/themes.ts の PART_KIND_MATERIALS。歯車と共有してよい）
+// キャリア・ラック・固定具は part（S3-05。render/themes.ts の PART_KIND_MATERIALS。歯車と共有してよい）、
+// モーターは部分ごと（S4-07。render/themes.ts の MOTOR_PART_LOOKS。部分の間で共有してよい）
 export interface BaseMaterials {
   readonly gear: Readonly<Record<GearKind, MeshStandardMaterial>>;
   readonly part: Readonly<Record<PartKind, MeshStandardMaterial>>;
   readonly shaft: MeshStandardMaterial;
-  readonly motor: MeshStandardMaterial;
+  readonly motor: Readonly<Record<MotorPart, MeshStandardMaterial>>;
 }
 
 // 材質の組の全部を捨てる（基の材質も含む。テクスチャは持ち主が捨てる）
@@ -252,6 +262,25 @@ function uniqueSets(gear: GearMaterialSets, part: PartMaterialSets): MaterialSet
   return [...new Set([...Object.values(gear), ...Object.values(part)])];
 }
 
+type MotorMaterialSets = Readonly<Record<MotorPart, MaterialSet>>;
+
+// モーターの部分ごとの材質の組（S4-07）。基の材質が同じ部分は同じ組を共有する
+function motorMaterialSets(
+  motor: Readonly<Record<MotorPart, MeshStandardMaterial>>,
+): MotorMaterialSets {
+  const byBase = new Map<MeshStandardMaterial, MaterialSet>();
+  const sets = {} as Record<MotorPart, MaterialSet>;
+  for (const part of MOTOR_PARTS) {
+    let set = byBase.get(motor[part]);
+    if (set === undefined) {
+      set = materialSet(motor[part]);
+      byBase.set(motor[part], set);
+    }
+    sets[part] = set;
+  }
+  return sets;
+}
+
 function sameSet(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
   if (a.size !== b.size) return false;
   for (const id of a) if (!b.has(id)) return false;
@@ -273,10 +302,11 @@ interface ShaftEntry {
   base: Quaternion; // 置いたときの向き（ロックの震えはこれに足す）
 }
 
+// モーター（S4-07）。group をモーターの中心に置き、継手（model.spin）をシャフトの回転角だけ回す
 interface MotorEntry {
   motor: Motor;
-  object: Mesh;
-  base: Quaternion;
+  model: MotorModel;
+  base: Quaternion; // 置いたときの向き（ロックの震えはこれに足す）
 }
 
 // キャリア（S3-03）。腕のある板。spin をキャリアのシャフトの回転角だけ回す。選べる（'carrier'）
@@ -345,14 +375,18 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
   let shaftMaterials = materialSet(
     new MeshStandardMaterial({ color: 0x7a7f87, metalness: 0.4, roughness: 0.4 }),
   );
-  let motorMaterials = materialSet(
-    new MeshStandardMaterial({ color: 0x5c6068, metalness: 0.1, roughness: 0.7 }),
+  const defaultMotor = new MeshStandardMaterial({
+    color: 0x5c6068,
+    metalness: 0.1,
+    roughness: 0.7,
+  });
+  let motorMaterials = motorMaterialSets(
+    Object.fromEntries(MOTOR_PARTS.map((part) => [part, defaultMotor])) as Record<
+      MotorPart,
+      MeshStandardMaterial
+    >,
   );
-  const motorGeometries: Readonly<Record<SizeKey, BoxGeometry>> = {
-    S: new BoxGeometry(MOTOR_BOX.S, MOTOR_BOX.S, MOTOR_BOX.S),
-    M: new BoxGeometry(MOTOR_BOX.M, MOTOR_BOX.M, MOTOR_BOX.M),
-    L: new BoxGeometry(MOTOR_BOX.L, MOTOR_BOX.L, MOTOR_BOX.L),
-  };
+  const motorGeometries = createMotorGeometries();
   // 当たり判定だけの形（描かないがレイキャストには当たる）
   const pickProxyMaterial = new MeshBasicMaterial({ visible: false });
   let highlight: Highlight = { selected: null, hovered: null };
@@ -486,7 +520,7 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
   }
 
   function removeMotor(id: MotorId, entry: MotorEntry): void {
-    root.remove(entry.object);
+    root.remove(entry.model.group);
     motors.delete(id);
   }
 
@@ -566,6 +600,7 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
   }
 
   function syncMotors(scene: Scene, layout: Layout): void {
+    const ranks = shaftNestRanks(scene);
     for (const [id, entry] of motors) {
       const motor = scene.motors[id];
       if (motor !== entry.motor || layout.shafts[entry.motor.shaftId] === undefined) {
@@ -576,16 +611,18 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
       const placed = layout.shafts[motor.shaftId];
       if (placed === undefined) continue;
       let entry = motors.get(motor.id);
+      const shaftRadius = shaftRadiusOf(ranks.get(motor.shaftId) ?? 0);
       if (entry === undefined) {
-        const object = new Mesh(motorGeometries[motor.size], motorMaterials.none);
-        object.castShadow = true;
-        setPickTarget(object, 'motor', motor.id);
-        root.add(object);
-        entry = { motor, object, base: new Quaternion() };
+        const model = buildMotorModel(motorGeometries, motor.size, shaftRadius);
+        setPickTarget(model.group, 'motor', motor.id);
+        root.add(model.group);
+        entry = { motor, model, base: new Quaternion() };
         motors.set(motor.id, entry);
       }
-      placeOnAxis(entry.object, motorCenter(placed, motor.size), placed.axis);
-      entry.base.copy(entry.object.quaternion);
+      // 継手の太さは今のシャフトの見た目の半径に合わせる（入れ子の中空軸。S3-03）
+      setCouplingRadius(entry.model.spin, motor.size, shaftRadius);
+      placeOnAxis(entry.model.group, motorCenter(placed, motor.size), placed.axis);
+      entry.base.copy(entry.model.group.quaternion);
     }
   }
 
@@ -620,7 +657,7 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
       const motor = Object.values(scene.motors).find((m) => m.shaftId === anchor.target.id);
       const frame = anchorFrame(
         placed,
-        motor === undefined ? null : MOTOR_BOX[motor.size],
+        motor === undefined ? null : motorLength(motor.size),
         MOTOR_GAP,
       );
       const group = new Group();
@@ -674,7 +711,8 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
     for (const [id, entry] of shafts) entry.object.material = shaftMaterials[levelOf(id)];
     // モーターはシャフトとして選ばれるので、シャフトと同じに光らせる（仮の部品の見た目も同じ）
     for (const entry of motors.values()) {
-      entry.object.material = motorMaterials[levelOf(entry.motor.id, entry.motor.shaftId)];
+      const level = levelOf(entry.motor.id, entry.motor.shaftId);
+      for (const { part, mesh } of entry.model.meshes) mesh.material = motorMaterials[part][level];
     }
     // キャリアは自分とそのシャフトの状態で光らせる（S3-03）。材質はキャリアの表（S3-05）
     for (const [id, entry] of carriers) {
@@ -695,7 +733,7 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
     warnings.locked.has(id) ? lockShakeAngle(timeSec, shakeSeedOf(id)) : 0;
   const shaken = new Quaternion();
   const zAxis = new Vector3(0, 0, 1);
-  function shake(object: Mesh, base: Quaternion, angle: number): void {
+  function shake(object: Object3D, base: Quaternion, angle: number): void {
     if (angle === 0) {
       object.quaternion.copy(base);
       return;
@@ -769,7 +807,13 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
         if (entry.spin.rotation.z !== angle) version++;
         entry.spin.rotation.z = angle;
       }
-      for (const [id, entry] of motors) shake(entry.object, entry.base, shakeOf(id, timeSec));
+      for (const [id, entry] of motors) {
+        shake(entry.model.group, entry.base, shakeOf(id, timeSec));
+        // 継手はシャフトと一緒に回る（S4-07）。本体（housing）は回らない
+        const angle = motion.angles[entry.motor.shaftId] ?? 0;
+        if (entry.model.spin.rotation.z !== angle) version++;
+        entry.model.spin.rotation.z = angle;
+      }
       // ラック（S3-04）: 基準位置 + (s + 歯溝のずれ)·direction。ロック中は動く向きに小さく震わせる
       for (const [id, entry] of racks) {
         const placed = layout.racks[id];
@@ -808,16 +852,20 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
         version++; // 震えている
         for (const set of uniqueSets(gearMaterials, partMaterials)) pulseLocked(set, timeSec);
         pulseLocked(shaftMaterials, timeSec);
-        pulseLocked(motorMaterials, timeSec);
+        for (const set of new Set(Object.values(motorMaterials))) pulseLocked(set, timeSec);
       }
     },
     setBaseMaterials(materials) {
-      const old = [...uniqueSets(gearMaterials, partMaterials), shaftMaterials, motorMaterials];
+      const old = [
+        ...uniqueSets(gearMaterials, partMaterials),
+        shaftMaterials,
+        ...new Set(Object.values(motorMaterials)),
+      ];
       const sets = materialSets(materials.gear, materials.part);
       gearMaterials = sets.gear;
       partMaterials = sets.part;
       shaftMaterials = materialSet(materials.shaft);
-      motorMaterials = materialSet(materials.motor);
+      motorMaterials = motorMaterialSets(materials.motor);
       applyHighlight();
       for (const set of old) disposeSet(set);
     },
