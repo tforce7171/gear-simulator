@@ -7,6 +7,7 @@ import {
   getScene,
   openApp,
   project,
+  selectPaletteKind,
 } from './fixtures/sim';
 import { expect, test } from './fixtures/test';
 
@@ -27,6 +28,7 @@ test('A を選ぶ → かさ歯車の候補が 1〜4 つ。1 つをクリック 
   page,
 }) => {
   await openApp(page, { scene: bevelPair });
+  await selectPaletteKind(page, 'bevel');
   await page.keyboard.press('Home');
   await clickGear(page, 'gear_a');
   const bevels = (await getCandidates(page)).filter((c) => c.kind === 'bevel');

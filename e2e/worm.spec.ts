@@ -10,6 +10,7 @@ import {
   nextFrames,
   openApp,
   project,
+  selectPaletteKind,
   settleCamera,
 } from './fixtures/sim';
 import { expect, test } from './fixtures/test';
@@ -80,6 +81,7 @@ test('W を選ぶ → ホイールの候補（skew）。1 つをクリック →
   page,
 }) => {
   await openApp(page, { scene: wormBasic });
+  await selectPaletteKind(page, 'wormWheel');
   await page.keyboard.press('Home');
   // Home のカメラの移動が終わってから押す（動いている間に押す点を求めると外れることがある）
   await settleCamera(page);
@@ -118,6 +120,7 @@ test('W を選ぶ → ホイールの候補（skew）。1 つをクリック →
 
 test('H を選ぶ → ウォームの候補（skew）が出る', async ({ page }) => {
   await openApp(page, { scene: wormBasic, camera: FRONT });
+  await selectPaletteKind(page, 'worm');
   const p = await gearPoint(page, 'gear_h');
   await page.mouse.click(p.x, p.y);
   const skews = (await getCandidates(page)).filter((c) => c.kind === 'skew');

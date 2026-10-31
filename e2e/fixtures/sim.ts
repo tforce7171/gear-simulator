@@ -254,3 +254,10 @@ export async function setPaused(page: Page, on: boolean): Promise<void> {
   await page.keyboard.press('Space');
   expect(await isPaused(page)).toBe(on);
 }
+
+/** パレットの「生やす歯車の種類」を選ぶ（S4-02 から、候補はこの種類の歯車ができるものだけ） */
+export async function selectPaletteKind(page: Page, kind: string): Promise<void> {
+  const button = page.getByTestId(`palette-kind-${kind}`);
+  await button.click();
+  await expect(button).toHaveAttribute('aria-checked', 'true');
+}

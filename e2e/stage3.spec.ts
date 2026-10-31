@@ -17,6 +17,7 @@ import {
   openApp,
   type Point,
   project,
+  selectPaletteKind,
   setCamera,
   settleCamera,
   waitAutosaved,
@@ -145,7 +146,8 @@ test('通し（遊星）: 縦のシャフト → 中・24 歯 → 遊星歯車�
   await setTeethByInput(page, 24);
   await expect.poll(async () => (await getScene(page)).gears[sun.id]?.teeth).toBe(24);
 
-  // 選んだ太陽の、遊星歯車機構の候補をクリック（リングは 48 歯 → 外側の壁の半径 54.4）
+  // パレットで「遊星」を選び（S4-02）、選んだ太陽の、遊星歯車機構の候補をクリック（リングは 48 歯 → 外側の壁の半径 54.4）
+  await selectPaletteKind(page, 'planetary');
   const planetary = (await getCandidates(page)).filter((c) => c.kind === 'planetary');
   expect(planetary).toHaveLength(1);
   await clickPlanetaryCandidate(page, planetary[0] as Candidate, 54.4);
@@ -230,6 +232,8 @@ test('通し（ラック）: one-root-motor の歯車にラックを置く → �
     scene,
     camera: { position: [0, 160, 220] as Vec3, target: [0, 39, 0] as Vec3 },
   });
+  // パレットで「ラック」を選ぶ（S4-02）
+  await selectPaletteKind(page, 'rack');
   await clickGear(page, 'gear_a');
   const racks = (await getCandidates(page)).filter((c) => c.kind === 'rack');
   expect(racks).toHaveLength(4);

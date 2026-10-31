@@ -12,6 +12,7 @@ import {
   nextFrames,
   openApp,
   project,
+  selectPaletteKind,
 } from './fixtures/sim';
 import { expect, test } from './fixtures/test';
 
@@ -73,6 +74,7 @@ test('太陽だけのシーンで太陽を選び、遊星歯車機構の候補�
     racks: {},
   };
   await openApp(page, { scene: sunOnly, camera: VIEW });
+  await selectPaletteKind(page, 'planetary');
   await clickGear(page, 'gear_s');
   const planetary = (await getCandidates(page)).filter((c) => c.kind === 'planetary');
   expect(planetary).toHaveLength(1);
