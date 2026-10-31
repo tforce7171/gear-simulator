@@ -1,7 +1,7 @@
 ---
 id: S4-08
 title: パレットにアイコンを付ける
-status: todo
+status: doing
 depends: [S4-02]
 ---
 
