@@ -10,48 +10,31 @@
   font-weight: 500;
 }
 
+/* 大きさ（S/M/L）・生やす歯車の種類（S2-05）・置く部品を格子に並べる（S4-08）。大きさは 3 つなので 3 列、
+   ほかは 2 列。ボタンはアイコンを上、文字を下にする */
 .gs-palette__sizes {
-  display: flex;
-  gap: 4px;
-}
-
-.gs-palette__size {
-  flex: 1 1 0;
-  min-width: 0;
-  height: 28px;
-  padding: 0 2px;
-  overflow: hidden;
-  border: 1px solid var(--gs-button-border);
-  border-radius: 4px;
-  background: var(--gs-button-bg);
-  color: var(--gs-text);
-  font: inherit;
-  font-size: 12px;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  cursor: pointer;
-}
-
-.gs-palette__size:hover {
-  background: #404651;
-}
-
-.gs-palette__size.is-selected {
-  border-color: #7aa2d6;
-  background: #3a4a60;
-}
-
-/* 生やす歯車の種類（S2-05）: 2 列に並べる */
-.gs-palette__kinds {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 4px;
 }
 
-.gs-palette__kind {
+.gs-palette__kinds,
+.gs-palette__parts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.gs-palette__size,
+.gs-palette__kind,
+.gs-palette__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 3px;
   min-width: 0;
-  min-height: 28px;
-  padding: 2px 4px;
+  padding: 6px 4px 5px;
   border: 1px solid var(--gs-button-border);
   border-radius: 4px;
   background: var(--gs-button-bg);
@@ -59,16 +42,64 @@
   font: inherit;
   font-size: 12px;
   line-height: 1.2;
+  text-align: center;
   cursor: pointer;
 }
 
-.gs-palette__kind:hover {
+/* アイコン（S4-08）。線は currentColor。選んでいないときは控えめな色、選んでいるときは選択の色にする */
+.gs-palette__button-icon {
+  display: block;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  color: var(--gs-text-muted);
+}
+
+.gs-palette__button-icon svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.gs-palette__button-label {
+  max-width: 100%;
+  overflow-wrap: break-word;
+}
+
+/* 大きさは 3 列で幅が狭いので、文字を 1 行にして収まらなければ省く（全体は title で出る。S1-17 からの規則） */
+.gs-palette__size {
+  padding-right: 2px;
+  padding-left: 2px;
+}
+
+.gs-palette__size .gs-palette__button-label {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.gs-palette__size:hover,
+.gs-palette__kind:hover,
+.gs-palette__item:hover {
   background: #404651;
 }
 
+.gs-palette__size:hover .gs-palette__button-icon,
+.gs-palette__kind:hover .gs-palette__button-icon,
+.gs-palette__item:hover .gs-palette__button-icon {
+  color: var(--gs-text);
+}
+
+.gs-palette__size.is-selected,
 .gs-palette__kind.is-selected {
   border-color: #7aa2d6;
   background: #3a4a60;
+}
+
+.gs-palette__size.is-selected .gs-palette__button-icon,
+.gs-palette__kind.is-selected .gs-palette__button-icon,
+.gs-palette__item.is-dragging .gs-palette__button-icon {
+  color: #a9c8ef;
 }
 
 .gs-palette__hint {
@@ -85,54 +116,16 @@
   outline-offset: 1px;
 }
 
+/* 起点のシャフト: 床へドラッグして置く。項目が 1 つなので 2 列を通して置く */
 .gs-palette__item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px;
-  border: 1px solid var(--gs-button-border);
-  border-radius: 4px;
-  background: var(--gs-button-bg);
+  grid-column: 1 / -1;
   cursor: grab;
   touch-action: none;
-}
-
-.gs-palette__item:hover {
-  background: #404651;
 }
 
 .gs-palette__item.is-dragging {
   cursor: grabbing;
   border-color: #7aa2d6;
-}
-
-/* 縦のシャフトに歯車が 1 枚載った形の目印 */
-.gs-palette__icon {
-  position: relative;
-  flex: none;
-  width: 24px;
-  height: 24px;
-}
-
-.gs-palette__icon::before {
-  content: "";
-  position: absolute;
-  left: 11px;
-  top: 0;
-  width: 2px;
-  height: 24px;
-  background: #9aa1ab;
-}
-
-.gs-palette__icon::after {
-  content: "";
-  position: absolute;
-  left: 2px;
-  top: 9px;
-  width: 20px;
-  height: 6px;
-  border-radius: 3px;
-  background: #c8ccd2;
 }
 
 /* 選んだ部品とかみ合えない種類を選んでいるときの注記（S4-02） */

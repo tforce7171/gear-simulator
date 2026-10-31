@@ -1,7 +1,7 @@
 ---
 id: S4-08
 title: パレットにアイコンを付ける
-status: todo
+status: done
 depends: [S4-02]
 ---
 
@@ -44,6 +44,6 @@ depends: [S4-02]
 - アイコンを見て、どの歯車か分かること
 
 ## 完了の条件
-- [ ] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
-- [ ] design.md と後続のタスク資料に、必要な変更を反映した
-- [ ] `status: done` にしてコミットした
+- [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
+- [x] design.md と後続のタスク資料に、必要な変更を反映した
+- [x] `status: done` にしてコミットした
