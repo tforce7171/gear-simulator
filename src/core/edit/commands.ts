@@ -393,10 +393,7 @@ function addRootShaft(
     { id: gearId, shaftId, size: spec.size, teeth, offset: 0 },
     newGearShape(kind),
   );
-  return done({ ...scene, shafts, gears: withEntry(scene.gears, gearId, gear) }, [
-    shaftId,
-    gearId,
-  ]);
+  return done({ ...scene, shafts, gears: withEntry(scene.gears, gearId, gear) }, [shaftId, gearId]);
 }
 
 // 親と同じ大きさの歯車（offset 0）と、それを子に持つ mesh のシャフトを作る

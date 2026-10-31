@@ -1025,9 +1025,7 @@ describe('歯車の無い起点のシャフト（S4-04）', () => {
     const motion = solveMotion(scene, resolveLayout(scene), initialMotionState());
     expect(motion.locks).toEqual([]);
     expect(Math.abs(motion.omegas.shaft_1 ?? 0)).toBeGreaterThan(0);
-    scene = ok(
-      applyCommand(scene, { type: 'addAnchor', shaftId: 'shaft_1' }, ctx),
-    ).scene;
+    scene = ok(applyCommand(scene, { type: 'addAnchor', shaftId: 'shaft_1' }, ctx)).scene;
     expect(validateScene(scene)).toEqual({ ok: true });
     scene = ok(
       applyCommand(

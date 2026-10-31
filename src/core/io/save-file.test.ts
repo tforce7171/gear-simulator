@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
+import { applyCommand, type Command } from '../edit/commands';
 import { gearWidth } from '../geometry/dimensions';
 import { requiredShaftSpans, resolveLayout, withShaftSpans } from '../layout/resolve';
-import { applyCommand, type Command } from '../edit/commands';
 import { createSequentialIdGenerator } from '../scene/ids';
 import { emptyScene } from '../scene/scene';
 import type { Scene } from '../scene/types';

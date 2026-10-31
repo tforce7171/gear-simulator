@@ -10,8 +10,8 @@ import {
   getScene,
   getSelection,
   openApp,
-  placeOnShaft,
   type Point,
+  placeOnShaft,
   project,
 } from '../fixtures/sim';
 import { expect } from '../fixtures/test';
