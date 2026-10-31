@@ -1,7 +1,7 @@
 ---
 id: S4-03
 title: シャフトの長さを持たせ、伸縮とシャフト上の好きな位置への配置
-status: doing
+status: done
 depends: [S4-02]
 ---
 
@@ -76,4 +76,4 @@ depends: [S4-02]
 ## 完了の条件
 - [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
 - [x] design.md と後続のタスク資料（S4-04・S4-05・S4-07）に、必要な変更を反映した
-- [ ] `status: done` にしてコミットした
+- [x] `status: done` にしてコミットした
