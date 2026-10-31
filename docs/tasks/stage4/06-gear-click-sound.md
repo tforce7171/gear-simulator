@@ -1,7 +1,7 @@
 ---
 id: S4-06
 title: モーターのうなりをやめ、歯車のカタカタという音にする
-status: todo
+status: doing
 depends: []
 ---
 
