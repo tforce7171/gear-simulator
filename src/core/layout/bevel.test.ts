@@ -483,7 +483,7 @@ describe('候補', () => {
     perimeterTeeth: 20,
     coaxialSize: 'M',
     coaxialTeeth: 20,
-    coaxialKind: 'spur',
+    kind: 'bevel',
   } as const;
 
   it('A（B の無いシーン）を選ぶ → 直交する 2 軸 × 2 方向の 4 つのかさ歯車の候補（外周の候補は無い）', () => {

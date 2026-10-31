@@ -6,9 +6,10 @@ import {
   type GrowCandidate,
   listGrowCandidates,
   listRackCandidates,
+  type PaletteKind,
 } from '../core/layout/candidates';
 import { resolveLayout } from '../core/layout/resolve';
-import type { Gear, GearKind, Scene, SizeKey } from '../core/scene/types';
+import type { Gear, Scene, SizeKey } from '../core/scene/types';
 import type { CandidateSpec } from '../render/candidates';
 
 // 歯車を生やす（S1-18）。純粋関数のみ。選んだ歯車の候補を列挙し、候補を編集コマンドに変換する
@@ -29,17 +30,19 @@ export function growSpec(
 }
 
 // 選択中の歯車の候補。選択が無い・歯車でない（シャフト）なら []
-// coaxialKind は同じ軸に作る歯車の種類（S2-01。S2-05 からパレットで選んだ種類 AppState.palette.kind）。
-// ラック（S3-04）を選んでいれば、2 つ目以降のピニオンの候補（同じ大きさ・DEFAULT_TEETH の平歯車）
+// paletteKind はパレットで選んだ種類（AppState.palette.kind）。この種類の歯車ができる候補だけを出す（S4-02）。
+// ラック（S3-04）を選んでいれば、2 つ目以降のピニオンの候補（同じ大きさ・DEFAULT_TEETH の平歯車。
+// パレットが平歯車のときだけ）
 export function candidatesFor(
   scene: Scene,
   selection: string | null,
   paletteSize: SizeKey,
-  coaxialKind: GearKind,
+  paletteKind: PaletteKind,
 ): GrowCandidate[] {
   if (selection === null) return [];
   const rack = scene.racks[selection];
   if (rack !== undefined) {
+    if (paletteKind !== 'spur') return [];
     return listRackCandidates(scene, rack.id, { perimeterTeeth: DEFAULT_TEETH[rack.size] });
   }
   const parent = scene.gears[selection];
@@ -49,7 +52,7 @@ export function candidatesFor(
     perimeterTeeth: growSpec(parent, 'perimeter', paletteSize).teeth,
     coaxialSize: coaxial.size,
     coaxialTeeth: coaxial.teeth,
-    coaxialKind,
+    kind: paletteKind,
   });
 }
 

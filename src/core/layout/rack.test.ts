@@ -260,7 +260,7 @@ describe('S3-04 ラック＆ピニオン: 運動', () => {
       perimeterTeeth: DEFAULT_TEETH.M,
       coaxialSize: 'M',
       coaxialTeeth: DEFAULT_TEETH.M,
-      coaxialKind: 'spur',
+      kind: 'rack',
     }).filter((c) => c.kind === 'rack');
     expect(
       candidates.map((c) => (c.kind === 'rack' ? [c.axisStep, c.normalSign, c.teeth] : [])),

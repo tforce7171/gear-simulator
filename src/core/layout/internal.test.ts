@@ -82,7 +82,7 @@ const SPEC_M: GrowSpec = {
   perimeterTeeth: DEFAULT_TEETH.M,
   coaxialSize: 'M',
   coaxialTeeth: DEFAULT_TEETH.M,
-  coaxialKind: 'spur',
+  kind: 'spur',
 };
 
 describe('centerDistance・canMesh・teethRange', () => {
@@ -232,7 +232,7 @@ describe('候補', () => {
         perimeterTeeth: DEFAULT_TEETH[gear.size],
         coaxialSize: gear.size,
         coaxialTeeth: DEFAULT_TEETH[gear.size],
-        coaxialKind: 'internal', // パレットで内歯車を選んでいる
+        kind: 'internal', // パレットで内歯車を選んでいる
       }).filter((c) => c.kind === 'enclose');
     const m20 = encloseOf(spur('gear_s', 'M', 20));
     expect(m20.map((c) => [c.teeth, c.shape])).toEqual([[40, { kind: 'internal', webSide: -1 }]]);
@@ -248,14 +248,14 @@ describe('候補', () => {
     const helical: Gear = { ...spur('gear_h', 'M', 20), kind: 'helical', hand: 'right' };
     const list = listGrowCandidates(single(helical), 'gear_h', {
       ...SPEC_M,
-      coaxialKind: 'internal',
+      kind: 'internal',
     });
     expect(list.some((c) => c.kind === 'enclose')).toBe(false);
   });
 
   it('囲む候補をコマンドにすると、内歯車ができて親とかみ合う（interferences が空）', () => {
     const scene = single(spur('gear_s', 'M', 20));
-    const [c] = listGrowCandidates(scene, 'gear_s', { ...SPEC_M, coaxialKind: 'internal' }).filter(
+    const [c] = listGrowCandidates(scene, 'gear_s', { ...SPEC_M, kind: 'internal' }).filter(
       (c) => c.kind === 'enclose',
     );
     if (c === undefined || c.kind !== 'enclose') throw new Error('no enclose candidate');
@@ -273,7 +273,7 @@ describe('候補', () => {
 
   it('同じ軸の候補で内歯車を作れる（歯数は INTERNAL_MIN_TEETH 以上に上げる。ウェブの外に並べる）', () => {
     const scene = single(spur('gear_s', 'M', 20));
-    const list = listGrowCandidates(scene, 'gear_s', { ...SPEC_M, coaxialKind: 'internal' });
+    const list = listGrowCandidates(scene, 'gear_s', { ...SPEC_M, kind: 'internal' });
     const coaxial = list.filter((c) => c.kind === 'coaxial');
     expect(coaxial.map((c) => [c.teeth, c.shape.kind])).toEqual([
       [24, 'internal'],

@@ -12,6 +12,8 @@ import { defaultPlanetTeeth } from '../geometry/planetary';
 import { rackEndMargin, rackLength, rackPitch, snapRackPosition } from '../geometry/rack';
 import type { Vec3 } from '../math/vec3';
 import {
+  assertNever,
+  GEAR_KIND_LIST,
   gearShape,
   internalEncloseShape,
   makeGear,
@@ -38,19 +40,32 @@ import { resolveAddition, resolveLayout } from './resolve';
 // 生やす候補の列挙（要件 §6、design.md §5）。選んだ歯車について、
 // 外周の候補（新しい mesh のシャフトを作る。親の軸まわりの 8 方向）と、
 // 同じ軸の候補（選んだ歯車のシャフトに通す。歯車の並びの両端の外側）を返す。
-// 外周の子は親とかみ合う形（ハスバ歯車なら逆の hand）、同じ軸は spec.coaxialKind の歯車（S2-01）。
+// 外周の子は親とかみ合う形（ハスバ歯車なら逆の hand）、同じ軸は spec.kind の歯車（S2-01。S4-02 までは spec.coaxialKind）。
 // かさ歯車の親（S2-02）は外周の代わりに、直交する 2 軸 × 2 方向の 4 か所のかさ歯車（新しい bevel のシャフト）を返す。
 // ウォーム・ホイールの親（S2-03）は外周の代わりに、ねじれた位置の 2 軸 × 2 方向の 4 か所に相手（skewPartnerShape。
 // ウォームにはホイール、ホイールにはウォーム）を載せた新しい skew のシャフトを返す。
-// 候補を足した仮のシーン（resolveAddition で、全体を解き直さずに求める）で新しく増えた干渉の組があるものは除く
+// 候補を足した仮のシーン（resolveAddition で、全体を解き直さずに求める）で新しく増えた干渉の組があるものは除く。
+// S4-02 から、候補はパレットで選んだ種類（spec.kind）の歯車ができるものだけを出す（candidateKind が spec.kind のもの）
+
+// パレットの「生やす歯車の種類」（S4-02）。歯車の種類（GearKind）に、ラックと遊星歯車機構を足したもの。
+// ラック・遊星は歯車の種類ではない（ラックは別の部品、遊星はキャリア・遊星・リングの組）ので GearKind には足さない
+export type PaletteKind = GearKind | 'rack' | 'planetary';
+
+// パレットの種類の並び（S4-02）: 歯車の種類（GEAR_KIND_LIST の順）→ ラック → 遊星
+export const PALETTE_KIND_LIST: readonly PaletteKind[] = [...GEAR_KIND_LIST, 'rack', 'planetary'];
+
+export function isPaletteGearKind(kind: PaletteKind): kind is GearKind {
+  return kind !== 'rack' && kind !== 'planetary';
+}
 
 export interface GrowSpec {
   perimeterTeeth: number; // 外周の新しい歯車の歯数（大きさは親と同じ）
   coaxialSize: SizeKey; // 同じ軸の新しい歯車の大きさ
   coaxialTeeth: number; // 同じ軸の新しい歯車の歯数
-  // 同じ軸の新しい歯車の種類（S2-01。ハスバ歯車は hand 'right'。ウォームは歯数によらず 1 条。
-  // 内歯車は歯数を INTERNAL_MIN_TEETH 以上に上げる）。'internal' のときは、平歯車の親を囲む内歯車の候補も出す（S3-02）
-  coaxialKind: GearKind;
+  // パレットで選んだ種類（S4-02。S2-01〜S3-04 の coaxialKind を置き換えた）。この種類の歯車ができる候補だけを出す。
+  // 歯車の種類なら、同じ軸の候補もこの種類で作る（ハスバ歯車は hand 'right'。ウォームは歯数によらず 1 条。
+  // 内歯車は歯数を INTERNAL_MIN_TEETH 以上に上げる）。'rack'・'planetary' なら同じ軸の候補は出さない
+  kind: PaletteKind;
 }
 
 export type GrowCandidate =
@@ -148,7 +163,7 @@ export type GrowCandidate =
       offset: number; // 歯幅の負側の面の位置。AXIAL_SNAP の倍数
       size: SizeKey;
       teeth: number;
-      shape: GearShape; // newGearShape(spec.coaxialKind)
+      shape: GearShape; // newGearShape(spec.kind)
       center: Vec3;
       axis: Axis;
     };
@@ -181,8 +196,8 @@ export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec)
   const candidates: GrowCandidate[] = [];
   // 遊星のシャフトの歯車（S3-03）からは、同じ軸の候補（段付きの遊星）だけを出す
   const orbiting = scene.shafts[parent.shaftId]?.placement.kind === 'planet';
-  const perimeterShape = orbiting ? null : meshPartnerShape(gearShape(parent));
-  const coaxialShape = newGearShape(spec.coaxialKind);
+  const meshShape = orbiting ? null : meshPartnerShape(gearShape(parent));
+  const perimeterShape = meshShape?.kind === spec.kind ? meshShape : null;
   // 内歯車の親（S3-02）の内側の子は、歯数差の条件を満たすように歯数を下げる（大きさの最小を下回るなら出さない）
   const perimeterTeeth =
     parent.kind === 'internal'
@@ -222,10 +237,10 @@ export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec)
   }
 
   // 平歯車の親を囲む内歯車（S3-02）: k·π/4 の向きを順に試し、干渉の増えない最初の 1 つ。
-  // パレットで内歯車を選んでいるとき（spec.coaxialKind が 'internal'）だけ出す（いつも出すと、親を覆う大きなリングの
+  // パレットで内歯車を選んでいるとき（spec.kind が 'internal'）だけ出す（いつも出すと、親を覆う大きなリングの
   // 候補が、親をつかんで回す操作や外周の候補のクリックを奪うため。ピッキングでは候補が歯車より優先される）
   const encloseShape =
-    spec.coaxialKind === 'internal' && !orbiting ? internalEncloseShape(gearShape(parent)) : null;
+    spec.kind === 'internal' && !orbiting ? internalEncloseShape(gearShape(parent)) : null;
   const encloseTeeth = encloseTeethOf(parent);
   for (let k = 0; encloseShape !== null && encloseTeeth !== null; k++) {
     if (k >= PERIMETER_CANDIDATE_COUNT) break;
@@ -254,17 +269,22 @@ export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec)
     break;
   }
 
-  // 遊星歯車機構（S3-03）: 平歯車の親を太陽にする。機構を足した仮のシーン全体を解き、新しい干渉が無ければ出す
-  const planetary = orbiting ? null : planetaryCandidate(scene, parent, baseInterferences);
+  // 遊星歯車機構（S3-03）: 平歯車の親を太陽にする。機構を足した仮のシーン全体を解き、新しい干渉が無ければ出す。
+  // パレットで遊星を選んでいるときだけ（S4-02）
+  const planetary =
+    orbiting || spec.kind !== 'planetary'
+      ? null
+      : planetaryCandidate(scene, parent, baseInterferences);
   if (planetary !== null) candidates.push(planetary);
 
-  // ラック（S3-04）: 平歯車の親に、axisStep 1 → 2、それぞれ normalSign −1 → 1 の 4 か所
-  if (parent.kind === 'spur' && !orbiting) {
+  // ラック（S3-04）: 平歯車の親に、axisStep 1 → 2、それぞれ normalSign −1 → 1 の 4 か所。
+  // パレットでラックを選んでいるときだけ（S4-02）
+  if (parent.kind === 'spur' && !orbiting && spec.kind === 'rack') {
     candidates.push(...rackCandidates(scene, parent, baseInterferences));
   }
 
-  // かさ歯車の親: axisStep 1 → 2、それぞれ side −1 → 1 の 4 か所
-  if (parent.kind === 'bevel' && !orbiting) {
+  // かさ歯車の親: axisStep 1 → 2、それぞれ side −1 → 1 の 4 か所（パレットがかさ歯車のとき。S4-02）
+  if (parent.kind === 'bevel' && !orbiting && spec.kind === 'bevel') {
     for (const axisStep of [1, 2] as const) {
       for (const side of [-1, 1] as const) {
         const shaft: Shaft = {
@@ -306,9 +326,9 @@ export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec)
     }
   }
 
-  // ウォーム・ホイールの親: axisStep 1 → 2、それぞれ side −1 → 1 の 4 か所
+  // ウォーム・ホイールの親: axisStep 1 → 2、それぞれ side −1 → 1 の 4 か所（パレットが相手の種類のとき。S4-02）
   const skewShape = orbiting ? null : skewPartnerShape(gearShape(parent));
-  if (skewShape !== null) {
+  if (skewShape !== null && skewShape.kind === spec.kind) {
     const teeth = skewShape.kind === 'worm' ? WORM_THREADS : spec.perimeterTeeth;
     for (const axisStep of [1, 2] as const) {
       for (const side of [-1, 1] as const) {
@@ -344,6 +364,10 @@ export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec)
     }
   }
 
+  // 同じ軸の候補は、パレットの種類が歯車の種類のときだけ（ラック・遊星は同じ軸に作らない。S4-02）
+  if (!isPaletteGearKind(spec.kind)) return candidates;
+  const coaxialKind = spec.kind;
+  const coaxialShape = newGearShape(coaxialKind);
   // 選んだ歯車のシャフトに載った歯車の並びの、最小と最大の面（区画の両端。ウォームは区画の幅。S2-03。
   // 内歯車はウェブまで含めた全体。S3-02）
   let minFace = Number.POSITIVE_INFINITY;
@@ -355,7 +379,7 @@ export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec)
     maxFace = Math.max(maxFace, hi);
   }
   // 新しい歯車の歯数は種類の範囲に収める（ウォームは 1 条、内歯車は INTERNAL_MIN_TEETH 以上。S3-02）
-  const coaxialRange = teethRange(spec.coaxialKind, spec.coaxialSize);
+  const coaxialRange = teethRange(coaxialKind, spec.coaxialSize);
   const coaxialTeeth = Math.min(Math.max(spec.coaxialTeeth, coaxialRange.min), coaxialRange.max);
   // 新しい歯車が offset からどれだけの範囲を占めるか（内歯車はウェブの側に伸びる）
   const [extentLo, extentHi] = axialExtent(
@@ -396,6 +420,50 @@ export function listGrowCandidates(scene: Scene, gearId: GearId, spec: GrowSpec)
   }
 
   return candidates;
+}
+
+// 候補を置くとできる歯車の種類（S4-02）。パレットの種類と比べる
+export function candidateKind(candidate: GrowCandidate): PaletteKind {
+  switch (candidate.kind) {
+    case 'planetary':
+      return 'planetary';
+    case 'rack':
+      return 'rack';
+    case 'rackPinion':
+    case 'perimeter':
+    case 'bevel':
+    case 'skew':
+    case 'enclose':
+    case 'coaxial':
+      return candidate.shape.kind;
+    default:
+      return assertNever(candidate);
+  }
+}
+
+// 選んだ部品とかみ合う向きに生やせる種類（S4-02）。パレットの種類がこの中に無ければ、外周などの候補は出ず
+// 同じ軸の候補だけになる（パレットの注記に使う）。並びは PALETTE_KIND_LIST の順。
+// 平歯車: 平歯車（外周）・内歯車（囲む）・ラック・遊星。内歯車: 平歯車（内側の外周）。ハスバ歯車: ハスバ歯車（逆の hand）。
+// かさ歯車: かさ歯車。ウォーム: ホイール。ホイール: ウォーム。ねじ歯車: ねじ歯車。ラック: 平歯車（2 つ目以降のピニオン）。
+// 遊星のシャフトの歯車（S3-03）は同じ軸だけなので []。歯車・ラックでない ID・根からたどれない部品も []
+export function meshableKinds(scene: Scene, partId: string): PaletteKind[] {
+  if (scene.racks[partId] !== undefined) return ['spur'];
+  const gear = scene.gears[partId];
+  if (gear === undefined) return [];
+  if (scene.shafts[gear.shaftId]?.placement.kind === 'planet') return [];
+  const shape = gearShape(gear);
+  const kinds = new Set<PaletteKind>();
+  const mesh = meshPartnerShape(shape);
+  if (mesh !== null) kinds.add(mesh.kind);
+  const skew = skewPartnerShape(shape);
+  if (skew !== null) kinds.add(skew.kind);
+  if (gear.kind === 'bevel') kinds.add('bevel');
+  if (internalEncloseShape(shape) !== null) kinds.add('internal');
+  if (gear.kind === 'spur') {
+    kinds.add('rack');
+    kinds.add('planetary');
+  }
+  return PALETTE_KIND_LIST.filter((k) => kinds.has(k));
 }
 
 // ラックの候補（S3-04）。ラックを足した仮のシーン全体を解き、新しい干渉の無いもの

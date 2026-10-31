@@ -1,7 +1,10 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { applyCommand } from '../core/edit/commands';
-import type { GrowCandidate } from '../core/layout/candidates';
-import { createSequentialIdGenerator } from '../core/scene/ids';
+import { candidateKind, type GrowCandidate, PALETTE_KIND_LIST } from '../core/layout/candidates';
+import { newInterferences } from '../core/layout/interference-diff';
+import { resolveLayout } from '../core/layout/resolve';
+import { createRandomIdGenerator, createSequentialIdGenerator } from '../core/scene/ids';
 import type { Scene, SpurGear } from '../core/scene/types';
 import { candidateSpec, candidatesFor, growCommand, growSpec } from './grow';
 
@@ -122,12 +125,10 @@ describe('パレットの種類で同じ軸の候補を作る（S2-05）', () =>
     expect(created?.teeth).toBe(1);
   });
 
-  it('外周の候補の種類は親で決まり、パレットの種類によらない', () => {
-    const perimeter = candidatesFor(oneRoot, 'gear_a', 'M', 'worm').filter(
-      (c) => c.kind === 'perimeter',
-    );
-    expect(perimeter.length).toBeGreaterThan(0);
-    for (const c of perimeter) expect(c.shape.kind).toBe('spur');
+  it('パレットの種類が親とかみ合えない種類なら、外周の候補は出ない（S4-02。S2-05 では親で決まっていた）', () => {
+    const list = candidatesFor(oneRoot, 'gear_a', 'M', 'worm');
+    expect(list.length).toBeGreaterThan(0);
+    expect(list.every((c) => c.kind === 'coaxial')).toBe(true);
   });
 });
 
@@ -157,5 +158,63 @@ describe('candidateSpec', () => {
       followRatio: 1,
       withShaft: false,
     });
+  });
+});
+
+describe('表示した候補はどれも置ける（S4-02）', () => {
+  function fixture(name: string): Scene {
+    const url = new URL(`../../e2e/fixtures/${name}.json`, import.meta.url);
+    return JSON.parse(readFileSync(url, 'utf8')) as Scene;
+  }
+  const SCENES = [
+    'showcase',
+    'stage2-showcase',
+    'stage3-showcase',
+    'rack-basic',
+    'internal-pair',
+    'planetary-ring-fixed',
+    'worm-basic',
+    'bevel-pair',
+    'crossed-pair',
+    'helical-pair',
+  ];
+  for (const name of SCENES) {
+    it(`${name}: すべての歯車・ラック × パレットの種類 × 大きさの候補を growCommand で置くと、拒否されず干渉も増えない`, () => {
+      const scene = fixture(name);
+      const before = resolveLayout(scene);
+      let count = 0;
+      for (const id of [...Object.keys(scene.gears), ...Object.keys(scene.racks)]) {
+        for (const kind of PALETTE_KIND_LIST) {
+          for (const size of ['S', 'M', 'L'] as const) {
+            const list = candidatesFor(scene, id, size, kind);
+            for (const c of list) {
+              expect(candidateKind(c)).toBe(kind);
+              const result = applyCommand(scene, growCommand(c), {
+                ids: createRandomIdGenerator(),
+              });
+              expect(result.ok, `${id} ${kind} ${size} ${c.kind}`).toBe(true);
+              if (!result.ok) continue;
+              expect(newInterferences(before, resolveLayout(result.scene))).toEqual([]);
+              count++;
+            }
+          }
+        }
+      }
+      expect(count).toBeGreaterThan(0);
+    });
+  }
+});
+
+describe('ラックを選んだとき（S4-02）', () => {
+  it('パレットが平歯車なら 2 つ目のピニオンの候補、それ以外は候補なし', () => {
+    const url = new URL('../../e2e/fixtures/rack-basic.json', import.meta.url);
+    const scene = JSON.parse(readFileSync(url, 'utf8')) as Scene;
+    const rackId = Object.keys(scene.racks)[0] as string;
+    const spur = candidatesFor(scene, rackId, 'M', 'spur');
+    expect(spur.length).toBeGreaterThan(0);
+    expect(spur.every((c) => c.kind === 'rackPinion')).toBe(true);
+    for (const kind of PALETTE_KIND_LIST.filter((k) => k !== 'spur')) {
+      expect(candidatesFor(scene, rackId, 'M', kind)).toEqual([]);
+    }
   });
 });
