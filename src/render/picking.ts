@@ -1,4 +1,4 @@
-import { type Camera, type Object3D, Raycaster, Vector2 } from 'three';
+import { type Camera, type Material, type Object3D, Raycaster, Vector2 } from 'three';
 import type { Vec3 } from '../core/math/vec3';
 import { choosePick, type PickKind } from '../input/pick-priority';
 
@@ -11,6 +11,9 @@ export interface PickHit {
   kind: PickKind;
   id: string;
   point: Vec3; // 当たった点（ワールド座標）
+  // 見えない当たり判定（ハンドルの太めの判定など。材質が visible: false のもの）にだけ当たったとき true（S4-02）。
+  // 見えている形に当たったときは付けない
+  proxyOnly?: true;
 }
 
 interface PickUserData {
@@ -33,6 +36,14 @@ function pickTargetOf(object: Object3D): { kind: PickKind; id: string } | null {
     }
   }
   return null;
+}
+
+// 見えない当たり判定か（材質が visible: false）
+function isProxy(object: Object3D): boolean {
+  const material = (object as Object3D & { material?: Material | Material[] }).material;
+  if (material === undefined) return false;
+  const list = Array.isArray(material) ? material : [material];
+  return list.length > 0 && list.every((m) => !m.visible);
 }
 
 export interface Picker {
@@ -63,7 +74,13 @@ export function createPicker(deps: PickerDeps): Picker {
       // 描く前（sync の直後など）でも今の位置で当てる
       deps.root.updateMatrixWorld();
       raycaster.setFromCamera(ndc, camera);
-      const hits: Array<{ kind: PickKind; id: string; distance: number; point: Vec3 }> = [];
+      const hits: Array<{
+        kind: PickKind;
+        id: string;
+        distance: number;
+        point: Vec3;
+        proxy: boolean;
+      }> = [];
       for (const hit of raycaster.intersectObject(deps.root, true)) {
         const target = pickTargetOf(hit.object);
         if (target === null || (kinds !== undefined && !kinds.includes(target.kind))) continue;
@@ -71,13 +88,18 @@ export function createPicker(deps: PickerDeps): Picker {
           ...target,
           distance: hit.distance,
           point: [hit.point.x, hit.point.y, hit.point.z],
+          proxy: isProxy(hit.object),
         });
       }
       const chosen = choosePick(hits);
       if (chosen === null) return null;
       // 選んだ部品の中で最も手前の点（intersectObject の結果は距離順）
-      const first = hits.find((h) => h.kind === chosen.kind && h.id === chosen.id);
-      return first === undefined ? null : { kind: chosen.kind, id: chosen.id, point: first.point };
+      const mine = hits.filter((h) => h.kind === chosen.kind && h.id === chosen.id);
+      const first = mine[0];
+      if (first === undefined) return null;
+      const hit: PickHit = { kind: chosen.kind, id: chosen.id, point: first.point };
+      if (mine.every((h) => h.proxy)) hit.proxyOnly = true;
+      return hit;
     },
   };
 }

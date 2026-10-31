@@ -79,7 +79,9 @@ export interface Interactions {
   endRootDrag(pageX: number, pageY: number): void;
   cancelRootDrag(): void;
   // ハンドル（ピッキングの ID）の上の 'app' の pointerdown。ドラッグを始めたら true
-  beginHandleDrag(e: PointerEvent, handleId: string): boolean;
+  // deferred が真なら、DRAG_THRESHOLD_PX 以上動くまでハンドルを動かさず、それまでに離せば何もしない（クリックのまま。
+  // S4-02: ハンドルの陰に候補があるとき、クリックは候補に渡す）
+  beginHandleDrag(e: PointerEvent, handleId: string, deferred?: boolean): boolean;
   // ポインターの下の部品の本体（候補・ハンドルを除いたピッキング）が、選んでいる detached のシャフトの
   // 本体（シャフト・その上の歯車・モーター）か。そうなら左ボタンは付け直しのドラッグになる（S1-19）
   isReattachBody(body: { kind: PickKind; id: string } | null): boolean;
@@ -114,6 +116,8 @@ interface HandleDrag {
   pointerId: number;
   session: HandleDragSession;
   moved: ReadonlySet<string>;
+  // 押した位置（deferred のとき）。DRAG_THRESHOLD_PX 以上動くまでは null にしない（S4-02）
+  pending: { x: number; y: number } | null;
 }
 
 interface ReattachDrag {
@@ -176,7 +180,7 @@ export function createInteractions(deps: InteractionsDeps): Interactions {
   } {
     if (
       rootDrag !== null ||
-      handleDrag !== null ||
+      (handleDrag !== null && handleDrag.pending === null) ||
       reattachDrag?.active != null ||
       handDrag?.active === true
     ) {
@@ -325,6 +329,10 @@ export function createInteractions(deps: InteractionsDeps): Interactions {
       return;
     }
     if (handleDrag === null || e.pointerId !== handleDrag.pointerId) return;
+    if (handleDrag.pending !== null) {
+      if (!exceedsDragThreshold(handleDrag.pending, { x: e.pageX, y: e.pageY })) return;
+      handleDrag.pending = null;
+    }
     const ray = deps.rayAt(e.pageX, e.pageY);
     if (ray !== null) handleDrag.session.update(ray, dragInput(e));
   };
@@ -341,6 +349,11 @@ export function createInteractions(deps: InteractionsDeps): Interactions {
       return;
     }
     if (handleDrag === null || e.pointerId !== handleDrag.pointerId) return;
+    // 動かさずに離した deferred のドラッグは、何も確定しない（クリックは候補が受ける。S4-02）
+    if (handleDrag.pending !== null) {
+      endHandleDrag(false);
+      return;
+    }
     const ray = deps.rayAt(e.pageX, e.pageY);
     if (ray !== null) handleDrag.session.update(ray, dragInput(e));
     endHandleDrag(true);
@@ -456,7 +469,7 @@ export function createInteractions(deps: InteractionsDeps): Interactions {
     cancelRootDrag() {
       rootDrag = null;
     },
-    beginHandleDrag(e, handleId) {
+    beginHandleDrag(e, handleId, deferred = false) {
       if (rootDrag !== null || handleDrag !== null || reattachDrag !== null || handDrag !== null) {
         return false;
       }
@@ -470,6 +483,7 @@ export function createInteractions(deps: InteractionsDeps): Interactions {
         pointerId: e.pointerId,
         session,
         moved: handleMovedParts(scene, handle),
+        pending: deferred ? { x: e.pageX, y: e.pageY } : null,
       };
       try {
         canvas.setPointerCapture(e.pointerId);

@@ -1,23 +1,39 @@
 // 部品パレットの中身（S1-17）。歯車の大きさの選択、生やす歯車の種類の選択（S2-05）と、床へドラッグして置く起点のシャフトの項目。
 // ドラッグは項目に setPointerCapture して受け、位置（ページ座標）を知らせる。どこで離したか
 // （描画領域の上か）の判断と、置く処理は受け取る側（app/interactions）が行う
+import { onLanguageChange, t } from '../app/i18n';
 import type { MessageKey } from '../core/i18n';
-import { GEAR_KIND_LIST } from '../core/scene/gear-shape';
-import type { GearKind, SizeKey } from '../core/scene/types';
+import { PALETTE_KIND_LIST, type PaletteKind } from '../core/layout/candidates';
+import type { SizeKey } from '../core/scene/types';
 import { bindText, h } from './dom';
 import './palette.css';
 
 export const PALETTE_SIZES: readonly SizeKey[] = ['S', 'M', 'L'];
-// 生やす歯車の種類の並び（S2-05）: 平歯車・ハスバ・かさ・ウォーム・ホイール・ねじ歯車
-export const PALETTE_KINDS: readonly GearKind[] = GEAR_KIND_LIST;
+// 生やす歯車の種類の並び（S2-05）: 平歯車・ハスバ・かさ・ウォーム・ホイール・ねじ歯車・内歯車（S3-02）・
+// ラック・遊星（S4-02）
+export const PALETTE_KINDS: readonly PaletteKind[] = PALETTE_KIND_LIST;
+
+// パレットの種類の表示名（S4-02）。歯車の種類は gearKind.<種類>、ラック・遊星は paletteKind.<種類>
+export function paletteKindLabel(kind: PaletteKind): MessageKey {
+  return kind === 'rack' || kind === 'planetary' ? `paletteKind.${kind}` : `gearKind.${kind}`;
+}
+
+// 選んでいる部品とかみ合う向きに生やせる種類（S4-02。core/layout/candidates の meshableKinds）。
+// subject は選んでいる部品が歯車かラックか。選択が無い・歯車でもラックでもなければ null
+export interface MeshableInfo {
+  readonly subject: 'gear' | 'rack';
+  readonly kinds: readonly PaletteKind[];
+}
 
 export interface PaletteDeps {
   readonly body: HTMLElement; // UiShell.palette.body
   readonly getSize: () => SizeKey;
   readonly setSize: (size: SizeKey) => void;
-  // 同じ軸の候補で作る歯車の種類（S2-05）
-  readonly getKind: () => GearKind;
-  readonly setKind: (kind: GearKind) => void;
+  // 生やす歯車の種類（S2-05。S4-02 からラック・遊星も）
+  readonly getKind: () => PaletteKind;
+  readonly setKind: (kind: PaletteKind) => void;
+  // 選んでいる部品とかみ合える種類（S4-02）。パレットの種類が入っていなければ注記を出す
+  readonly getMeshable: () => MeshableInfo | null;
   // 起点のシャフトの項目のドラッグ（左ボタン）
   readonly onRootDragStart: (pageX: number, pageY: number) => void;
   readonly onRootDragMove: (pageX: number, pageY: number) => void;
@@ -62,7 +78,7 @@ export function createPalette(deps: PaletteDeps): Palette {
   }
   sizeSection.append(sizeLabel, sizeGroup);
 
-  // 生やす歯車の種類（S2-05）。同じ軸の候補はこの種類で作る（外周などの候補の種類は親で決まる）
+  // 生やす歯車の種類（S2-05）。候補はこの種類の歯車ができるものだけ（S4-02）
   const kindSection = h('section', 'gs-palette__section');
   const kindLabel = h('h3', 'gs-palette__label', 'palette-kind-label');
   kindLabel.id = 'gs-palette-kind-label';
@@ -70,13 +86,13 @@ export function createPalette(deps: PaletteDeps): Palette {
   const kindGroup = h('div', 'gs-palette__kinds', 'palette-kind');
   kindGroup.setAttribute('role', 'radiogroup');
   kindGroup.setAttribute('aria-labelledby', kindLabel.id);
-  const kindButtons = new Map<GearKind, HTMLButtonElement>();
+  const kindButtons = new Map<PaletteKind, HTMLButtonElement>();
   for (const kind of PALETTE_KINDS) {
     const button = h('button', 'gs-palette__kind', `palette-kind-${kind}`);
     button.type = 'button';
     button.setAttribute('role', 'radio');
     button.dataset.kind = kind;
-    text(button, `gearKind.${kind}`);
+    text(button, paletteKindLabel(kind));
     button.addEventListener('click', () => {
       deps.setKind(kind);
       refresh();
@@ -86,7 +102,11 @@ export function createPalette(deps: PaletteDeps): Palette {
   }
   const kindHint = h('p', 'gs-palette__hint', 'palette-kind-hint');
   text(kindHint, 'palette.kind.hint');
-  kindSection.append(kindLabel, kindGroup, kindHint);
+  // 選んでいる部品とかみ合えない種類を選んでいるときの注記（S4-02）。「この歯車とかみ合えるのは〇〇です」
+  const kindNote = h('p', 'gs-palette__note', 'palette-kind-note');
+  kindNote.setAttribute('role', 'status');
+  kindNote.hidden = true;
+  kindSection.append(kindLabel, kindGroup, kindNote, kindHint);
 
   // 置く部品
   const partsSection = h('section', 'gs-palette__section');
@@ -144,6 +164,23 @@ export function createPalette(deps: PaletteDeps): Palette {
   rootItem.addEventListener('pointercancel', onPointerCancel);
   rootItem.addEventListener('lostpointercapture', onPointerCancel);
 
+  // 注記の文字列。出さないなら null
+  function noteText(): string | null {
+    const meshable = deps.getMeshable();
+    if (meshable === null || meshable.kinds.includes(deps.getKind())) return null;
+    if (meshable.kinds.length === 0) return t('palette.kind.note.none');
+    const names = meshable.kinds.map((k) => t(paletteKindLabel(k)));
+    const key = meshable.subject === 'rack' ? 'palette.kind.note.rack' : 'palette.kind.note';
+    return t(key, { kinds: names.join(t('palette.kind.note.separator')) });
+  }
+  function refreshNote(): void {
+    const text = noteText();
+    const hidden = text === null;
+    if (kindNote.hidden !== hidden) kindNote.hidden = hidden;
+    if (text !== null && kindNote.textContent !== text) kindNote.textContent = text;
+  }
+  unbind.push(onLanguageChange(refreshNote));
+
   function refresh(): void {
     const current = deps.getSize();
     for (const [size, button] of sizeButtons) {
@@ -157,6 +194,7 @@ export function createPalette(deps: PaletteDeps): Palette {
       button.setAttribute('aria-checked', String(on));
       button.classList.toggle('is-selected', on);
     }
+    refreshNote();
   }
   refresh();
 

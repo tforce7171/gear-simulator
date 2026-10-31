@@ -13,6 +13,7 @@ import { computeMeshVoices, computeMotorHums, lockPosition } from './core/audio-
 import { AUTOSAVE_DEBOUNCE_MS, THUMBNAIL_SIZE } from './core/constants';
 import { toSaveFile } from './core/io/save-file';
 import { boundsOf } from './core/layout/bounds';
+import { meshableKinds } from './core/layout/candidates';
 import { resolveLayout } from './core/layout/resolve';
 import { shaftWorldOrigin } from './core/layout/world';
 import { defaultSettings } from './core/settings';
@@ -20,6 +21,7 @@ import { nextTheme, THEME_AUDIO_MATERIAL } from './core/theme';
 import { installGearSim } from './debug/gear-sim';
 import { type ContextRequest, createCameraInput } from './input/camera';
 import { createKeyboard, isTypingTarget } from './input/keyboard';
+import type { PickKind } from './input/pick-priority';
 import { createSelectionInput } from './input/selection-input';
 import { createSpaceTapDetector } from './input/space-tap';
 import { createAxisGizmo } from './render/axis-gizmo';
@@ -148,15 +150,27 @@ const syncDisplay = (): void => {
   interactions.beforeRender();
 };
 // ピッキング（S1-16）。描く前（loadScene や編集の直後）でも今のシーンで当てるように、先に同期する
-const pickAt = (x: number, y: number) => {
+const pickAt = (x: number, y: number, kinds?: readonly PickKind[]) => {
   syncDisplay();
-  return renderer.pick(x, y);
+  return renderer.pick(x, y, kinds);
 };
 // 部品の本体（候補・ハンドルを除く）。候補の陰にある本体を調べる（S1-19）
 const BODY_KINDS = ['gear', 'carrier', 'rack', 'motor', 'shaft'] as const;
 const bodyAt = (x: number, y: number) => {
   syncDisplay();
   return renderer.pick(x, y, BODY_KINDS);
+};
+// ハンドルの陰の候補（S4-02）
+const candidateAt = (x: number, y: number) => pickAt(x, y, ['candidate']);
+// クリックで受け取る部品（S4-02）。ハンドルの見えない太めの当たり判定にだけ当たり、その陰に候補があれば候補にする
+// （ハンドルはドラッグでしか使わない。そうしないと、ハンドルの近くの候補をクリックしても置けない）。
+// 見えているハンドルの形の上のクリックは、これまでどおりハンドル（何もしない）
+// sync が偽なら描画の同期をしない（毎フレームのマウスの位置の判定。描く直前に同期済み）
+const clickTargetAt = (x: number, y: number, sync = true) => {
+  const pick = sync ? pickAt : renderer.pick;
+  const hit = pick(x, y);
+  if (hit?.kind !== 'handle' || hit.proxyOnly !== true) return hit;
+  return pick(x, y, ['candidate']) ?? hit;
 };
 // 部品・ハンドルの上の左ボタンはカメラを回さない。候補の上は左クリックだけアプリが受け取り、
 // 左ドラッグはカメラの回転にする（候補は手で回せないため。S1-18）。ただし、選んでいる detached の
@@ -173,7 +187,8 @@ cameraInput.setHitTest((x, y) => {
 cameraInput.onAppPointerDown((e) => {
   const hit = pickAt(e.pageX, e.pageY);
   if (hit?.kind === 'handle') {
-    interactions.beginHandleDrag(e, hit.id);
+    // ハンドルの陰に候補があれば、しきい値以上動いてからハンドルを動かす（動かさずに離せば候補のクリック。S4-02）
+    interactions.beginHandleDrag(e, hit.id, candidateAt(e.pageX, e.pageY) !== null);
     return;
   }
   const body = bodyAt(e.pageX, e.pageY);
@@ -185,7 +200,7 @@ cameraInput.onAppPointerDown((e) => {
 // ハンドルのクリックでは選択を変えない（S1-17）。候補のクリックでは歯車を生やして選ぶ（S1-18）
 const selectAt = (x: number, y: number): void => {
   const { scene } = store.getState();
-  const hit = pickAt(x, y);
+  const hit = clickTargetAt(x, y);
   if (hit?.kind === 'handle') return;
   if (hit?.kind === 'candidate') {
     interactions.grow(Number(hit.id));
@@ -274,6 +289,18 @@ const palette = createPalette({
   setSize: (size) => store.dispatch({ type: 'setPaletteSize', size }),
   getKind: () => store.getState().palette.kind,
   setKind: (kind) => store.dispatch({ type: 'setPaletteKind', kind }),
+  // 選んでいる歯車・ラックとかみ合える種類（S4-02。パレットの注記）
+  getMeshable: () => {
+    const { scene, selection } = store.getState();
+    if (selection === null) return null;
+    if (scene.racks[selection] !== undefined) {
+      return { subject: 'rack', kinds: meshableKinds(scene, selection) };
+    }
+    if (scene.gears[selection] !== undefined) {
+      return { subject: 'gear', kinds: meshableKinds(scene, selection) };
+    }
+    return null;
+  },
   onRootDragStart: (x, y) => interactions.beginRootDrag(x, y),
   onRootDragMove: (x, y) => interactions.moveRootDrag(x, y),
   onRootDragEnd: (x, y) => interactions.endRootDrag(x, y),
@@ -433,7 +460,7 @@ const view = {
     const hit =
       hoverPoint === null || interactions.isDragging()
         ? null
-        : renderer.pick(hoverPoint.x, hoverPoint.y);
+        : clickTargetAt(hoverPoint.x, hoverPoint.y, false);
     // マウスを乗せた候補は濃く表示する（S1-18）
     interactions.setHoveredCandidate(hit?.kind === 'candidate' ? Number(hit.id) : null);
     interactions.beforeRender();
