@@ -1,4 +1,11 @@
-import { GEAR_SIZES, INTERNAL_MIN_TEETH, WORM_THREADS } from '../constants';
+import {
+  AXIAL_SNAP,
+  COLLISION_EPS,
+  GEAR_SIZES,
+  GEAR_WIDTH_RANGE,
+  INTERNAL_MIN_TEETH,
+  WORM_THREADS,
+} from '../constants';
 import { assertNever } from '../scene/gear-shape';
 import type { Gear, GearKind, SizeKey } from '../scene/types';
 import { internalExtent, internalRimRadius } from './internal';
@@ -7,9 +14,51 @@ import { wormLength, wormOutsideRadius, wormPitchRadius, wormSectionWidth } from
 
 // 歯車の種類ごとの寸法（S2-03。design.md §4・§5）
 
+// 厚さ（width）を測る歯車の形。省けば大きさごとの歯幅（S4-05）
+interface Sized {
+  readonly kind: GearKind;
+  readonly size: SizeKey;
+  readonly width?: number;
+}
+
+// 厚さを変えられる種類か（S4-05）。平歯車・ハスバ歯車・内歯車・ねじ歯車。かさ歯車・ウォーム・ホイールは大きさごとの歯幅で固定
+export function isWidthAdjustable(kind: GearKind): boolean {
+  switch (kind) {
+    case 'spur':
+    case 'helical':
+    case 'internal':
+    case 'crossedHelical':
+      return true;
+    case 'bevel':
+    case 'worm':
+    case 'wormWheel':
+      return false;
+    default:
+      return assertNever(kind);
+  }
+}
+
+// 厚さが範囲（GEAR_WIDTH_RANGE、AXIAL_SNAP 刻み）に入るか（S4-05。歯車とラックで共通）
+export function widthInRange(width: number): boolean {
+  return (
+    Number.isFinite(width) &&
+    width >= GEAR_WIDTH_RANGE.min &&
+    width <= GEAR_WIDTH_RANGE.max &&
+    width % AXIAL_SNAP === 0
+  );
+}
+
+// 歯車の厚さ（歯幅。S4-05）。厚さを変えられる種類は width、省けば大きさごとの歯幅（GEAR_SIZES の faceWidth）。
+// 変えられない種類（かさ歯車・ウォーム・ホイール）は常に大きさごとの歯幅（ウォームの区画は sectionWidth）
+export function gearWidth(gear: Sized): number {
+  const face = GEAR_SIZES[gear.size].faceWidth;
+  return isWidthAdjustable(gear.kind) ? (gear.width ?? face) : face;
+}
+
 // 軸方向に占める区画の幅。offset は区画の負側の面、中心は区画の中央。
-// 平歯車・ハスバ歯車・かさ歯車・ホイール・ねじ歯車（S2-04）は大きさの歯幅、ウォームは長さを AXIAL_SNAP の倍数に切り上げた値
-export function sectionWidth(gear: { readonly kind: GearKind; readonly size: SizeKey }): number {
+// 平歯車・ハスバ歯車・かさ歯車・ホイール・ねじ歯車（S2-04）・内歯車は歯幅（gearWidth。S4-05 から歯車ごと）、
+// ウォームは長さを AXIAL_SNAP の倍数に切り上げた値
+export function sectionWidth(gear: Sized): number {
   switch (gear.kind) {
     case 'spur':
     case 'helical':
@@ -17,7 +66,7 @@ export function sectionWidth(gear: { readonly kind: GearKind; readonly size: Siz
     case 'wormWheel':
     case 'crossedHelical':
     case 'internal':
-      return GEAR_SIZES[gear.size].faceWidth;
+      return gearWidth(gear);
     case 'worm':
       return wormSectionWidth(gear.size);
     default:
@@ -47,13 +96,12 @@ export function gearPitchRadius(gear: {
 }
 
 // 歯車を囲む円柱（中心は歯車の中心、軸は歯車の軸）の半径と半分の長さ。干渉判定と表示の範囲に使う。
-// 歯先円 × 歯幅。ウォームは半径 5m + m、長さ 5πm（歯のある部分。区画の幅ではない）。
+// 歯先円 × 歯幅（gearWidth。S4-05 から歯車ごと）。ウォームは半径 5m + m、長さ 5πm（歯のある部分。区画の幅ではない）。
 // 内歯車（S3-02）はリムの外側の半径 R + 3.25m × 歯幅（リングだけ。ウェブとつなぎの筒は含めない）
-export function gearEnvelope(gear: {
-  readonly kind: GearKind;
-  readonly size: SizeKey;
-  readonly teeth: number;
-}): { radius: number; halfWidth: number } {
+export function gearEnvelope(gear: Sized & { readonly teeth: number }): {
+  radius: number;
+  halfWidth: number;
+} {
   switch (gear.kind) {
     case 'spur':
     case 'helical':
@@ -62,14 +110,14 @@ export function gearEnvelope(gear: {
     case 'crossedHelical':
       return {
         radius: outsideRadius(gear.size, gear.teeth),
-        halfWidth: GEAR_SIZES[gear.size].faceWidth / 2,
+        halfWidth: gearWidth(gear) / 2,
       };
     case 'worm':
       return { radius: wormOutsideRadius(gear.size), halfWidth: wormLength(gear.size) / 2 };
     case 'internal':
       return {
         radius: internalRimRadius(gear.size, gear.teeth),
-        halfWidth: GEAR_SIZES[gear.size].faceWidth / 2,
+        halfWidth: gearWidth(gear) / 2,
       };
     default:
       return assertNever(gear.kind);
@@ -119,8 +167,8 @@ export function axialExtent(gear: Gear): readonly [number, number] {
   return [gear.offset, gear.offset + sectionWidth(gear)];
 }
 
-// 歯車の厚さ（S4-03 で保存形式に入れた、省略できる width）。省けば大きさごとの歯幅（GEAR_SIZES の faceWidth）。
-// S4-03 の時点では読み書きするだけで、形・干渉・かみ合いは大きさごとの歯幅のまま（使う所の切り替えは S4-05）
-export function gearWidth(gear: { readonly size: SizeKey; readonly width?: number }): number {
-  return gear.width ?? GEAR_SIZES[gear.size].faceWidth;
+// 2 枚の歯車の歯幅の区間（中心の軸方向の差 axial、厚さ wa・wb）が COLLISION_EPS より深く重なるか（S4-05。
+// かみ合いの判定に使う。厚さの違う 2 枚も、少しでも重なっていればかみ合う）
+export function faceOverlaps(axial: number, wa: number, wb: number): boolean {
+  return (wa + wb) / 2 - Math.abs(axial) > COLLISION_EPS;
 }

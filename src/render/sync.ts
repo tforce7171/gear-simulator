@@ -11,6 +11,8 @@ import {
   Vector3,
 } from 'three';
 import { CARRIER_THICKNESS } from '../core/constants';
+import { gearWidth } from '../core/geometry/dimensions';
+import { rackWidth } from '../core/geometry/rack';
 import type { MotionState } from '../core/kinematics/types';
 import type { Layout, ShaftLayout } from '../core/layout/types';
 import { gearWorldCenter, rackWorldOrigin, shaftWorldOrigin } from '../core/layout/world';
@@ -363,16 +365,16 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
   const anchors = new Map<AnchorId, AnchorEntry>();
   const carriers = new Map<CarrierId, CarrierEntry>();
   const racks = new Map<RackId, RackEntry>();
-  // ラックの形状データ（大きさ・歯数ごとに共有し、使う数を数える）
+  // ラックの形状データ（大きさ・歯数・厚さごとに共有し、使う数を数える）
   const rackGeometries = new Map<string, { geometry: ExtrudeGeometry; count: number }>();
   const acquireRackGeometry = (rack: Rack): ExtrudeGeometry => {
-    const key = rackShapeKey(rack.size, rack.teeth);
+    const key = rackShapeKey(rack.size, rack.teeth, rackWidth(rack));
     const hit = rackGeometries.get(key);
     if (hit !== undefined) {
       hit.count++;
       return hit.geometry;
     }
-    const geometry = buildRackGeometry(rack.size, rack.teeth);
+    const geometry = buildRackGeometry(rack.size, rack.teeth, rackWidth(rack));
     rackGeometries.set(key, { geometry, count: 1 });
     return geometry;
   };
@@ -407,7 +409,7 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
 
   function removeGear(id: GearId, entry: GearEntry): void {
     root.remove(entry.pivot);
-    cache.release(entry.gear, entry.gear.size, entry.gear.teeth);
+    cache.release(entry.gear, entry.gear.size, entry.gear.teeth, gearWidth(entry.gear));
     gears.delete(id);
   }
 
@@ -475,7 +477,11 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
       body.receiveShadow = true;
       setPickTarget(body, 'rack', rack.id);
       root.add(body);
-      racks.set(rack.id, { rack, key: rackShapeKey(rack.size, rack.teeth), body });
+      racks.set(rack.id, {
+        rack,
+        key: rackShapeKey(rack.size, rack.teeth, rackWidth(rack)),
+        body,
+      });
     }
   }
 
@@ -495,7 +501,7 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
       let entry = gears.get(gear.id);
       if (entry === undefined) {
         const body = new Mesh(
-          cache.acquire(gear, gear.size, gear.teeth),
+          cache.acquire(gear, gear.size, gear.teeth, gearWidth(gear)),
           gearMaterials[gear.kind].none,
         );
         body.scale.z = gearBodyScaleZ(gear);

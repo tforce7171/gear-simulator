@@ -12,6 +12,7 @@ interface InternalLike {
   readonly size: SizeKey;
   readonly offset: number;
   readonly webSide: 1 | -1;
+  readonly width?: number; // 厚さ（S4-05）。省けば大きさごとの歯幅
 }
 
 // 歯先円（内側）の半径 R − m。中空の円柱の内側の半径
@@ -32,9 +33,9 @@ export function internalRimRadius(size: SizeKey, teeth: number): number {
 // シャフトの原点からの軸方向の範囲 [lo, hi]（offset と同じ座標）
 export type AxialRange = readonly [number, number];
 
-// 歯のあるリング（区画）: [offset, offset + 歯幅]
+// 歯のあるリング（区画）: [offset, offset + 歯幅]。歯幅は width（S4-05）、省けば大きさごとの歯幅
 export function internalRingRange(gear: InternalLike): AxialRange {
-  return [gear.offset, gear.offset + GEAR_SIZES[gear.size].faceWidth];
+  return [gear.offset, gear.offset + (gear.width ?? GEAR_SIZES[gear.size].faceWidth)];
 }
 
 // ウェブ（円板とボス）: リングの webSide の側の面から INTERNAL_WEB_GAP 離れた位置から、INTERNAL_WEB_THICKNESS

@@ -82,7 +82,7 @@
 | [S4-02](stage4/02-candidates-by-palette-kind.md) | 生やす候補をパレットで選んだ種類だけにする | - | done |
 | [S4-03](stage4/03-shaft-length-and-free-placement.md) | シャフトの長さを持たせ、伸縮とシャフト上の好きな位置への配置 | S4-02 | done |
 | [S4-04](stage4/04-root-shaft-without-gear.md) | 起点のシャフトを歯車なしで置く | S4-03 | done |
-| [S4-05](stage4/05-gear-width.md) | 歯車の厚さを変えられるようにする | S4-03 | todo |
+| [S4-05](stage4/05-gear-width.md) | 歯車の厚さを変えられるようにする | S4-03 | done |
 | [S4-06](stage4/06-gear-click-sound.md) | モーターのうなりをやめ、歯車のカタカタという音にする | - | todo |
 | [S4-07](stage4/07-motor-model.md) | モーターを本物らしい形にする | S4-03 | todo |
 | [S4-08](stage4/08-palette-icons.md) | パレットにアイコンを付ける | S4-02 | todo |

@@ -1,4 +1,5 @@
-import { CARRIER_GAP, GEAR_SIZES } from '../constants';
+import { CARRIER_GAP } from '../constants';
+import { gearWidth } from '../geometry/dimensions';
 import { makeGear } from './gear-shape';
 import type { Carrier, CarrierId, Gear, GearId, Scene, Shaft, ShaftId } from './types';
 
@@ -18,6 +19,7 @@ export interface PlanetaryIds {
 // - 遊星のシャフト（planet、angle = 2πk/n）と遊星歯車（太陽と同じ大きさ、z_p 歯、offset 0）
 // - リングのシャフト（concentric）と内歯車（webSide −1、z_r 歯）。原点が太陽のシャフトと同じなので、offset を太陽と
 //   同じにすれば同じ面にそろう
+// 太陽が厚さ（width。S4-05）を持てば、遊星とリングも同じ厚さにする（キャリアの板まで同じ面にそろう）
 export function withPlanetary(
   scene: Scene,
   sun: Gear,
@@ -33,9 +35,10 @@ export function withPlanetary(
   const carrier: Carrier = {
     id: ids.carrierId,
     shaftId: ids.carrierShaftId,
-    offset: sun.offset + GEAR_SIZES[sun.size].faceWidth + CARRIER_GAP,
+    offset: sun.offset + gearWidth(sun) + CARRIER_GAP,
     size: sun.size,
   };
+  const width = sun.width === undefined ? {} : { width: gearWidth(sun) };
   const n = ids.planets.length;
   ids.planets.forEach(({ shaftId, gearId }, k) => {
     shafts[shaftId] = {
@@ -49,7 +52,7 @@ export function withPlanetary(
       },
     };
     gears[gearId] = makeGear(
-      { id: gearId, shaftId, size: sun.size, teeth: teeth.zp, offset: 0 },
+      { id: gearId, shaftId, size: sun.size, teeth: teeth.zp, offset: 0, ...width },
       { kind: 'spur' },
     );
   });
@@ -64,6 +67,7 @@ export function withPlanetary(
       size: sun.size,
       teeth: teeth.zr,
       offset: sun.offset,
+      ...width,
     },
     { kind: 'internal', webSide: -1 },
   );

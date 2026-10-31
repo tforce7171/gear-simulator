@@ -1,6 +1,7 @@
 export const PRESSURE_ANGLE = (20 * Math.PI) / 180;
 export const HELIX_ANGLE = (20 * Math.PI) / 180; // ハスバ歯車のねじれ角（固定。S2-01）
 
+// faceWidth は厚さ（width）を省いた歯車・ラックの厚さの初期値（S4-05 から歯車ごとに変えられる）
 export const GEAR_SIZES = {
   S: { module: 1, faceWidth: 4, minTeeth: 12, maxTeeth: 80 },
   M: { module: 2, faceWidth: 8, minTeeth: 12, maxTeeth: 60 },
@@ -21,6 +22,8 @@ export const AUTOSAVE_DEBOUNCE_MS = 1000;
 export const MAX_SAVE_FILE_BYTES = 5 * 1024 * 1024; // 読み込める JSON ファイルの上限（5 MB。S1-28）
 export const THUMBNAIL_SIZE = 256;
 export const AXIAL_SNAP = 4; // mm。シャフト上の位置の吸着の単位（全サイズ共通）
+// mm。歯車・ラックの厚さ（width）の範囲（S4-05）。AXIAL_SNAP 刻み
+export const GEAR_WIDTH_RANGE = { min: 4, max: 32 } as const;
 export const MESH_PHASE_EPS = 1e-6; // rad。位相を歯のピッチを法として比べるしきい値（contact の判定には使わない）
 export const COLLISION_EPS = 1e-6; // mm。干渉の判定で、触れているだけを干渉としないための重なりの深さのしきい値
 export const SHAFT_END_MARGIN = 4; // mm。シャフトを歯車の端から伸ばす長さ

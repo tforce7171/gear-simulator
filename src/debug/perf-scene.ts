@@ -1,6 +1,7 @@
 // 性能の計測用のシーン（S1-31）。scripts/perf.ts と e2e の負荷の確認が使う
 
-import { AXIAL_SNAP, GEAR_SIZES, MOTOR_SIZES } from '../core/constants';
+import { AXIAL_SNAP, MOTOR_SIZES } from '../core/constants';
+import { gearWidth } from '../core/geometry/dimensions';
 import type { Gear, Motor, Scene, Shaft, SizeKey } from '../core/scene/types';
 
 /** 1 列の歯車の数 */
@@ -93,7 +94,7 @@ export function generatePerfScene(count: number, seed: number = DEFAULT_SEED): S
       head = addGear(addShaft({ kind: 'root', origin: [...ROOT_ORIGIN], axis: 'y' }), size, 0);
     } else {
       // 前の列の先頭のシャフトに、前の列の上の面から AXIAL_SNAP 離して J を重ねる
-      const offset = prevHead.offset + GEAR_SIZES[prevHead.size].faceWidth + AXIAL_SNAP;
+      const offset = prevHead.offset + gearWidth(prevHead) + AXIAL_SNAP;
       const joint = addGear(prevHead.shaftId, size, offset);
       if (gearCount >= count) break;
       // 間に 1 枚挟んで、列の先頭が前の列の先頭と同じ向きに回るようにする（モーターどうしが逆らわない）

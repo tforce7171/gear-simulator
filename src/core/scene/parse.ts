@@ -333,6 +333,8 @@ export function parseScene(raw: unknown): SceneParseResult {
         size: size(item, base, key),
         teeth: num(item, 'teeth', base, key),
         placement,
+        // 厚さ（S4-05。省いてもよい。省けば大きさごとの歯幅 rackWidth）
+        ...(item.width === undefined ? {} : { width: num(item, 'width', base, key) }),
       },
     ]);
   }

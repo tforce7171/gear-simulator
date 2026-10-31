@@ -34,11 +34,20 @@ export function rackHeightRange(size: SizeKey): readonly [number, number] {
   return [-(RACK_DEDENDUM + RACK_BACK) * m, RACK_ADDENDUM * m];
 }
 
-// 断面（歯幅 × 高さ）の外接円の半径と、その中心のピッチ線からの高さ（歯の向きを正）。干渉の円柱に使う
-export function rackSectionCircle(size: SizeKey): { radius: number; height: number } {
+// ラックの厚さ（歯幅。S4-05）。width を省けば大きさごとの歯幅
+export function rackWidth(rack: { readonly size: SizeKey; readonly width?: number }): number {
+  return rack.width ?? GEAR_SIZES[rack.size].faceWidth;
+}
+
+// 断面（歯幅 × 高さ）の外接円の半径と、その中心のピッチ線からの高さ（歯の向きを正）。干渉の円柱に使う。
+// width は厚さ（S4-05。省けば大きさごとの歯幅）
+export function rackSectionCircle(
+  size: SizeKey,
+  width: number = GEAR_SIZES[size].faceWidth,
+): { radius: number; height: number } {
   const [lo, hi] = rackHeightRange(size);
   const halfHeight = (hi - lo) / 2;
-  const halfWidth = GEAR_SIZES[size].faceWidth / 2;
+  const halfWidth = width / 2;
   return { radius: Math.hypot(halfHeight, halfWidth), height: (lo + hi) / 2 };
 }
 

@@ -23,14 +23,15 @@ export function helicalTwistAt(
   return (handSign(hand) * z * Math.tan(helixAngle)) / pitchRadius(size, teeth);
 }
 
-// 歯幅全体でのねじれの角度（−歯幅/2 の断面から +歯幅/2 の断面までの回転角）。Δφ = ±b·tan β / r
+// 歯幅全体でのねじれの角度（−歯幅/2 の断面から +歯幅/2 の断面までの回転角）。Δφ = ±b·tan β / r。
+// faceWidth は歯幅 b（S4-05。省けば大きさごとの歯幅）
 export function helicalTotalTwist(
   size: SizeKey,
   teeth: number,
   hand: Hand,
   helixAngle: number = HELIX_ANGLE,
+  faceWidth: number = GEAR_SIZES[size].faceWidth,
 ): number {
-  const { faceWidth } = GEAR_SIZES[size];
   return (
     helicalTwistAt(size, teeth, hand, faceWidth / 2, helixAngle) -
     helicalTwistAt(size, teeth, hand, -faceWidth / 2, helixAngle)
@@ -58,7 +59,8 @@ export function helicalSliceCount(
   size: SizeKey,
   teeth: number,
   helixAngle: number = HELIX_ANGLE,
+  faceWidth: number = GEAR_SIZES[size].faceWidth,
 ): number {
-  const twist = Math.abs(helicalTotalTwist(size, teeth, 'right', helixAngle));
+  const twist = Math.abs(helicalTotalTwist(size, teeth, 'right', helixAngle, faceWidth));
   return Math.max(2, Math.ceil(twist / HELICAL_SLICE_ANGLE));
 }

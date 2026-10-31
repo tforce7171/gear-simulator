@@ -48,6 +48,7 @@ const REMAINING_AXIS: readonly [
   [1, 0, 2],
 ];
 
+// 歯車の円柱（歯先円 × 厚さ width。width は省けば大きさごとの歯幅。S4-05）
 export function gearCollider(
   id: GearId,
   shaftId: ShaftId,
@@ -55,6 +56,7 @@ export function gearCollider(
   axis: Axis,
   size: SizeKey,
   teeth: number,
+  width: number = GEAR_SIZES[size].faceWidth,
 ): Collider {
   return {
     kind: 'cylinder',
@@ -63,7 +65,7 @@ export function gearCollider(
     center,
     axis,
     radius: outsideRadius(size, teeth),
-    halfWidth: GEAR_SIZES[size].faceWidth / 2,
+    halfWidth: width / 2,
   };
 }
 

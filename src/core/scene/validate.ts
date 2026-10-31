@@ -1,6 +1,13 @@
-import { AXIAL_SNAP, GEAR_SIZES, MOTOR_RPM_RANGE, RACK_TEETH, WORM_THREADS } from '../constants';
+import {
+  AXIAL_SNAP,
+  GEAR_SIZES,
+  GEAR_WIDTH_RANGE,
+  MOTOR_RPM_RANGE,
+  RACK_TEETH,
+  WORM_THREADS,
+} from '../constants';
 import { canMesh, meshGeometryOf, placementKindOf } from '../geometry/can-mesh';
-import { teethRange } from '../geometry/dimensions';
+import { gearWidth, isWidthAdjustable, teethRange, widthInRange } from '../geometry/dimensions';
 import { planetaryConditions } from '../geometry/planetary';
 import { rackTeethInRange } from '../geometry/rack';
 import { requiredShaftSpans, spanContains } from '../layout/resolve';
@@ -55,7 +62,9 @@ export type SceneErrorCode =
   | 'planetaryMismatch' // 遊星歯車機構の歯数が配置の条件（同心・等配・隣の遊星）を満たさない（S3-05）
   | 'invalidSpan' // シャフトの範囲が有限の 2 つの数 [始まり < 終わり] でない（S4-03）
   | 'spanTooShort' // シャフトの範囲が、載っている部品の範囲（余白込み）を含まない（S4-03）
-  | 'invalidWidth'; // 歯車の厚さ width が AXIAL_SNAP の正の倍数でない（S4-03）
+  // 歯車・ラックの厚さ width が GEAR_WIDTH_RANGE の AXIAL_SNAP の倍数でない（S4-03・S4-05）。
+  // 厚さを変えられない種類（かさ歯車・ウォーム・ホイール）が大きさごとの歯幅と違う width を持つ（S4-05）
+  | 'invalidWidth';
 
 const AXES: readonly unknown[] = ['x', 'y', 'z'];
 
@@ -351,6 +360,14 @@ export function validateScene(scene: Scene): { ok: true } | { ok: false; errors:
         `rack teeth ${rack.teeth} out of range [${RACK_TEETH.min}, ${RACK_TEETH.max}]`,
       );
     }
+    // 厚さ（S4-05。省略できる）
+    const rackWidthValue: unknown = rack.width;
+    if (
+      rackWidthValue !== undefined &&
+      !(isFiniteNumber(rackWidthValue) && widthInRange(rackWidthValue))
+    ) {
+      push('invalidWidth', key, `${base}.width`, widthMessage(rackWidthValue));
+    }
     const p = rack.placement;
     const pbase = `${base}.placement`;
     if (p.normalSign !== 1 && p.normalSign !== -1) {
@@ -473,15 +490,24 @@ export function validateScene(scene: Scene): { ok: true } | { ok: false; errors:
         `offset ${gear.offset} is not a multiple of ${AXIAL_SNAP}`,
       );
     }
-    // 厚さ（S4-03 で足した省略できる欄。範囲 4〜32 mm は S4-05 で決める）
+    // 厚さ（S4-03 で足した省略できる欄。範囲は S4-05 の GEAR_WIDTH_RANGE。変えられない種類は大きさごとの歯幅だけ）
     const width: unknown = gear.width;
-    if (width !== undefined && !(isFiniteNumber(width) && width > 0 && width % AXIAL_SNAP === 0)) {
-      push(
-        'invalidWidth',
-        key,
-        `${base}.width`,
-        `width must be a positive multiple of ${AXIAL_SNAP}: ${String(width)}`,
-      );
+    if (width !== undefined) {
+      if (!(isFiniteNumber(width) && widthInRange(width))) {
+        push('invalidWidth', key, `${base}.width`, widthMessage(width));
+      } else if (
+        isGearKind(gear.kind) &&
+        !isWidthAdjustable(gear.kind) &&
+        isSizeKey(gear.size) &&
+        width !== GEAR_SIZES[gear.size].faceWidth
+      ) {
+        push(
+          'invalidWidth',
+          key,
+          `${base}.width`,
+          `${gear.kind} width is fixed to ${GEAR_SIZES[gear.size].faceWidth}: ${width}`,
+        );
+      }
     }
   }
 
@@ -666,13 +692,15 @@ function planetaryProblem(scene: Scene, carrierId: string, carrierShaftId: Shaft
     }
   }
   const line = lineRootOf(scene, carrierShaftId);
-  const faceWidth = GEAR_SIZES[child.size].faceWidth;
+  // 親と厚さの方向に重なる歯車（S4-05 から厚さは歯車ごと。区間 [offset, offset + 厚さ] が重なる）
+  const parentWidth = gearWidth(parent);
   const onPlane = Object.values(scene.gears).filter(
     (g) =>
       g.id !== parent.id &&
       g.size === child.size &&
       lineRootOf(scene, g.shaftId) === line &&
-      Math.abs(g.offset - parent.offset) < faceWidth,
+      g.offset < parent.offset + parentWidth &&
+      parent.offset < g.offset + gearWidth(g),
   );
   const zp = child.teeth;
   let zs: number;
@@ -693,4 +721,8 @@ function planetaryProblem(scene: Scene, carrierId: string, carrierShaftId: Shaft
     c.clearance ? null : 'clearance',
   ].filter((x) => x !== null);
   return `planetary of "${carrierId}" (sun ${zs}, planet ${zp}, ring ${String(zr)}, ${n} planets) fails ${failed.join(', ')}`;
+}
+
+function widthMessage(width: unknown): string {
+  return `width must be a multiple of ${AXIAL_SNAP} in [${GEAR_WIDTH_RANGE.min}, ${GEAR_WIDTH_RANGE.max}]: ${String(width)}`;
 }

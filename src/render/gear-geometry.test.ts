@@ -372,3 +372,37 @@ describe('ねじ歯車の形（S2-04）', () => {
     expect(cache.size()).toBe(4);
   });
 });
+
+describe('厚さ（S4-05）', () => {
+  it('平歯車・ハスバ歯車の形は厚さの分だけ押し出す（z は −厚さ/2 〜 +厚さ/2）', () => {
+    for (const geometry of [
+      buildSpurGeometry('M', 20, 20),
+      buildHelicalGeometry('M', 20, 'right', HELIX_ANGLE, 20),
+    ]) {
+      const box = geometry.boundingBox;
+      expect(box?.min.z).toBeCloseTo(-10, 6);
+      expect(box?.max.z).toBeCloseTo(10, 6);
+      geometry.dispose();
+    }
+  });
+
+  it('ハスバ歯車はねじれ角を保ち、厚いほど全体のねじれが大きい（厚さに比例）', () => {
+    const thin = helicalTotalTwist('M', 20, 'right', HELIX_ANGLE, 8);
+    const thick = helicalTotalTwist('M', 20, 'right', HELIX_ANGLE, 24);
+    expect(thick).toBeCloseTo(thin * 3, 12);
+  });
+
+  it('形状データの共有: 厚さが違えば別の形、同じなら同じインスタンス。省いた厚さは大きさごとの歯幅と同じ', () => {
+    const cache = createGeometryCache();
+    const a = cache.acquire(SPUR, 'M', 20, 16);
+    const b = cache.acquire(SPUR, 'M', 20, 16);
+    const c = cache.acquire(SPUR, 'M', 20);
+    const d = cache.acquire(SPUR, 'M', 20, GEAR_SIZES.M.faceWidth);
+    expect(a).toBe(b);
+    expect(a).not.toBe(c);
+    expect(c).toBe(d);
+    expect(cache.size()).toBe(2);
+    for (const w of [16, 16, undefined, 8]) cache.release(SPUR, 'M', 20, w);
+    expect(cache.size()).toBe(0);
+  });
+});
