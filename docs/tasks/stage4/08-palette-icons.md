@@ -11,7 +11,7 @@ depends: [S4-02]
 左のパレットは文字だけで、どの歯車か分かりにくい。歯車の絵を付けて、見て選べるようにする。
 
 ## 範囲
-- 調査で分かった今の作り: `src/ui/palette.ts`（`h()` で DOM を組む）と `src/ui/palette.css`。区分は大きさ（S/M/L、`palette-size-*`）、生やす歯車の種類（`GEAR_KIND_LIST`。S4-02 でラック・遊星を足した）、置く部品（起点のシャフト）。画像の資産は無い（palette.css:110-135 の CSS の絵だけ）
+- 調査で分かった今の作り: `src/ui/palette.ts`（`h()` で DOM を組む）と `src/ui/palette.css`。区分は大きさ（S/M/L、`palette-size-*`）、生やす歯車の種類（`PALETTE_KIND_LIST`（`src/core/layout/candidates.ts`。`PaletteKind = GearKind | 'rack' | 'planetary'`）。S4-02 でラック・遊星を足した。表示名は `paletteKindLabel`、かみ合えない種類の注記 `palette-kind-note`）、置く部品（起点のシャフト）。画像の資産は無い（palette.css:110-135 の CSS の絵だけ）
 - アイコンは SVG で描き、コードに入れる（例: `src/ui/icons.ts`）。色は `currentColor` で、テーマ・文字の色に従う
 - アイコンを付けるもの
   - 歯車の種類: 平・はすば・かさ・ウォーム・ウォームホイール・ねじ・内歯車・ラック・遊星
