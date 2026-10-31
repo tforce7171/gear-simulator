@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import type { Page } from '@playwright/test';
 import type { AudioState } from '../src/audio/engine';
+import { withShaftSpans } from '../src/core/layout/resolve';
 import type { Vec3 } from '../src/core/math/vec3';
 import type { Scene } from '../src/core/scene/types';
 import {
@@ -375,9 +376,10 @@ test('version 2 のファイル（stage2-showcase）をインポート → 読�
   const chooser = page.waitForEvent('filechooser');
   await page.getByTestId('toolbar-import').click();
   await (await chooser).setFiles(v2Path);
+  // version 3 → 4 の移行（S4-03）が、シャフトに今までと同じ長さの範囲を足す
   await expect
     .poll(() => getScene(page))
-    .toEqual({ ...v2.scene, anchors: {}, carriers: {}, racks: {} });
+    .toEqual(withShaftSpans({ ...v2.scene, anchors: {}, carriers: {}, racks: {} }));
   expect(await getScene(page)).toEqual(fixtureScene('stage2-showcase'));
   await expect(page.getByTestId('toast')).toHaveCount(0);
 });
