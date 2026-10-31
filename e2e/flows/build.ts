@@ -11,6 +11,7 @@ import {
   getSelection,
   openApp,
   type Point,
+  placeOnShaft,
   project,
 } from '../fixtures/sim';
 import { expect } from '../fixtures/test';
@@ -34,7 +35,8 @@ async function paletteItemCenter(page: Page): Promise<Point> {
 }
 
 /**
- * 空のシーン → パレットから起点のシャフトを床（原点）へドラッグ（S1-17）→ 1 枚目の外周の候補をクリック
+ * 空のシーン → パレットから起点のシャフトを床（原点）へドラッグ（S1-17）→ その上に平歯車を置く（S4-04）
+ * → 1 枚目の外周の候補をクリック
  * （S1-18）→ プロパティパネルで 1 枚目のシャフトに小のモーター（60 rpm、+1、ON）を付ける（S1-20）
  */
 export async function buildTwoGearsWithMotor(page: Page): Promise<BuiltParts> {
@@ -49,9 +51,17 @@ export async function buildTwoGearsWithMotor(page: Page): Promise<BuiltParts> {
   await page.mouse.move(to.x, to.y, { steps: 10 });
   await page.mouse.up();
   const placed = await getScene(page);
-  const firstGear = Object.values(placed.gears)[0];
+  const rootShaft = Object.values(placed.shafts)[0];
+  if (rootShaft === undefined) throw new Error('シャフトが置かれていない');
+  expect(Object.keys(placed.gears)).toHaveLength(0);
+  expect(await getSelection(page)).toEqual([rootShaft.id]);
+
+  // 起点のシャフトは歯車なし（S4-04）。その上（原点から 4 mm。中・20 歯の offset 0）に平歯車を置き、選ぶ
+  const firstId = await placeOnShaft(page, rootShaft.id, 4);
+  const firstGear = (await getScene(page)).gears[firstId];
   if (firstGear === undefined) throw new Error('歯車が置かれていない');
-  expect(Object.keys(placed.gears)).toHaveLength(1);
+  expect(firstGear).toMatchObject({ kind: 'spur', size: 'M', teeth: 20, offset: 0 });
+  await clickGear(page, firstGear.id);
   expect(await getSelection(page)).toEqual([firstGear.id]);
 
   // 選んだ歯車の外周（+u の向き）の候補をクリックして 2 枚目を生やす
