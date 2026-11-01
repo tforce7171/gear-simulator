@@ -215,9 +215,12 @@ export function engagedAt(
 
 // かかっているかみ合いだけの Layout.meshes・Layout.rackMeshes の添字の集合（engaged が null なら全部）
 export interface EngagementMasks {
-  readonly meshes: readonly boolean[]; // Layout.meshes の添字ごと
-  readonly rackMeshes: readonly boolean[]; // Layout.rackMeshes の添字ごと
+  readonly meshes: readonly boolean[]; // Layout.meshes の添字ごと（無い添字はかかっている）
+  readonly rackMeshes: readonly boolean[]; // Layout.rackMeshes の添字ごと（同じ）
 }
+
+// 添字の無い組は「かかっている」とみなす（masks.meshes[i] !== false で読む）
+const ALL_ENGAGED: EngagementMasks = { meshes: [], rackMeshes: [] };
 
 export function engagementMasks(
   layout: Layout,
@@ -241,5 +244,7 @@ export function currentEngagement(
   angles: Readonly<Record<ShaftId, number>>,
 ): EngagementMasks {
   const gates = gatesOf(scene, layout);
+  // 欠け歯車のないシーンは毎フレーム配列を作らない（空の配列は「全部かかっている」と同じ意味）
+  if (gates.length === 0) return ALL_ENGAGED;
   return engagementMasks(layout, gates, engagedAt(gates, angles));
 }
