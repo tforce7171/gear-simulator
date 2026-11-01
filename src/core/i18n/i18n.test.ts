@@ -72,6 +72,15 @@ describe('辞書', () => {
   it.each(keys)('%s の差し込みは ja と en で同じ集合', (key) => {
     expect(new Set(placeholdersOf(en[key]))).toEqual(new Set(placeholdersOf(ja[key])));
   });
+
+  // S5-02: プロパティパネルの文言には括弧書きを使わない
+  it.each(keys.filter((key) => key.startsWith('properties.')))(
+    '%s の値は ja・en とも括弧を含まない（S5-02）',
+    (key) => {
+      expect(ja[key]).not.toMatch(/[（）()]/);
+      expect(en[key]).not.toMatch(/[（）()]/);
+    },
+  );
 });
 
 describe('型', () => {
