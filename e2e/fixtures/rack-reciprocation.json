@@ -1,0 +1,79 @@
+{
+  "shafts": {
+    "shaft_s": {
+      "id": "shaft_s",
+      "placement": {
+        "kind": "root",
+        "origin": [0, 40, 0],
+        "axis": "z"
+      },
+      "span": [-4, 16]
+    },
+    "shaft_idler": {
+      "id": "shaft_idler",
+      "placement": {
+        "kind": "mesh",
+        "parentGearId": "gear_b",
+        "childGearId": "gear_idler",
+        "angle": 4.71238898038469
+      },
+      "span": [-4, 8]
+    }
+  },
+  "gears": {
+    "gear_a": {
+      "id": "gear_a",
+      "kind": "spur",
+      "shaftId": "shaft_s",
+      "size": "S",
+      "teeth": 39,
+      "offset": 0,
+      "toothCount": 8,
+      "toothStart": 5
+    },
+    "gear_b": {
+      "id": "gear_b",
+      "kind": "spur",
+      "shaftId": "shaft_s",
+      "size": "S",
+      "teeth": 13,
+      "offset": 8,
+      "toothCount": 8,
+      "toothStart": 6
+    },
+    "gear_idler": {
+      "id": "gear_idler",
+      "kind": "spur",
+      "shaftId": "shaft_idler",
+      "size": "S",
+      "teeth": 13,
+      "offset": 0
+    }
+  },
+  "motors": {
+    "motor_s": {
+      "id": "motor_s",
+      "shaftId": "shaft_s",
+      "size": "S",
+      "rpm": 60,
+      "direction": 1,
+      "on": true
+    }
+  },
+  "anchors": {},
+  "carriers": {},
+  "racks": {
+    "rack_r": {
+      "id": "rack_r",
+      "size": "S",
+      "teeth": 30,
+      "placement": {
+        "kind": "pinion",
+        "gearId": "gear_a",
+        "axisStep": 1,
+        "normalSign": 1
+      },
+      "width": 14
+    }
+  }
+}

@@ -89,6 +89,16 @@ export const ja = {
   'properties.teeth.dec': '歯数を 1 減らす',
   'properties.teeth.inc': '歯数を 1 増やす',
   // 歯車・ラックの厚さ（S4-05）
+  // 欠け歯車（S5-05）。平歯車の残す歯数と、歯のある弧の位置
+  'properties.toothCount': '残す歯数',
+  'properties.toothCount.range': '1〜{max}',
+  'properties.toothCount.dec': '残す歯を 1 減らす',
+  'properties.toothCount.inc': '残す歯を 1 増やす',
+  'properties.toothStart': '歯の位置',
+  'properties.toothStart.dec': '歯のある部分を 1 歯ぶん戻す',
+  'properties.toothStart.inc': '歯のある部分を 1 歯ぶん進める',
+  'properties.toothArc.note':
+    '歯を減らした歯車は、歯のある部分が相手に来ている間だけ相手を回す。同じ軸の 2 枚 A・B と中間歯車でラックを往復させるには、A の歯数を、B の歯数に中間歯車の歯数の 2 倍を足した数にする',
   'properties.width': '厚さ',
   'properties.width.range': '{min}〜{max} mm、{step} mm 刻み',
   'properties.width.dec': '{step} mm 薄くする',
@@ -168,6 +178,8 @@ export const ja = {
   'info.speed': '{speed} mm/s',
   'info.rack.direction': '向き',
   'info.rack.stopped': '停止',
+  // ロックの理由（S5-05）。欠け歯車がかみ合い直す瞬間に相手の歯と位相が合わない
+  'info.lock.toothClash': '歯が合わない',
   // 一時停止中の表示（S1-22）
   'sim.paused': '一時停止中（Space で再開）',
   // 軸の目印（S1-14）。球の title と aria-label
@@ -199,6 +211,10 @@ export const ja = {
   'works.delete.no': 'やめる',
   'works.updatedAt': '更新 {date}',
   'works.thumbnail': '「{name}」のサムネイル',
+  // 作品一覧の見本（S5-05）
+  'samples.title': '見本',
+  'samples.rackReciprocation': 'ラック往復',
+  'samples.rackReciprocation.description': '欠け歯車 2 枚と中間歯車で、ラックが左右に往復する',
   'storage.unavailable': '保存領域（IndexedDB）を使えないため、保存と作品一覧は使えない',
   'storage.failed': '保存領域（IndexedDB）の読み書きに失敗した',
   'storage.openFailed': '作品を開けなかった（データが壊れている）',

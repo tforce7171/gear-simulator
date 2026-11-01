@@ -2,8 +2,15 @@ import type { GearId, MotorId, RackId, ShaftId } from '../scene/types';
 
 // 運動の状態（design.md §6）。シーンとは別に持ち、Undo の対象にも保存の対象にもならない
 
-// 'wormBackDrive' はウォームの逆駆動（S2-03）。'anchor' は固定具との矛盾（S3-01）。'rackEnd' はラックが端に達した（S3-04）
-export type LockReason = 'contradiction' | 'stalemate' | 'wormBackDrive' | 'anchor' | 'rackEnd';
+// 'wormBackDrive' はウォームの逆駆動（S2-03）。'anchor' は固定具との矛盾（S3-01）。'rackEnd' はラックが端に達した（S3-04）。
+// 'toothClash' は欠け歯車がかみ合い直す瞬間に相手の歯と位相が合わない（S5-05）
+export type LockReason =
+  | 'contradiction'
+  | 'stalemate'
+  | 'wormBackDrive'
+  | 'anchor'
+  | 'rackEnd'
+  | 'toothClash';
 
 export interface LockInfo {
   readonly reason: LockReason;

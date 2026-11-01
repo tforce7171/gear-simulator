@@ -28,6 +28,7 @@ function voice(
     position,
     kind,
     slide,
+    engaged: true,
   };
 }
 

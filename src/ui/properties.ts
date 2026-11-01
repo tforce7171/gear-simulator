@@ -265,6 +265,7 @@ export function createProperties(deps: PropertiesDeps): Properties {
     stepper.append(dec, input, inc);
     const range = text('span', 'gs-prop__hint', 'properties.teeth.range', { min, max });
     section.append(row('properties.teeth', stepper), range);
+    if (gear.kind === 'spur') section.append(...toothArcRows(gear));
     if (gear.kind === 'internal') section.append(...webSideRows(gear));
     if (gear.kind === 'bevel') {
       // 歯数は木の親子のかさ歯車がまとめて変わる（setGearTeeth。S2-02）。向きの反転は flipBevelApex で、
@@ -373,6 +374,43 @@ export function createProperties(deps: PropertiesDeps): Properties {
     return [
       row('properties.width', stepper),
       text('span', 'gs-prop__hint', 'properties.width.range', { min, max, step }),
+    ];
+  }
+
+  // 欠け歯車の欄（S5-05）: 残す歯数（1〜歯数）と歯の位置（歯のある弧の始まり。0〜歯数 − 1）の［−］入力［＋］と、
+  // 往復の組み方の注意書き
+  function toothArcRows(gear: Extract<Gear, { kind: 'spur' }>): HTMLElement[] {
+    const count = gear.toothCount ?? gear.teeth;
+    const start = gear.toothStart ?? 0;
+    const countStepper = stepperOf(
+      'prop-tooth-count',
+      count,
+      1,
+      gear.teeth,
+      {
+        field: 'properties.toothCount',
+        dec: 'properties.toothCount.dec',
+        inc: 'properties.toothCount.inc',
+      },
+      (toothCount) => command({ type: 'setToothCount', gearId: gear.id, toothCount }),
+    );
+    const startStepper = stepperOf(
+      'prop-tooth-start',
+      start,
+      0,
+      gear.teeth - 1,
+      {
+        field: 'properties.toothStart',
+        dec: 'properties.toothStart.dec',
+        inc: 'properties.toothStart.inc',
+      },
+      (toothStart) => command({ type: 'setToothStart', gearId: gear.id, toothStart }),
+    );
+    return [
+      row('properties.toothCount', countStepper),
+      text('span', 'gs-prop__hint', 'properties.toothCount.range', { max: gear.teeth }),
+      row('properties.toothStart', startStepper),
+      text('p', 'gs-prop__hint', 'properties.toothArc.note', undefined, 'prop-tooth-arc-note'),
     ];
   }
 

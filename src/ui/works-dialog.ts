@@ -16,6 +16,14 @@ export interface WorksDialogDeps {
   readonly formatDate: (ms: number) => string;
   // 読み書きの失敗を知らせる
   readonly onError: (error: unknown) => void;
+  // 見本（S5-05）。保存した作品の一覧の上に「見本」として並べる。省くか空なら出さない
+  readonly samples?: ReadonlyArray<{
+    readonly id: string;
+    readonly nameKey: MessageKey;
+    readonly descriptionKey: MessageKey;
+  }>;
+  // 見本を開く。true を返したらダイアログを閉じる
+  readonly openSample?: (id: string) => boolean;
 }
 
 export interface WorksDialog {
@@ -43,12 +51,39 @@ export function openWorksDialog(
   const title = h('h2', 'gs-dialog__title');
   text(title, 'works.title');
   const body = h('div');
+  // 見本（S5-05）。一覧を読み直しても作り直さない
+  const samples = deps.samples ?? [];
+  const sampleSection = h('section', 'gs-works__samples', 'works-samples');
+  if (samples.length > 0) {
+    const heading = h('h3', 'gs-works__samples-title');
+    text(heading, 'samples.title');
+    const list = h('div', 'gs-works__sample-list');
+    for (const sample of samples) {
+      const el = h('article', 'gs-work-card gs-work-card--sample', 'sample-card');
+      el.dataset.sampleId = sample.id;
+      const name = h('div', 'gs-work-card__name', 'sample-name');
+      text(name, sample.nameKey);
+      const description = h('div', 'gs-work-card__date', 'sample-description');
+      text(description, sample.descriptionKey);
+      const row = h('div', 'gs-work-card__actions');
+      const open = h('button', 'gs-dialog__button gs-dialog__button--primary', 'sample-open');
+      open.type = 'button';
+      text(open, 'works.open');
+      open.addEventListener('click', () => {
+        if (deps.openSample?.(sample.id) === true) finish();
+      });
+      row.append(open);
+      el.append(name, description, row);
+      list.append(el);
+    }
+    sampleSection.append(heading, list);
+  }
   const actions = h('div', 'gs-dialog__actions');
   const close = h('button', 'gs-dialog__button', 'works-close');
   close.type = 'button';
   text(close, 'works.close');
   actions.append(close);
-  dialog.append(title, body, actions);
+  dialog.append(title, ...(samples.length > 0 ? [sampleSection] : []), body, actions);
 
   const button = (
     key: MessageKey,

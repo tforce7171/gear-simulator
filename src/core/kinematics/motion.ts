@@ -3,6 +3,16 @@ import type { Layout } from '../layout/types';
 import { anchoredRackIds, anchoredShaftIds } from '../scene/scene';
 import type { Motor, MotorId, RackId, Scene, ShaftId } from '../scene/types';
 import { type ShaftDrive, solveVelocities } from './balance';
+import {
+  type EngagementMasks,
+  engagementMasks,
+  type Gate,
+  gatesOf,
+  leavingArc,
+  sideCrossing,
+  sideStatus,
+  TOOTH_CLASH_EPS,
+} from './engagement';
 import { bodyIdsOf, buildMeshGraph, type KinematicComponent, type MeshGraph } from './graph';
 import { multiplyVector } from './linalg';
 import { rpmToRadPerSec } from './motor';
@@ -47,32 +57,71 @@ function wormSectionsOf(scene: Scene, graph: MeshGraph): Array<WormSections | nu
 // グラフは Layout の参照ごとに覚え、シーンの参照が変わったときだけ作り直す。
 // meshGraphOf は固定具の拘束を入れないグラフ（かみ合いだけ。ロックの理由 'anchor' の判定と、
 // 情報表示のギア比（S1-23）の逃げ道に使う）、anchoredMeshGraphOf は固定具の拘束 ω = 0 を入れたグラフ（S3-01。
-// 運動はこちらで解く）。固定具が無ければ 2 つは同じオブジェクト
-const graphCache = new WeakMap<Layout, { scene: Scene; graph: MeshGraph }>();
-const anchoredGraphCache = new WeakMap<Layout, { scene: Scene; graph: MeshGraph }>();
+// 運動はこちらで解く）。固定具が無ければ 2 つは同じオブジェクト。
+// 欠け歯車（S5-05）のかみ合いが外れている間は、masks で外れた組を除いたグラフを使う（外れ方ごとに覚える）。
+// masks を省くか全部かかっていれば、全部のかみ合いのグラフ（欠け歯車のないシーンと同じオブジェクト）
+interface GraphEntry {
+  readonly scene: Scene;
+  readonly byMask: Map<string, { free: MeshGraph; anchored: MeshGraph }>;
+}
+const graphCache = new WeakMap<Layout, GraphEntry>();
 
-export function meshGraphOf(scene: Scene, layout: Layout): MeshGraph {
-  const cached = graphCache.get(layout);
-  if (cached !== undefined && cached.scene === scene) return cached.graph;
-  const graph = buildMeshGraph(scene, layout.meshes, new Set(), layout.rackMeshes);
-  graphCache.set(layout, { scene, graph });
-  return graph;
+function maskKey(masks: EngagementMasks | undefined): string {
+  if (masks === undefined) return '';
+  let key = '';
+  masks.meshes.forEach((on, i) => {
+    if (!on) key += `m${i},`;
+  });
+  masks.rackMeshes.forEach((on, i) => {
+    if (!on) key += `r${i},`;
+  });
+  return key;
 }
 
-export function anchoredMeshGraphOf(scene: Scene, layout: Layout): MeshGraph {
-  const cached = anchoredGraphCache.get(layout);
-  if (cached !== undefined && cached.scene === scene) return cached.graph;
+function graphsOf(
+  scene: Scene,
+  layout: Layout,
+  masks?: EngagementMasks,
+): { free: MeshGraph; anchored: MeshGraph } {
+  let entry = graphCache.get(layout);
+  if (entry === undefined || entry.scene !== scene) {
+    entry = { scene, byMask: new Map() };
+    graphCache.set(layout, entry);
+  }
+  const key = maskKey(masks);
+  const cached = entry.byMask.get(key);
+  if (cached !== undefined) return cached;
+  const meshes =
+    key === '' || masks === undefined
+      ? layout.meshes
+      : layout.meshes.filter((_, i) => masks.meshes[i] !== false);
+  const rackMeshes =
+    key === '' || masks === undefined
+      ? layout.rackMeshes
+      : layout.rackMeshes.filter((_, i) => masks.rackMeshes[i] !== false);
+  const free = buildMeshGraph(scene, meshes, new Set(), rackMeshes);
   // 固定具の対象はシャフトとラック（S3-04 のラックは v = 0）
-  const anchored = new Set<ShaftId | RackId>([
+  const anchoredIds = new Set<ShaftId | RackId>([
     ...anchoredShaftIds(scene),
     ...anchoredRackIds(scene),
   ]);
-  const graph =
-    anchored.size === 0
-      ? meshGraphOf(scene, layout)
-      : buildMeshGraph(scene, layout.meshes, anchored, layout.rackMeshes);
-  anchoredGraphCache.set(layout, { scene, graph });
-  return graph;
+  const anchored =
+    anchoredIds.size === 0 ? free : buildMeshGraph(scene, meshes, anchoredIds, rackMeshes);
+  const graphs = { free, anchored };
+  entry.byMask.set(key, graphs);
+  return graphs;
+}
+
+export function meshGraphOf(scene: Scene, layout: Layout, masks?: EngagementMasks): MeshGraph {
+  return graphsOf(scene, layout, masks).free;
+}
+
+export function anchoredMeshGraphOf(
+  scene: Scene,
+  layout: Layout,
+  masks?: EngagementMasks,
+): MeshGraph {
+  return graphsOf(scene, layout, masks).anchored;
 }
 
 function compareIds(a: string, b: string): number {
@@ -95,22 +144,23 @@ function rowDot(n: readonly number[], q: readonly number[]): number {
   return sum;
 }
 
-// ラックの変位 s = n·q が範囲 travel の外なら、q を最も小さく動かして（n の向きに）端に寄せる（S3-04。
+// ラックの行。変位 s = n·q + offset（offset は欠け歯車のあるシーンの差分の積分で使う。S5-05。ほかは 0）
+interface RackRow {
+  readonly n: readonly number[];
+  readonly travel: readonly [number, number];
+  readonly offset: number;
+}
+
+// ラックの変位 s = n·q + offset が範囲 travel の外なら、q を最も小さく動かして（n の向きに）端に寄せる（S3-04。
 // ラックの歯数を減らしたときなど、構成が変わって範囲が縮んだとき）
-function clampRacksIntoTravel(
-  q: number[],
-  rows: ReadonlyArray<{
-    readonly n: readonly number[];
-    readonly travel: readonly [number, number];
-  }>,
-): number[] {
+function clampRacksIntoTravel(q: number[], rows: readonly RackRow[]): number[] {
   let out = q;
   for (let pass = 0; pass < 3; pass++) {
     let moved = false;
-    for (const { n, travel } of rows) {
+    for (const { n, travel, offset } of rows) {
       const norm2 = rowDot(n, n);
       if (norm2 === 0) continue;
-      const s = rowDot(n, out);
+      const s = rowDot(n, out) + offset;
       const target =
         s > travel[1] + RACK_END_EPS ? travel[1] : s < travel[0] - RACK_END_EPS ? travel[0] : null;
       if (target === null) continue;
@@ -126,19 +176,16 @@ function clampRacksIntoTravel(
 // ラックの端（S3-04）。q が qPrev から qNext へ動くとき（速度 qDot）、どれかのラックが端を越えるなら、最初に端に届く割合 t
 // （0〜1）を返す。端にいて外向きに動こうとしているなら 0。越えなければ null
 function rackEndFraction(
-  rows: ReadonlyArray<{
-    readonly n: readonly number[];
-    readonly travel: readonly [number, number];
-  }>,
+  rows: readonly RackRow[],
   qPrev: readonly number[],
   qNext: readonly number[],
   qDot: readonly number[],
 ): number | null {
   let t: number | null = null;
-  for (const { n, travel } of rows) {
+  for (const { n, travel, offset } of rows) {
     const [lo, hi] = travel;
-    const sPrev = rowDot(n, qPrev);
-    const sNext = rowDot(n, qNext);
+    const sPrev = rowDot(n, qPrev) + offset;
+    const sNext = rowDot(n, qNext) + offset;
     const v = rowDot(n, qDot);
     const ds = sNext - sPrev;
     let ti: number | null = null;
@@ -163,6 +210,16 @@ export function solveMotion(
   return stepMotion(scene, layout, prev, 0, opts);
 }
 
+// 欠け歯車のあるシーン（S5-05）で 1 回解くときの、かかっているかみ合いと、位相の合わないかみ合いのシャフト
+interface Gating {
+  readonly masks: EngagementMasks;
+  readonly clashShafts: ReadonlySet<ShaftId>; // かかっていて位相が合わないかみ合いの、片方のシャフト（Gate.body）
+  readonly rackEnds: boolean; // ラックの端で止めるか
+}
+
+// 1 フレームで区切る回数の上限（欠け歯車の入る・外れる瞬間。S5-05）。超えたら残りの時間は進めない
+const MAX_ENGAGE_SUBSTEPS = 32;
+
 // 1 フレーム進める。戻り値の angles・omegas はシーンの全シャフトを含み、シーンに無いシャフトは含まない
 export function stepMotion(
   scene: Scene,
@@ -171,11 +228,122 @@ export function stepMotion(
   dt: number,
   opts: MotionOptions = {},
 ): MotionState {
+  const gates = gatesOf(scene, layout);
+  // 欠け歯車のないシーンは今までと同じ（θ = N q で角度を求め直す）
+  if (gates.length === 0) return stepWith(scene, layout, prev, dt, opts, null);
+  // 欠け歯車のあるシーン（S5-05）: かかっているかみ合いだけで解き、入る・外れる瞬間をまたいだら、その瞬間までだけ進めて区切る
+  let state = prev;
+  let remaining = dt;
+  for (let i = 0; i < MAX_ENGAGE_SUBSTEPS; i++) {
+    if (!(remaining > 0)) return stepEngaged(scene, layout, gates, state, remaining, opts, true);
+    // 入る・外れる瞬間は、ラックの端で止めずに進めた動き（free）の上で探す（端で止めた動きでは時間の割合がずれる）
+    const free = stepEngaged(scene, layout, gates, state, remaining, opts, false);
+    let t: number | null = null;
+    for (const gate of gates) {
+      for (const side of gate.sides) {
+        const ti = sideCrossing(
+          side,
+          state.angles[side.shaftId] ?? 0,
+          free.angles[side.shaftId] ?? 0,
+        );
+        if (ti !== null && ti < 1 && (t === null || ti < t)) t = ti;
+      }
+    }
+    if (t === null) return stepEngaged(scene, layout, gates, state, remaining, opts, true);
+    const middle = interpolateMotion(state, free, t);
+    // その瞬間より前にラックが端に着くなら、端で止める（ラックの端の処理のまま）
+    const pastEnd = Object.entries(middle.rackPositions).some(([id, x]) => {
+      const travel = layout.racks[id]?.travel;
+      return travel !== undefined && (x > travel[1] + RACK_END_EPS || x < travel[0] - RACK_END_EPS);
+    });
+    if (pastEnd) return stepEngaged(scene, layout, gates, state, remaining, opts, true);
+    state = middle;
+    remaining *= 1 - t;
+  }
+  return state;
+}
+
+// prev から next へ割合 t だけ進めた状態（角度・変位は線形に補間し、速度・ロック・負けたモーターは next のもの）
+function interpolateMotion(prev: MotionState, next: MotionState, t: number): MotionState {
+  const lerp = (a: number, b: number): number => a + t * (b - a);
+  const angles: Record<ShaftId, number> = {};
+  for (const [id, b] of Object.entries(next.angles)) angles[id] = lerp(prev.angles[id] ?? 0, b);
+  const rackPositions: Record<RackId, number> = {};
+  for (const [id, b] of Object.entries(next.rackPositions)) {
+    rackPositions[id] = lerp(prev.rackPositions[id] ?? 0, b);
+  }
+  return { ...next, angles, rackPositions };
+}
+
+// 欠け歯車のあるシーンを、今の角度でかかっているかみ合いだけで 1 回解く（S5-05）。
+// 弧の端にいる組は、まず端の組を全部外して解き（下見）、その解で欠け歯車が弧の内へ向かう（か止まっている）組をかける。
+// かけて解いた解で、かけた組の欠け歯車が弧の外へ向かうなら、外して解き直す（相手から回される欠け歯車）
+function stepEngaged(
+  scene: Scene,
+  layout: Layout,
+  gates: readonly Gate[],
+  state: MotionState,
+  dt: number,
+  opts: MotionOptions,
+  rackEnds: boolean, // ラックの端で止めるか（入る・外れる瞬間を探す下見では止めない）
+): MotionState {
+  const statuses = gates.map((gate) =>
+    gate.sides.map((side) => sideStatus(side, state.angles[side.shaftId] ?? 0)),
+  );
+  const atEdge = statuses.map(
+    (list) => list.every((st) => st !== 'out') && list.some((st) => st !== 'in'),
+  );
+  const engaged = statuses.map((list, i) => list.every((st) => st !== 'out') && !atEdge[i]);
+  const solve = (): MotionState => {
+    const masks = engagementMasks(layout, gates, engaged);
+    const clashShafts = new Set<ShaftId>();
+    gates.forEach((gate, i) => {
+      if (!engaged[i] || gate.residual === null) return;
+      if (Math.abs(gate.residual(state.angles, state.rackPositions)) > TOOTH_CLASH_EPS) {
+        clashShafts.add(gate.body);
+      }
+    });
+    return stepWith(scene, layout, state, dt, opts, { masks, clashShafts, rackEnds });
+  };
+  const leaving = (i: number, omegas: Readonly<Record<ShaftId, number>>): boolean =>
+    (gates[i] as Gate).sides.some((side, k) =>
+      leavingArc(statuses[i]?.[k] ?? 'in', omegas[side.shaftId] ?? 0),
+    );
+  if (!atEdge.some((x) => x)) return solve();
+  const probe = solve();
+  atEdge.forEach((edge, i) => {
+    if (edge && !leaving(i, probe.omegas)) engaged[i] = true;
+  });
+  for (let pass = 0; ; pass++) {
+    const next = solve();
+    if (pass >= gates.length) return next;
+    let changed = false;
+    atEdge.forEach((edge, i) => {
+      if (edge && engaged[i] && leaving(i, next.omegas)) {
+        engaged[i] = false;
+        changed = true;
+      }
+    });
+    if (!changed) return next;
+  }
+}
+
+// 1 回解く。gating が null なら欠け歯車のないシーン（全部のかみ合い、θ = N q）。
+// gating があれば、かかっているかみ合いだけのグラフで解き、角度は前の値からの差分で進める（θ = θ_前 + N (q − q_前)。
+// かかるかみ合いの組が変わっても、ほかの部品が付き直って飛ばないように）
+function stepWith(
+  scene: Scene,
+  layout: Layout,
+  prev: MotionState,
+  dt: number,
+  opts: MotionOptions,
+  gating: Gating | null,
+): MotionState {
   const paused = opts.paused === true;
-  const graph = anchoredMeshGraphOf(scene, layout);
+  const graph = anchoredMeshGraphOf(scene, layout, gating?.masks);
   const balance = solveVelocities(scene, graph, { paused });
   // 固定具を外したグラフ（S3-01）。固定具のある成分がロックしたときだけ、理由を決めるために解く
-  const freeGraph = meshGraphOf(scene, layout);
+  const freeGraph = meshGraphOf(scene, layout, gating?.masks);
   let freeBalance: ReturnType<typeof solveVelocities> | null = null;
 
   // ON のモーター（一時停止中は無い）を、シャフトごとに
@@ -281,18 +449,21 @@ export function stepMotion(
       return;
     }
 
+    // q は基準シャフト（ラックだけの成分ではラック）の角度。前の状態に無ければ 0 から
+    const qStart = component.referenceShaftIds.map((id) => prevValue(id));
+    // 欠け歯車のあるシーン（S5-05）では θ = N q + offset（offset = θ_前 − N q_前）。ほかは 0
+    const offsets = bodyIds.map((id, i) =>
+      gating === null ? 0 : prevValue(id) - rowDot(basis[i] ?? [], qStart),
+    );
     // ラックの行と s の範囲（S3-04）。レイアウトに無いラック（ピニオンが根からたどれない）は範囲を見ない
     const rackRows = component.rackIds.flatMap((id, k) => {
       const travel = layout.racks[id]?.travel;
       const n = basis[shaftIds.length + k];
-      return travel === undefined || n === undefined ? [] : [{ n, travel }];
+      const offset = offsets[shaftIds.length + k] ?? 0;
+      return travel === undefined || n === undefined ? [] : [{ n, travel, offset }];
     });
-    // q は基準シャフト（ラックだけの成分ではラック）の角度。前の状態に無ければ 0 から。
     // ラックの範囲が縮んで今の s が外に出ていれば、端に寄せる（S3-04）
-    const qPrev = clampRacksIntoTravel(
-      component.referenceShaftIds.map((id) => prevValue(id)),
-      rackRows,
-    );
+    const qPrev = clampRacksIntoTravel(qStart, rackRows);
     let qNext: number[];
     let qDot: number[];
     const worm = worms[index] ?? null;
@@ -320,14 +491,15 @@ export function stepMotion(
       qNext = qPrev;
     } else if (grabbed && hand !== undefined && dof === 1) {
       const n = basis[handRow]?.[0] ?? 0;
-      qNext = [hand.angle / n];
+      qNext = [(hand.angle - (offsets[handRow] ?? 0)) / n];
       qDot = qNext.map((v, k) => (dt > 0 ? (v - (qPrev[k] as number)) / dt : 0));
     } else if (grabbed && hand !== undefined) {
       // 自由度 2 以上（S3-03 の遊星歯車など）: つかんだシャフトの角度を手の角度にし、残りの自由度はつり合いで決める。
       // つかんだシャフトの ω（= 角度の差 / dt）を規定値として、ウォームの規定値と同じ solveFixed で解く（モーターも効く）。
       // dt = 0 では角度の差を一度に動かす（モーターは無いものとし、ω の二乗和が最小の動き）。ω は 0
       const row = handRow;
-      const current = multiplyVector([basis[row] as number[]], qPrev)[0] ?? 0;
+      const current =
+        (multiplyVector([basis[row] as number[]], qPrev)[0] ?? 0) + (offsets[row] ?? 0);
       const delta = hand.angle - current;
       const refRows = component.referenceShaftIds.map((id) => bodyIds.indexOf(id));
       const toQ = (omegasOfShafts: readonly number[]) => refRows.map((i) => omegasOfShafts[i] ?? 0);
@@ -371,9 +543,23 @@ export function stepMotion(
       qNext = qPrev.map((v, k) => v + (qDot[k] as number) * dt);
     }
 
+    // 欠け歯車のかみ合い直し（S5-05）: かかっているのに位相が合わない組がある成分は、動こうとしたらその場でロック
+    if (
+      locks.length === lockCount &&
+      gating !== null &&
+      gating.clashShafts.size > 0 &&
+      shaftIds.some((id) => gating.clashShafts.has(id)) &&
+      (qDot.some((v) => Math.abs(v) > LOCK_OMEGA_EPS) ||
+        qNext.some((v, k) => Math.abs(v - (qPrev[k] as number)) > LOCK_OMEGA_EPS))
+    ) {
+      locks.push(lockOf('toothClash', component));
+      qDot = qPrev.map(() => 0);
+      qNext = qPrev;
+    }
+
     // ラックの端（S3-04）: 端を越えるなら端で止め（その割合だけ進める）、成分をロックにする（ω = 0、v = 0）。
     // 端にいて外向きに動こうとしている間もロック。内向きなら動く（モーターの向きを変えれば戻る）
-    if (locks.length === lockCount && rackRows.length > 0) {
+    if (locks.length === lockCount && rackRows.length > 0 && gating?.rackEnds !== false) {
       const t = rackEndFraction(rackRows, qPrev, qNext, qDot);
       if (t !== null) {
         const from = qPrev;
@@ -384,7 +570,7 @@ export function stepMotion(
       }
     }
 
-    const theta = multiplyVector(basis, qNext);
+    const theta = multiplyVector(basis, qNext).map((v, i) => v + (offsets[i] ?? 0));
     const omega = multiplyVector(basis, qDot);
     bodyIds.forEach((id, i) => {
       if (i < shaftIds.length) {

@@ -285,3 +285,53 @@ describe('OutlineOptions', () => {
     expect(() => spurOutline(1, 12, { tipSegments: 1.5 })).toThrow();
   });
 });
+
+describe('spurOutline の欠け歯車（S5-05）', () => {
+  const m = GEAR_SIZES.M.module;
+  const dims = spurDimensions(m, 30);
+  // 歯先円の近くの点がひと続きになった塊の数 = 残っている歯の数
+  function toothRuns(pts: readonly Vec2[]): number {
+    const tip = pts.map((p) => radius(p) > dims.pitchRadius);
+    let runs = 0;
+    for (let i = 0; i < tip.length; i++) {
+      if (tip[i] && !tip[(i - 1 + tip.length) % tip.length]) runs++;
+    }
+    return runs;
+  }
+
+  it('toothCount 10 / teeth 30 → 歯が 10 個、残りの周期は歯底円の弧', () => {
+    const pts = spurOutline(m, 30, { toothArc: { count: 10, start: 0 } });
+    expect(toothRuns(pts)).toBe(10);
+    const full = spurOutline(m, 30);
+    expect(pts.length).toBe(full.length);
+    const period = full.length / 30;
+    // 歯 10〜29 の周期の点はすべて歯底円の上
+    for (let i = 10 * period; i < 30 * period; i++) {
+      expect(radius(at(pts, i))).toBeCloseTo(dims.dedendumRadius, 9);
+    }
+    // 歯 0〜9 の周期は普通の歯車と同じ
+    for (let i = 0; i < 10 * period; i++) expect(at(pts, i)).toEqual(at(full, i));
+    expect(signedArea(pts)).toBeGreaterThan(0);
+  });
+
+  it('toothStart を 1 増やすと、形が 1 ピッチ回る', () => {
+    const a = spurOutline(m, 30, { toothArc: { count: 10, start: 3 } });
+    const b = spurOutline(m, 30, { toothArc: { count: 10, start: 4 } });
+    const period = a.length / 30;
+    const pitch = (2 * Math.PI) / 30;
+    for (let i = 0; i < a.length; i++) {
+      const [x, y] = at(a, i);
+      const rotated: Vec2 = [
+        x * Math.cos(pitch) - y * Math.sin(pitch),
+        x * Math.sin(pitch) + y * Math.cos(pitch),
+      ];
+      const q = at(b, i + period);
+      expect(rotated[0]).toBeCloseTo(q[0], 9);
+      expect(rotated[1]).toBeCloseTo(q[1], 9);
+    }
+  });
+
+  it('始まりが歯数を越えて折り返す弧も、歯の数は toothCount', () => {
+    expect(toothRuns(spurOutline(m, 30, { toothArc: { count: 8, start: 26 } }))).toBe(8);
+  });
+});
