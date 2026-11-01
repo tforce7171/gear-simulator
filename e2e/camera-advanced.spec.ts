@@ -3,6 +3,7 @@ import type { Page } from '@playwright/test';
 import type { Vec3 } from '../src/core/math/vec3';
 import type { Scene } from '../src/core/scene/types';
 import type { CameraPose } from '../src/input/camera';
+import { settledCamera } from './fixtures/sim';
 import { expect, test } from './fixtures/test';
 
 const twoGears = JSON.parse(
@@ -61,24 +62,6 @@ async function canvasCenter(page: Page): Promise<{ x: number; y: number }> {
   const box = await page.locator('canvas').boundingBox();
   if (box === null) throw new Error('canvas が無い');
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
-}
-
-// 移り終わる（100ms のあいだに位置も注視点も動かない）まで待って、その視点を返す
-async function settledCamera(page: Page): Promise<CameraPose> {
-  let last = await getCamera(page);
-  await expect
-    .poll(
-      async () => {
-        await page.waitForTimeout(100);
-        const now = await getCamera(page);
-        const moved = dist(now.position, last.position) + dist(now.target, last.target);
-        last = now;
-        return moved;
-      },
-      { timeout: 5000 },
-    )
-    .toBeLessThan(1e-3);
-  return last;
 }
 
 interface WheelInit {

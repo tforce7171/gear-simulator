@@ -4,6 +4,7 @@ import type { Layout } from '../src/core/layout/types';
 import type { Vec3 } from '../src/core/math/vec3';
 import type { Scene } from '../src/core/scene/types';
 import type { CameraPose } from '../src/input/camera';
+import { settledCamera } from './fixtures/sim';
 import { expect, test } from './fixtures/test';
 
 // S1-29: コンテキストメニュー
@@ -67,34 +68,6 @@ async function emptyPoint(page: Page): Promise<{ x: number; y: number }> {
 async function rightClick(page: Page, p: { x: number; y: number }): Promise<void> {
   await page.mouse.click(p.x, p.y, { button: 'right' });
   await expect(menu(page)).toBeVisible();
-}
-
-// カメラの移動が終わるのを待つ。時間ではなく描画のフレームで数え、3 フレーム続けて
-// 位置も注視点も動かなかったら止まったとみなす（負荷で rAF が止まっても途中で抜けない）
-async function settledCamera(page: Page): Promise<CameraPose> {
-  await page.evaluate(
-    () =>
-      new Promise<void>((resolve, reject) => {
-        const sim = window.__gearSim;
-        if (sim === undefined) {
-          reject(new Error('__gearSim が無い'));
-          return;
-        }
-        const flat = (c: CameraPose) => [...c.position, ...c.target];
-        let last = flat(sim.getCamera());
-        let still = 0;
-        const tick = () => {
-          const now = flat(sim.getCamera());
-          const moved = now.reduce((sum, v, i) => sum + Math.abs(v - (last[i] ?? 0)), 0);
-          last = now;
-          still = moved < 1e-6 ? still + 1 : 0;
-          if (still >= 3) resolve();
-          else requestAnimationFrame(tick);
-        };
-        requestAnimationFrame(tick);
-      }),
-  );
-  return getCamera(page);
 }
 
 // S3-01 で「固定する」（anchor）が 3 つ目に入って 4 項目になった
