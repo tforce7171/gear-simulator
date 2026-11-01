@@ -61,7 +61,7 @@ git worktree add .claude/worktrees/$name -b chore/$name main
 
 ## 5. 出す
 
-- 反映したものがあれば: 細かく分けてコミットし（`docs(retro): ...`・`chore(retro): ...`・`test(retro): ...`）、`git push -u origin chore/<name>` して、`gh pr create` で ready の PR を出す（draft にしない）。本文には、反映したもの（項目 → 反映先）、既出・陳腐化にしたもの、見送り・却下とその理由、メモリに書いたものを書く。
+- 反映したものがあれば: 細かく分けてコミットし（`docs(retro): ...`・`chore(retro): ...`・`test(retro): ...`）、`gh pr create` で ready の PR を出す（draft にしない）。その前に、共有のチェックアウトで `git push origin main` を ff で行う（implement-all は main を push しないので、未 push のタスクのマージが PR の差分に混ざるため）。ff で push できなければ（origin と食い違っていれば）PR は出さず、ブランチを残して、その旨を報告する。push できたら `git push -u origin chore/<name>` してから PR を出す。本文には、反映したもの（項目 → 反映先）、既出・陳腐化にしたもの、見送り・却下とその理由、メモリに書いたものを書く。
 - 状態の書き換えだけなら（全部が既出・陳腐化・見送り）: `docs(retro): 知見の状態を更新する` としてコミットし、共有のチェックアウト（main で作業ツリーがきれいなこと）で `git merge --ff-only chore/<name>` する。PR は出さない。
 - どちらも最後に、共有のチェックアウトで `git worktree remove .claude/worktrees/<name>` する。ff でマージしたときはブランチも消す。
 

@@ -17,7 +17,7 @@ export const meta = {
 // - agent() の isolation: 'worktree' は使わない（担当ごとの使い捨てになり、同じブランチを引き継げないため）
 // - 差し戻しは 2 回まで。それでも不合格なら、まっさらなエージェントで 1 回やり直す。駄目なら blocked
 // - 人には聞かない。仮定は docs/tasks/implementation-log.md、手で確かめる項目は docs/tasks/manual-checks.md
-// - push しない（例外は Retro が出す chore/retro-* の PR だけ）
+// - push しない（例外は Retro だけ。PR の差分にタスクのマージが混ざらないよう main を ff で push してから、chore/retro-* の PR を出す）
 // - 担当は知見（lessons）も返し、merge・block の担当が docs/tasks/lessons.md に追記する。
 //   ループが最後まで回ったら Retro が retro スキル（.claude/skills/retro/SKILL.md）に従って還元し、ready の PR を出す。マージは人
 
