@@ -4,7 +4,8 @@
 // 固定具（S3-01）は「固定する」のチェック（addAnchor・removeAnchor。歯車ならそのシャフトを固定する）。
 // 設定の変更はすべて編集コマンド（setGearTeeth・flipBevelApex・addMotor・updateMotor・removeMotor）で行い、
 // 1 回の確定を 1 回のコマンド（Undo 1 回）にする。値が変わらない確定ではコマンドを出さない。
-// 厚さ（S4-05。setGearWidth・setRackWidth）は、ぶつかって変えられないときにトーストで理由を出す
+// 厚さ（S4-05。setGearWidth・setRackWidth）は、ぶつかって変えられないときにトーストで理由を出す。
+// 色（S5-04。setPartColor）は歯車・ラック・キャリアの欄と、固定具の欄（固定しているとき）に、今のテーマの系統の色見本を並べる
 import { onLanguageChange, t } from '../app/i18n';
 import type { AppAction, AppState } from '../app/store';
 import {
@@ -25,7 +26,17 @@ import { rackWidth } from '../core/geometry/rack';
 import type { MessageKey, MessageParams } from '../core/i18n';
 import type { Layout } from '../core/layout/types';
 import { anchorOfRack, anchorOfShaft, planetShaftsOf } from '../core/scene/scene';
-import type { Axis, Gear, Motor, Rack, Scene, ShaftId, SizeKey } from '../core/scene/types';
+import type {
+  Axis,
+  Gear,
+  Motor,
+  PartColor,
+  Rack,
+  Scene,
+  ShaftId,
+  SizeKey,
+} from '../core/scene/types';
+import { partColorFitsTheme, THEME_PART_COLORS, type ThemeId } from '../core/theme';
 import { h } from './dom';
 import { clampToStep, parseClampedInt, parseClampedStep } from './number-input';
 import { showToast } from './toast';
@@ -36,7 +47,7 @@ export const PROPERTY_SIZES: readonly SizeKey[] = ['S', 'M', 'L'];
 export interface PropertiesDeps {
   // UiShell.properties.setContent
   readonly setContent: (content: HTMLElement | null) => void;
-  readonly getState: () => Pick<AppState, 'scene' | 'selection'>;
+  readonly getState: () => Pick<AppState, 'scene' | 'selection' | 'settings'>;
   readonly getLayout: (scene: Scene) => Layout;
   readonly dispatch: (action: AppAction) => void;
 }
@@ -88,7 +99,9 @@ function row(labelKey: MessageKey, ...value: HTMLElement[]): HTMLElement {
 }
 
 export function createProperties(deps: PropertiesDeps): Properties {
-  let shown: { scene: Scene; selection: string | null } | null = null;
+  let shown: { scene: Scene; selection: string | null; theme: ThemeId } | null = null;
+  // 今のテーマ（S5-04。色の欄の選べる色が変わる）。build の前に render が入れる
+  let theme: ThemeId = deps.getState().settings.theme;
   // 作り直している間は、取り除いた入力欄の blur で確定しない
   let building = false;
 
@@ -142,6 +155,10 @@ export function createProperties(deps: PropertiesDeps): Properties {
       row(
         'properties.size',
         text('span', 'gs-prop__value', `properties.size.${gear.size}`, undefined, 'prop-size'),
+      ),
+      // 色（S5-04）。すべての種類で選べる
+      ...colorRows('prop-color', gear.color, 'properties.color', (color) =>
+        command({ type: 'setPartColor', target: gear.id, color }),
       ),
     );
     // 厚さ（S4-05）。かさ歯車・ウォーム・ホイールは固定なので出さない
@@ -269,6 +286,52 @@ export function createProperties(deps: PropertiesDeps): Properties {
       section.append(flip);
     }
     return section;
+  }
+
+  // 色の欄（S5-04）: 「自動」と、今のテーマの系統の色の見本（role="radiogroup"）。今の色が系統にない（例: 木のテーマで
+  // シルバー）ときは、どれも選ばれていない状態にして注意書きを出す（値は消さない）。押した色が今と同じなら何もしない
+  function colorRows(
+    prefix: string,
+    current: PartColor | undefined,
+    labelKey: MessageKey,
+    commit: (color: PartColor | null) => void,
+  ): HTMLElement[] {
+    const group = h('div', 'gs-prop__colors', prefix);
+    group.setAttribute('role', 'radiogroup');
+    group.setAttribute('aria-label', t(labelKey));
+    const fits = current === undefined || partColorFitsTheme(theme, current);
+    group.dataset.color = current ?? 'auto';
+    const choices: Array<PartColor | null> = [null, ...THEME_PART_COLORS[theme]];
+    for (const color of choices) {
+      const name = t(color === null ? 'properties.color.auto' : `properties.color.${color}`);
+      const b = h('button', 'gs-prop__color', `${prefix}-${color ?? 'auto'}`);
+      b.type = 'button';
+      b.title = name;
+      b.setAttribute('aria-label', name);
+      b.setAttribute('role', 'radio');
+      b.dataset.color = color ?? 'auto';
+      if (color === null) b.textContent = name;
+      const checked = fits && (current ?? null) === color;
+      b.setAttribute('aria-checked', String(checked));
+      b.classList.toggle('is-selected', checked);
+      b.addEventListener('click', () => {
+        if ((current ?? null) !== color) commit(color);
+      });
+      group.append(b);
+    }
+    const rows: HTMLElement[] = [row(labelKey, group)];
+    if (!fits) {
+      rows.push(
+        text(
+          'p',
+          'gs-prop__hint gs-prop__warning',
+          'properties.color.otherTheme',
+          { color: t(`properties.color.${current}`) },
+          `${prefix}-note`,
+        ),
+      );
+    }
+    return rows;
   }
 
   // 厚さの変更（S4-05）: 先に今のシーンで試し、ほかの部品とぶつかる（notAllowed）ならコマンドを出さずに理由を出す
@@ -547,6 +610,14 @@ export function createProperties(deps: PropertiesDeps): Properties {
     });
     label.append(check, text('span', 'gs-prop__check-label', 'properties.anchor.check'));
     section.append(label);
+    // 固定具の色（S5-04）。固定具は選べない（当たり判定なし）ので、固定しているときにこの欄で選ぶ
+    if (anchor !== null) {
+      section.append(
+        ...colorRows('prop-anchor-color', anchor.color, 'properties.color.anchor', (color) =>
+          command({ type: 'setPartColor', target: anchor.id, color }),
+        ),
+      );
+    }
     if (forGear) {
       section.append(
         text('p', 'gs-prop__hint', 'properties.anchor.gearNote', undefined, 'prop-anchor-note'),
@@ -591,7 +662,13 @@ export function createProperties(deps: PropertiesDeps): Properties {
       });
       group.append(b);
     }
-    section.append(group, text('p', 'gs-prop__hint', 'properties.carrier.note'));
+    section.append(
+      group,
+      text('p', 'gs-prop__hint', 'properties.carrier.note'),
+      ...colorRows('prop-color', scene.carriers[carrierId]?.color, 'properties.color', (color) =>
+        command({ type: 'setPartColor', target: carrierId, color }),
+      ),
+    );
     return section;
   }
 
@@ -621,6 +698,9 @@ export function createProperties(deps: PropertiesDeps): Properties {
       text('span', 'gs-prop__hint', 'properties.teeth.range', { min, max }),
       ...widthRows('prop-rack-width', rackWidth(rack), (width) =>
         tryCommand(scene, { type: 'setRackWidth', rackId: rack.id, width }),
+      ),
+      ...colorRows('prop-color', rack.color, 'properties.color', (color) =>
+        command({ type: 'setPartColor', target: rack.id, color }),
       ),
     );
     return section;
@@ -669,8 +749,9 @@ export function createProperties(deps: PropertiesDeps): Properties {
   let current: HTMLElement | null = null;
 
   function render(): void {
-    const { scene, selection } = deps.getState();
-    shown = { scene, selection };
+    const { scene, selection, settings } = deps.getState();
+    theme = settings.theme;
+    shown = { scene, selection, theme };
     // フォーカスのあった要素（ボタンなど）は、作り直した後の同じ要素に戻す
     const active = document.activeElement;
     const focusedId =
@@ -695,8 +776,15 @@ export function createProperties(deps: PropertiesDeps): Properties {
 
   return {
     refresh() {
-      const { scene, selection } = deps.getState();
-      if (shown !== null && shown.scene === scene && shown.selection === selection) return;
+      const { scene, selection, settings } = deps.getState();
+      if (
+        shown !== null &&
+        shown.scene === scene &&
+        shown.selection === selection &&
+        shown.theme === settings.theme
+      ) {
+        return;
+      }
       render();
     },
     dispose() {

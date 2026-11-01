@@ -13,6 +13,7 @@ import { planetaryConditions } from '../geometry/planetary';
 import { rackTeethInRange } from '../geometry/rack';
 import { requiredShaftSpans, spanContains } from '../layout/resolve';
 import { isApex, isGearKind, isHand, isWebSide } from './gear-shape';
+import { isPartColor } from './part-color';
 import { lineRootOf, placementParentShafts } from './scene';
 import type { Scene, Shaft, ShaftId } from './types';
 
@@ -65,7 +66,8 @@ export type SceneErrorCode =
   | 'spanTooShort' // シャフトの範囲が、載っている部品の範囲（余白込み）を含まない（S4-03）
   // 歯車・ラックの厚さ width が GEAR_WIDTH_RANGE の GEAR_WIDTH_STEP の倍数でない（S4-03・S4-05・S5-01）。
   // 厚さを変えられない種類（かさ歯車・ウォーム・ホイール）が大きさごとの歯幅と違う width を持つ（S4-05）
-  | 'invalidWidth';
+  | 'invalidWidth'
+  | 'invalidColor'; // 歯車・ラック・キャリア・固定具の color が PartColor のどれでもない（S5-04）
 
 const AXES: readonly unknown[] = ['x', 'y', 'z'];
 
@@ -95,6 +97,16 @@ export function validateScene(scene: Scene): { ok: true } | { ok: false; errors:
           `${collection}.${key}.id`,
           `${collection} key "${key}" does not match id "${String(item.id)}"`,
         );
+      }
+    }
+  }
+
+  // 色（S5-04）。省略できる。歯車・ラック・キャリア・固定具だけが持つ（シャフト・モーターの color は型に無いので見ない）
+  for (const collection of ['gears', 'racks', 'carriers', 'anchors'] as const) {
+    for (const [key, item] of Object.entries(scene[collection])) {
+      const color: unknown = item.color;
+      if (color !== undefined && !isPartColor(color)) {
+        push('invalidColor', key, `${collection}.${key}.color`, `invalid color "${String(color)}"`);
       }
     }
   }

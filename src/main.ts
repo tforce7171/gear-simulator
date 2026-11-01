@@ -540,6 +540,7 @@ installGearSim({
     return { locked: [...locked].sort(), interfering: [...interfering].sort() };
   },
   getRenderInfo: () => renderer.renderInfo(),
+  getPartMaterialColor: (id) => renderer.partMaterialColor(id),
   getRenderStats: () => renderer.renderStats(),
   getInfoOverlay: () => ({
     enabled: store.getState().view.infoOverlay,

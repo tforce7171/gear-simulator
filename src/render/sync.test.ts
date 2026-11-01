@@ -5,7 +5,7 @@ import { demoScene } from '../app/demo-scene';
 import { initialMotionState } from '../core/kinematics/motion';
 import { resolveLayout } from '../core/layout/resolve';
 import { GEAR_KIND_LIST } from '../core/scene/gear-shape';
-import type { GearKind, Scene } from '../core/scene/types';
+import type { Gear, GearKind, Scene } from '../core/scene/types';
 import { MOTOR_GAP, MOTOR_PARTS, type MotorPart } from './motor';
 import { createSceneSync, motorCenter } from './sync';
 import type { PartKind } from './themes';
@@ -397,5 +397,99 @@ describe('モーターの形（S4-07）', () => {
     for (const mesh of meshesOf(sync.root, 'motor_1')) {
       expect((mesh.material as MeshStandardMaterial).emissive.getHex()).not.toBe(0);
     }
+  });
+});
+
+// S5-04: 部品ごとの色。テーマが渡す色の材質（colors。今のテーマの系統の色だけ）を使い、無ければ種類の材質
+describe('部品の色の材質（S5-04）', () => {
+  const showcase = JSON.parse(
+    readFileSync(new URL('../../e2e/fixtures/stage3-showcase.json', import.meta.url), 'utf8'),
+  ) as Scene;
+  const colored: Scene = {
+    ...showcase,
+    gears: {
+      ...showcase.gears,
+      gear_d: { ...(showcase.gears.gear_d as Gear), color: 'metallicBlue' },
+      gear_q: { ...(showcase.gears.gear_q as Gear), color: 'darkOak' },
+    },
+    racks: { rack_r: { ...(showcase.racks.rack_r as Scene['racks'][string]), color: 'silver' } },
+    carriers: {
+      carrier_k: {
+        ...(showcase.carriers.carrier_k as Scene['carriers'][string]),
+        color: 'metallicBlue',
+      },
+    },
+    anchors: {
+      anchor_r: { ...(showcase.anchors.anchor_r as Scene['anchors'][string]), color: 'silver' },
+    },
+  };
+
+  function setup(scene: Scene) {
+    const sync = createSceneSync();
+    sync.sync(scene, resolveLayout(scene));
+    const brass = new MeshStandardMaterial({ color: 0xc9a24a });
+    const steel = new MeshStandardMaterial({ color: 0xb9bec4 });
+    const blue = new MeshStandardMaterial({ color: 0x3d68c4 });
+    const iron = new MeshStandardMaterial({ color: 0x26272a });
+    // 真鍮のテーマ: 系統の色は真鍮・シルバー・メタリックブルー（ダークオークは無い）
+    sync.setBaseMaterials({
+      gear: allKinds(brass),
+      part: { carrier: steel, rack: brass, anchor: iron },
+      colors: { brass, silver: steel, metallicBlue: blue },
+      shaft: new MeshStandardMaterial(),
+      motor: allMotorParts(new MeshStandardMaterial()),
+    });
+    return { sync, brass, steel, blue, iron };
+  }
+
+  it('色を持つ歯車・ラック・キャリア・固定具は色の材質。系統にない色・色なしは種類の材質', () => {
+    const { sync, brass, steel, blue } = setup(colored);
+    expect(materialOf(sync.root, 'gear_d')).toBe(blue);
+    expect(materialOf(sync.root, 'gear_q')).toBe(brass); // ダークオークは真鍮のテーマに無い → 自動
+    expect(materialOf(sync.root, 'gear_s')).toBe(brass); // 色なし
+    expect(materialOf(sync.root, 'rack_r')).toBe(steel);
+    expect(materialOf(sync.root, 'carrier_k')).toBe(blue);
+    const anchorMeshes: Mesh[] = [];
+    sync.root.traverse((o) => {
+      const m = o as Mesh;
+      if (m.isMesh === true && m.material === steel && o.parent?.userData.anchorId === 'anchor_r') {
+        anchorMeshes.push(m);
+      }
+    });
+    expect(anchorMeshes.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('色を付けた部品も選択・ロック・干渉で光る（色はそのまま、発光が付く）', () => {
+    const { sync } = setup(colored);
+    sync.setHighlight({ selected: 'gear_d', hovered: null });
+    const selected = materialOf(sync.root, 'gear_d');
+    expect(selected.color.getHex()).toBe(0x3d68c4);
+    expect(selected.emissive.getHex()).not.toBe(0);
+    sync.setHighlight({ selected: null, hovered: null });
+    sync.setWarnings({ locked: new Set(['gear_d']), interfering: new Set(['rack_r']) });
+    expect(materialOf(sync.root, 'gear_d').emissive.getHex()).not.toBe(0);
+    expect(materialOf(sync.root, 'rack_r').emissive.getHex()).not.toBe(0);
+  });
+
+  it('色が変わったシーンを同期すると材質が変わり、version が増える', () => {
+    const { sync, brass, blue } = setup(showcase);
+    expect(materialOf(sync.root, 'gear_d')).toBe(brass);
+    const before = sync.version();
+    sync.sync(colored, resolveLayout(colored));
+    expect(materialOf(sync.root, 'gear_d')).toBe(blue);
+    expect(sync.version()).toBeGreaterThan(before);
+  });
+
+  it('色の材質を渡さない（colors なし）なら、色を持つ部品も種類の材質', () => {
+    const sync = createSceneSync();
+    sync.sync(colored, resolveLayout(colored));
+    const brass = new MeshStandardMaterial();
+    sync.setBaseMaterials({
+      gear: allKinds(brass),
+      part: allParts(brass),
+      shaft: new MeshStandardMaterial(),
+      motor: allMotorParts(new MeshStandardMaterial()),
+    });
+    expect(materialOf(sync.root, 'gear_d')).toBe(brass);
   });
 });

@@ -23,8 +23,14 @@ import {
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import type { Aabb } from '../core/layout/bounds';
 import { GEAR_KIND_LIST } from '../core/scene/gear-shape';
-import type { GearKind } from '../core/scene/types';
-import { QUALITY_PROFILES, type Quality, type ThemeId } from '../core/theme';
+import type { GearKind, PartColor } from '../core/scene/types';
+import {
+  partColorFitsTheme,
+  QUALITY_PROFILES,
+  type Quality,
+  THEME_PART_COLORS,
+  type ThemeId,
+} from '../core/theme';
 import { MOTOR_PARTS, type MotorPart } from './motor';
 import type { BaseMaterials } from './sync';
 
@@ -36,11 +42,22 @@ export interface PartLook {
   readonly metalness: number;
   readonly roughness: number;
   readonly woodGrain?: boolean; // 木目のテクスチャを貼る
+  // 木目の強さ（S5-04。woodGrainShade の contrast。省くと 1）。強さごとに木目のテクスチャを作る
+  readonly grainContrast?: number;
 }
 
 // 部品の材質（S2-05 で歯車に、S3-05 で歯車以外の部品に使う）。テーマと部品の種類で決まる
-// （歯車は GEAR_KIND_MATERIALS、キャリア・ラック・固定具は PART_KIND_MATERIALS）
-export type MaterialId = 'brass' | 'steel' | 'bronze' | 'lightWood' | 'darkWood' | 'blackIron';
+// （歯車は GEAR_KIND_MATERIALS、キャリア・ラック・固定具は PART_KIND_MATERIALS）。
+// 部品に色（S5-04）があり今のテーマの系統なら、色の材質（PART_COLOR_MATERIALS）
+export type MaterialId =
+  | 'brass'
+  | 'steel'
+  | 'bronze'
+  | 'lightWood'
+  | 'darkWood'
+  | 'blackIron'
+  | 'metallicBlue'
+  | 'darkOak';
 export type GearMaterialId = MaterialId;
 
 export const GEAR_MATERIAL_LOOKS: Readonly<Record<MaterialId, PartLook>> = {
@@ -50,6 +67,9 @@ export const GEAR_MATERIAL_LOOKS: Readonly<Record<MaterialId, PartLook>> = {
   lightWood: { color: 0xb07a45, metalness: 0, roughness: 0.75, woodGrain: true }, // 明るい木
   darkWood: { color: 0x7a4a28, metalness: 0, roughness: 0.78, woodGrain: true }, // 濃い木
   blackIron: { color: 0x26272a, metalness: 0.85, roughness: 0.6 }, // 黒い鉄（S3-05。固定具）
+  metallicBlue: { color: 0x3d68c4, metalness: 1, roughness: 0.32 }, // メタリックブルー（S5-04。つやのある青い金属）
+  // ダークオーク（S5-04）: 濃い木（赤茶）とは別の、黄みのあるこげ茶。木目は明るい木より強い
+  darkOak: { color: 0x4a3220, metalness: 0, roughness: 0.72, woodGrain: true, grainContrast: 1.5 },
 };
 export const MATERIAL_LOOKS = GEAR_MATERIAL_LOOKS;
 
@@ -66,8 +86,23 @@ export const PART_KIND_MATERIALS: Readonly<
   anchor: { brass: 'blackIron', wood: 'darkWood' }, // 台座・支柱・足
 };
 
-export function partLook(theme: ThemeId, kind: PartKind): PartLook {
-  return GEAR_MATERIAL_LOOKS[PART_KIND_MATERIALS[kind][theme]];
+// 部品の色（S5-04）ごとの材質。Record<PartColor, …> なので、色を足すと書き忘れが型で分かる
+export const PART_COLOR_MATERIALS: Readonly<Record<PartColor, MaterialId>> = {
+  brass: 'brass',
+  silver: 'steel',
+  metallicBlue: 'metallicBlue',
+  wood: 'lightWood',
+  darkOak: 'darkOak',
+};
+
+// 色の材質。色なし（「自動」）や、今のテーマの系統にない色は null（種類とテーマで決まる材質に戻す）
+export function colorMaterial(theme: ThemeId, color: PartColor | undefined): MaterialId | null {
+  if (color === undefined || !partColorFitsTheme(theme, color)) return null;
+  return PART_COLOR_MATERIALS[color];
+}
+
+export function partLook(theme: ThemeId, kind: PartKind, color?: PartColor): PartLook {
+  return GEAR_MATERIAL_LOOKS[colorMaterial(theme, color) ?? PART_KIND_MATERIALS[kind][theme]];
 }
 
 // 歯車の種類ごとの材質（S2-05）。Record<GearKind, …> なので、種類を足すと書き忘れが型で分かる
@@ -83,8 +118,8 @@ export const GEAR_KIND_MATERIALS: Readonly<
   internal: { brass: 'brass', wood: 'lightWood' }, // S3-02（S3-05 の表: 真鍮／明るい木）
 };
 
-export function gearLook(theme: ThemeId, kind: GearKind): PartLook {
-  return GEAR_MATERIAL_LOOKS[GEAR_KIND_MATERIALS[kind][theme]];
+export function gearLook(theme: ThemeId, kind: GearKind, color?: PartColor): PartLook {
+  return GEAR_MATERIAL_LOOKS[colorMaterial(theme, color) ?? GEAR_KIND_MATERIALS[kind][theme]];
 }
 
 // モーターの部分ごとの見た目（S4-07）。Record<MotorPart, …> なので、部分を足すと書き忘れが型で分かる。
@@ -180,19 +215,20 @@ function hash(x: number, y: number): number {
   return s - Math.floor(s);
 }
 
-// 木目の明るさ（0〜1。1 が地の色）。u・v は 0〜1 で、縦横どちらも継ぎ目なく繰り返す
-export function woodGrainShade(u: number, v: number): number {
+// 木目の明るさ（0〜1。1 が地の色）。u・v は 0〜1 で、縦横どちらも継ぎ目なく繰り返す。
+// contrast は筋の濃さの倍率（S5-04。1 が明るい木などの今の木目、ダークオークは強める）
+export function woodGrainShade(u: number, v: number, contrast = 1): number {
   const twoPi = Math.PI * 2;
   // 年輪の筋（v の向きに 26 本。u に沿ってわずかに波打つ）
   const t = 26 * v + 0.22 * Math.sin(twoPi * (2 * u + v)) + 0.06 * Math.sin(twoPi * 5 * u);
   const ring = (0.5 + 0.5 * Math.sin(twoPi * t)) ** 4;
   // 細い繊維の線
   const fiber = 0.5 + 0.5 * Math.sin(twoPi * (180 * v + 1.5 * Math.sin(twoPi * 3 * u)));
-  return 1 - 0.22 * ring - 0.06 * fiber;
+  return 1 - contrast * (0.22 * ring + 0.06 * fiber);
 }
 
 // 木目を Canvas に描く（画像ファイルは使わない）。地は明るい生成りにし、材質の color と掛け合わせる
-function drawWoodGrain(canvas: HTMLCanvasElement, size: number): void {
+function drawWoodGrain(canvas: HTMLCanvasElement, size: number, contrast: number): void {
   canvas.width = size;
   canvas.height = size;
   const ctx = canvas.getContext('2d');
@@ -201,7 +237,7 @@ function drawWoodGrain(canvas: HTMLCanvasElement, size: number): void {
   const { data } = image;
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
-      const shade = woodGrainShade(x / size, y / size) - 0.04 * hash(x, y);
+      const shade = woodGrainShade(x / size, y / size, contrast) - 0.04 * contrast * hash(x, y);
       const i = (y * size + x) * 4;
       data[i] = 255 * shade;
       data[i + 1] = 236 * shade;
@@ -212,9 +248,9 @@ function drawWoodGrain(canvas: HTMLCanvasElement, size: number): void {
   ctx.putImageData(image, 0, 0);
 }
 
-function createWoodTexture(size: number, anisotropy: number): CanvasTexture {
+function createWoodTexture(size: number, anisotropy: number, contrast: number): CanvasTexture {
   const canvas = document.createElement('canvas');
-  drawWoodGrain(canvas, size);
+  drawWoodGrain(canvas, size, contrast);
   const texture = new CanvasTexture(canvas);
   texture.colorSpace = SRGBColorSpace;
   texture.wrapS = RepeatWrapping;
@@ -227,28 +263,48 @@ function createWoodTexture(size: number, anisotropy: number): CanvasTexture {
   return texture;
 }
 
-// テーマに木目のテクスチャを使う部品があるか
-export function usesWoodGrain(theme: ThemeId): boolean {
+// テーマで使う部品の見た目（歯車・部品の種類ごと、テーマの系統の色ごと（S5-04）、モーター、シャフト）
+function themeLooks(theme: ThemeId): PartLook[] {
   const { shaft } = THEME_LOOKS[theme];
   const gears = GEAR_KIND_LIST.map((kind) => gearLook(theme, kind));
   const parts = PART_KINDS.map((kind) => partLook(theme, kind));
+  const colors = THEME_PART_COLORS[theme].map(
+    (color) => GEAR_MATERIAL_LOOKS[PART_COLOR_MATERIALS[color]],
+  );
   const motor = MOTOR_PARTS.map((part) => motorLook(theme, part));
-  return [...gears, ...parts, ...motor, shaft].some((part) => part.woodGrain === true);
+  return [...gears, ...parts, ...colors, ...motor, shaft];
 }
 
-// 種類ごとの歯車・部品の基の材質。同じ材質の種類は同じ MeshStandardMaterial を共有する（歯車と部品の間でも）
+// テーマに木目のテクスチャを使う部品があるか
+export function usesWoodGrain(theme: ThemeId): boolean {
+  return woodGrainContrasts(theme).length > 0;
+}
+
+// テーマで使う木目の強さ（S5-04。小さい順、重なりなし）。強さごとに木目のテクスチャを 1 枚作る
+export function woodGrainContrasts(theme: ThemeId): number[] {
+  const contrasts = themeLooks(theme)
+    .filter((look) => look.woodGrain === true)
+    .map((look) => look.grainContrast ?? 1);
+  return [...new Set(contrasts)].sort((a, b) => a - b);
+}
+
+type WoodTextures = ReadonlyMap<number, Texture>; // 木目の強さ → テクスチャ
+
+// 種類ごとの歯車・部品の基の材質と、テーマの系統の色（S5-04）の材質。同じ材質の ID は同じ MeshStandardMaterial を
+// 共有する（歯車・部品・色の間でも。例: 真鍮のテーマの平歯車と「真鍮」の色）
 function materialsOf(
   theme: ThemeId,
-  woodTexture: Texture | null,
+  woodTextures: WoodTextures,
 ): {
   gear: Record<GearKind, MeshStandardMaterial>;
   part: Record<PartKind, MeshStandardMaterial>;
+  colors: Partial<Record<PartColor, MeshStandardMaterial>>;
 } {
   const byId = new Map<MaterialId, MeshStandardMaterial>();
   const of = (id: MaterialId): MeshStandardMaterial => {
     let material = byId.get(id);
     if (material === undefined) {
-      material = materialOf(GEAR_MATERIAL_LOOKS[id], woodTexture);
+      material = materialOf(GEAR_MATERIAL_LOOKS[id], woodTextures);
       byId.set(id, material);
     }
     return material;
@@ -257,16 +313,19 @@ function materialsOf(
   for (const kind of GEAR_KIND_LIST) gear[kind] = of(GEAR_KIND_MATERIALS[kind][theme]);
   const part = {} as Record<PartKind, MeshStandardMaterial>;
   for (const kind of PART_KINDS) part[kind] = of(PART_KIND_MATERIALS[kind][theme]);
-  return { gear, part };
+  const colors: Partial<Record<PartColor, MeshStandardMaterial>> = {};
+  for (const color of THEME_PART_COLORS[theme]) colors[color] = of(PART_COLOR_MATERIALS[color]);
+  return { gear, part, colors };
 }
 
-function materialOf(look: PartLook, woodTexture: Texture | null): MeshStandardMaterial {
+function materialOf(look: PartLook, woodTextures: WoodTextures): MeshStandardMaterial {
   const material = new MeshStandardMaterial({
     color: look.color,
     metalness: look.metalness,
     roughness: look.roughness,
   });
-  if (look.woodGrain === true && woodTexture !== null) material.map = woodTexture;
+  const map = look.woodGrain === true ? woodTextures.get(look.grainContrast ?? 1) : undefined;
+  if (map !== undefined) material.map = map;
   return material;
 }
 
@@ -323,7 +382,7 @@ export function createThemeController(targets: ThemeTargets): ThemeController {
   let applied: { theme: ThemeId; quality: Quality } | null = null;
   let envTarget: WebGLRenderTarget | null = null;
   let envSize = 0;
-  let woodTexture: CanvasTexture | null = null;
+  let woodTextures = new Map<number, CanvasTexture>();
   let woodKey = '';
 
   function applyEnvironment(size: number): void {
@@ -354,12 +413,15 @@ export function createThemeController(targets: ThemeTargets): ThemeController {
     sun.castShadow = enabled;
   }
 
-  // 木目のテクスチャ（使うテーマのときだけ持つ）。品質で大きさが変わったら作り直す。変わったら true
+  // 木目のテクスチャ（使うテーマのときだけ、使う強さごとに持つ）。品質で大きさが変わったら作り直す。変わったら true
   function applyWoodTexture(theme: ThemeId, size: number, anisotropy: number): boolean {
-    const key = usesWoodGrain(theme) ? `${size}:${anisotropy}` : '';
+    const contrasts = woodGrainContrasts(theme);
+    const key = contrasts.length > 0 ? `${size}:${anisotropy}:${contrasts.join(',')}` : '';
     if (key === woodKey) return false;
-    woodTexture?.dispose();
-    woodTexture = key === '' ? null : createWoodTexture(size, anisotropy);
+    for (const texture of woodTextures.values()) texture.dispose();
+    woodTextures = new Map(
+      contrasts.map((contrast) => [contrast, createWoodTexture(size, anisotropy, contrast)]),
+    );
     woodKey = key;
     return true;
   }
@@ -420,13 +482,14 @@ export function createThemeController(targets: ThemeTargets): ThemeController {
       applyEnvironment(profile.envMapSize);
       const woodChanged = applyWoodTexture(theme, profile.woodTextureSize, profile.anisotropy);
       if (applied === null || applied.theme !== theme || woodChanged) {
-        const { gear, part } = materialsOf(theme, woodTexture);
+        const { gear, part, colors } = materialsOf(theme, woodTextures);
         targets.setBaseMaterials({
           gear,
           part,
-          shaft: materialOf(look.shaft, woodTexture),
+          colors,
+          shaft: materialOf(look.shaft, woodTextures),
           motor: Object.fromEntries(
-            MOTOR_PARTS.map((part) => [part, materialOf(motorLook(theme, part), woodTexture)]),
+            MOTOR_PARTS.map((part) => [part, materialOf(motorLook(theme, part), woodTextures)]),
           ) as Record<MotorPart, MeshStandardMaterial>,
         });
       }

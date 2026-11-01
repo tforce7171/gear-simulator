@@ -10,6 +10,9 @@ export type CarrierId = string; // "carrier_xxx"（S3-03）
 export type RackId = string; // "rack_xxx"（S3-04）
 export type Axis = 'x' | 'y' | 'z';
 export type SizeKey = 'S' | 'M' | 'L';
+// 部品ごとの色（S5-04）。歯車・ラック・キャリア・固定具が省略できる color に持つ。省略（「自動」）はテーマと種類で決まる質感。
+// 選べる色はテーマの系統で変わる（core/theme.ts の THEME_PART_COLORS）。今のテーマの系統にない色は「自動」の質感で描く
+export type PartColor = 'brass' | 'silver' | 'metallicBlue' | 'wood' | 'darkOak';
 
 export interface Scene {
   readonly shafts: Readonly<Record<ShaftId, Shaft>>;
@@ -109,6 +112,7 @@ export interface GearBase {
   // GEAR_WIDTH_RANGE の GEAR_WIDTH_STEP（0.5 mm）の倍数（S5-01）。省くと大きさごとの歯幅（gearWidth）。かさ歯車・ウォーム・ホイールは
   // 大きさごとの歯幅で固定（持つなら同じ値。S4-05）。音・運動には使わない
   readonly width?: number;
+  readonly color?: PartColor; // 色（S5-04）。省くと「自動」（テーマと種類で決まる質感）
 }
 
 export interface SpurGear extends GearBase {
@@ -188,6 +192,7 @@ export type AnchorTarget =
 export interface Anchor {
   readonly id: AnchorId;
   readonly target: AnchorTarget;
+  readonly color?: PartColor; // 色（S5-04）。省くと「自動」
 }
 
 // 遊星歯車のキャリア（S3-03）。シャフト shaftId と一緒に回る剛体で、遊星のシャフト（planet の配置）を支える。
@@ -197,6 +202,7 @@ export interface Carrier {
   readonly shaftId: ShaftId; // このシャフトと一緒に回る
   readonly offset: number; // 板の負側の面の位置（mm。シャフトの原点から）。AXIAL_SNAP の倍数（Gear.offset と同じ考え方）
   readonly size: SizeKey; // 板の厚み・シャフトの太さに使う
+  readonly color?: PartColor; // 色（S5-04）。省くと「自動」
 }
 
 // ラック（S3-04）。直線に動く剛体。長さ L = 歯数 × π·m、歯形は圧力角 20° の直線歯（台形）。
@@ -227,4 +233,5 @@ export interface Rack {
   // 厚さ（歯幅の方向の幅。mm。S4-05 で足した省略できる欄）。GEAR_WIDTH_RANGE の GEAR_WIDTH_STEP（0.5 mm）の倍数（S5-01）。
   // 省くと大きさごとの歯幅（rackWidth）。歯幅の方向の中心はピニオンの中心（ピニオンの厚さが違っても中央をそろえる）
   readonly width?: number;
+  readonly color?: PartColor; // 色（S5-04）。省くと「自動」
 }

@@ -1,3 +1,5 @@
+import type { PartColor } from './scene/types';
+
 // テーマと品質（S1-24、要件 §8）。three に依存しない値だけを置く（見た目の値は render/themes.ts）
 
 export type ThemeId = 'brass' | 'wood';
@@ -14,6 +16,18 @@ export const THEME_AUDIO_MATERIAL: Readonly<Record<ThemeId, AudioMaterialId>> = 
   brass: 'metal',
   wood: 'wood',
 };
+
+// テーマの系統ごとに選べる部品の色（S5-04。「自動」は含めない）。並びはプロパティパネルの色見本の順。
+// 真鍮のテーマは金属の色、木のテーマは木の色。系統にない色を持つ部品は「自動」の質感で描く（値は消さない）
+export const THEME_PART_COLORS: Readonly<Record<ThemeId, readonly PartColor[]>> = {
+  brass: ['brass', 'silver', 'metallicBlue'],
+  wood: ['wood', 'darkOak'],
+};
+
+// 色がテーマの系統で選べるか（false なら「自動」の質感で描く）
+export function partColorFitsTheme(theme: ThemeId, color: PartColor): boolean {
+  return THEME_PART_COLORS[theme].includes(color);
+}
 
 export interface QualityProfile {
   readonly shadows: boolean; // 平行光源の影

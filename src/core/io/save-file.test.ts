@@ -319,21 +319,22 @@ describe('invalid-scene と path', () => {
 });
 
 describe('知らないフィールドは捨てる', () => {
-  it('ルートの extra、歯車の color、mesh の placement の axis', () => {
+  // 歯車の color は S5-04 で知っているフィールドになった（部品の色）ので、知らないフィールドの例は finish にした
+  it('ルートの extra、歯車の finish、mesh の placement の axis', () => {
     const text = rawWith({
       extra: 1,
       'scene.extra': 2,
-      'scene.gears.gear_1.color': 'red',
+      'scene.gears.gear_1.finish': 'red',
       'scene.shafts.shaft_2.placement.axis': 'x',
     });
-    expect(text).toContain('"color":"red"');
+    expect(text).toContain('"finish":"red"');
     const result = parseSaveFile(text);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.file).toEqual(toSaveFile(sceneA));
     expect(result.file).not.toHaveProperty('extra');
     expect(result.file.scene).not.toHaveProperty('extra');
-    expect(result.file.scene.gears.gear_1).not.toHaveProperty('color');
+    expect(result.file.scene.gears.gear_1).not.toHaveProperty('finish');
     expect(result.file.scene.shafts.shaft_2?.placement).not.toHaveProperty('axis');
   });
 });
@@ -840,4 +841,68 @@ describe('version 4 の検証（S4-03）', () => {
       });
     });
   }
+});
+
+describe('部品の色（S5-04）', () => {
+  const showcase = readJson(
+    new URL('../../../e2e/fixtures/stage3-showcase.json', import.meta.url),
+  ) as Scene;
+  const colored: Scene = {
+    ...showcase,
+    gears: {
+      ...showcase.gears,
+      gear_s: { ...(showcase.gears.gear_s as Scene['gears'][string]), color: 'silver' },
+      gear_d: { ...(showcase.gears.gear_d as Scene['gears'][string]), color: 'darkOak' },
+    },
+    racks: {
+      rack_r: { ...(showcase.racks.rack_r as Scene['racks'][string]), color: 'metallicBlue' },
+    },
+    carriers: {
+      carrier_k: { ...(showcase.carriers.carrier_k as Scene['carriers'][string]), color: 'wood' },
+    },
+    anchors: {
+      anchor_r: { ...(showcase.anchors.anchor_r as Scene['anchors'][string]), color: 'brass' },
+    },
+  };
+
+  it('color を持つシーンを保存 → 読み込み → 同じ値（version は 4 のまま）', () => {
+    const result = parseSaveFile(serializeSaveFile(toSaveFile(colored)));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.file).toEqual({ format: 'gear-simulator', version: 4, scene: colored });
+    expect(result.file.scene.gears.gear_s?.color).toBe('silver');
+    expect(result.file.scene.racks.rack_r?.color).toBe('metallicBlue');
+    expect(result.file.scene.carriers.carrier_k?.color).toBe('wood');
+    expect(result.file.scene.anchors.anchor_r?.color).toBe('brass');
+    // color の無い部品には color を足さない
+    expect(result.file.scene.gears.gear_p0).not.toHaveProperty('color');
+  });
+
+  const cases: Array<[string, Record<string, unknown>, string]> = [
+    ['歯車の color が知らない色', { 'scene.gears.gear_1.color': 'gold' }, 'gears.gear_1.color'],
+    ['歯車の color が数', { 'scene.gears.gear_1.color': 3 }, 'gears.gear_1.color'],
+  ];
+  for (const [name, edits, path] of cases) {
+    it(`${name} → invalid-scene（${path}）`, () => {
+      expect(errorOf(rawWith(edits))).toEqual({ code: 'invalid-scene', path });
+    });
+  }
+
+  it('ラック・キャリア・固定具の知らない color → invalid-scene', () => {
+    const raw = JSON.parse(serializeSaveFile(toSaveFile(showcase))) as {
+      scene: Record<string, Record<string, Record<string, unknown>>>;
+    };
+    for (const [collection, id] of [
+      ['racks', 'rack_r'],
+      ['carriers', 'carrier_k'],
+      ['anchors', 'anchor_r'],
+    ] as const) {
+      const copy = structuredClone(raw);
+      (copy.scene[collection]?.[id] as Record<string, unknown>).color = 'red';
+      expect(parseSaveFile(JSON.stringify(copy))).toEqual({
+        ok: false,
+        error: { code: 'invalid-scene', path: `${collection}.${id}.color` },
+      });
+    }
+  });
 });

@@ -44,6 +44,7 @@ import {
   skewPartnerShape,
 } from '../scene/gear-shape';
 import type { IdGenerator } from '../scene/ids';
+import { inheritedColor, isPartColor } from '../scene/part-color';
 import { withPlanetary } from '../scene/planetary';
 import { anchorOfRack, anchorOfShaft, planetShaftsOf } from '../scene/scene';
 import { shaftAxis } from '../scene/shaft-axis';
@@ -62,6 +63,7 @@ import {
   isFreePlacement,
   type Motor,
   type MotorId,
+  type PartColor,
   type Rack,
   type RackId,
   type Scene,
@@ -140,6 +142,10 @@ export type Command =
   // ラックの厚さを変える（S4-05。範囲・ぶつかるときは setGearWidth と同じ）
   | { type: 'setRackWidth'; rackId: RackId; width: number }
   | { type: 'deleteParts'; ids: string[] }
+  // 部品の色を変える（S5-04）。target は歯車・ラック・キャリア・固定具の ID。color が null なら color を消す（「自動」）。
+  // 無い部品 → notFound、シャフト・モーター → notAllowed、PartColor でない色 → invalidValue。
+  // テーマの系統は見ない（今のテーマで選べない色も入れられる。描くときに系統にない色は「自動」の質感にする）
+  | { type: 'setPartColor'; target: string; color: PartColor | null }
   // キャリアの遊星の数を変える（S3-03）。遊星のシャフトを作り直して等配にする（1 本目の遊星のシャフトの歯車の並びを写す）。
   // 範囲外・配置の条件（planetaryConditions）を満たさない数は notAllowed
   | { type: 'setPlanetCount'; carrierId: CarrierId; count: number }
@@ -337,6 +343,8 @@ function applyRaw(scene: Scene, command: Command, ctx: CommandContext): CommandR
       return setGearWidth(scene, command);
     case 'setRackWidth':
       return setRackWidth(scene, command);
+    case 'setPartColor':
+      return setPartColor(scene, command);
     case 'deleteParts':
       return deleteParts(scene, command.ids);
     case 'setPlanetCount':
@@ -490,7 +498,10 @@ function growMeshChild(
       angle: normalizeAngle(angle),
     },
   };
-  const gear = makeGear({ id: gearId, shaftId, size: parent.size, teeth, offset: 0 }, shape);
+  const gear = makeGear(
+    { id: gearId, shaftId, size: parent.size, teeth, offset: 0, ...inheritedColor(parent) },
+    shape,
+  );
   return done(
     {
       shafts: withEntry(scene.shafts, shaftId, shaft),
@@ -534,7 +545,14 @@ function growBevel(
     },
   };
   const gear = makeGear(
-    { id: gearId, shaftId, size: parent.size, teeth: parent.teeth, offset: 0 },
+    {
+      id: gearId,
+      shaftId,
+      size: parent.size,
+      teeth: parent.teeth,
+      offset: 0,
+      ...inheritedColor(parent),
+    },
     { kind: 'bevel', apex: c.side === 1 ? -1 : 1 },
   );
   return done(
@@ -585,7 +603,10 @@ function growSkew(
     },
   };
   const teeth = shape.kind === 'worm' ? WORM_THREADS : c.teeth;
-  const gear = makeGear({ id: gearId, shaftId, size: parent.size, teeth, offset: 0 }, shape);
+  const gear = makeGear(
+    { id: gearId, shaftId, size: parent.size, teeth, offset: 0, ...inheritedColor(parent) },
+    shape,
+  );
   return done(
     {
       shafts: withEntry(scene.shafts, shaftId, shaft),
@@ -669,6 +690,7 @@ function growRack(
       axisStep: c.axisStep,
       normalSign: c.normalSign,
     },
+    ...inheritedColor(pinion),
   };
   return done({ ...scene, racks: withEntry(scene.racks, rackId, rack) }, [rackId]);
 }
@@ -696,7 +718,7 @@ function growRackPinion(
     },
   };
   const gear = makeGear(
-    { id: gearId, shaftId, size: rack.size, teeth: c.teeth, offset: 0 },
+    { id: gearId, shaftId, size: rack.size, teeth: c.teeth, offset: 0, ...inheritedColor(rack) },
     newGearShape('spur'),
   );
   return done(
@@ -707,6 +729,33 @@ function growRackPinion(
     },
     [shaftId, gearId],
   );
+}
+
+// 部品の色（S5-04）。色を持てる部品（歯車・ラック・キャリア・固定具）の color を変える。null は color を消す
+function setPartColor(scene: Scene, c: Extract<Command, { type: 'setPartColor' }>): CommandResult {
+  if (c.color !== null && !isPartColor(c.color)) {
+    return fail('invalidValue', `invalid color ${String(c.color)}`);
+  }
+  const color = c.color;
+  const recolor = <T extends { readonly color?: PartColor }>(part: T): T => {
+    if (color === null) {
+      const { color: _old, ...rest } = part;
+      return rest as T;
+    }
+    return { ...part, color };
+  };
+  const id = c.target;
+  for (const collection of ['gears', 'racks', 'carriers', 'anchors'] as const) {
+    const items: Readonly<Record<string, { readonly color?: PartColor }>> = scene[collection];
+    if (!Object.hasOwn(items, id)) continue;
+    const part = items[id] as { readonly color?: PartColor };
+    if ((part.color ?? null) === color) return done(scene);
+    return done({ ...scene, [collection]: withEntry(items, id, recolor(part)) });
+  }
+  if (Object.hasOwn(scene.shafts, id) || Object.hasOwn(scene.motors, id)) {
+    return fail('notAllowed', `${id} has no color (only gears, racks, carriers and anchors)`);
+  }
+  return fail('notFound', `part ${id} not found`);
 }
 
 function rackTeethError(teeth: number): Failure | null {

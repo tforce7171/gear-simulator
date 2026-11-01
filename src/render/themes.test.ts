@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { GEAR_KIND_LIST } from '../core/scene/gear-shape';
+import { PART_COLORS } from '../core/scene/part-color';
 import type { GearKind } from '../core/scene/types';
-import { THEME_IDS, type ThemeId } from '../core/theme';
+import { THEME_IDS, THEME_PART_COLORS, type ThemeId } from '../core/theme';
 import { MOTOR_PARTS, type MotorPart } from './motor';
 import {
+  colorMaterial,
   GEAR_KIND_MATERIALS,
   GEAR_MATERIAL_LOOKS,
   type GearMaterialId,
@@ -11,12 +13,14 @@ import {
   type MaterialId,
   MOTOR_PART_LOOKS,
   motorLook,
+  PART_COLOR_MATERIALS,
   PART_KIND_MATERIALS,
   PART_KINDS,
   type PartKind,
   type PartLook,
   partLook,
   usesWoodGrain,
+  woodGrainShade,
 } from './themes';
 
 // S2-05: 歯車の種類ごとの材質
@@ -149,5 +153,99 @@ describe('モーターの部分ごとの材質の表（S4-07）', () => {
     for (const theme of THEME_IDS) {
       expect(motorLook(theme, 'mark').color).not.toBe(motorLook(theme, 'coupling').color);
     }
+  });
+});
+
+// S5-04: 部品ごとの色
+describe('部品の色の質感とテーマの系統（S5-04）', () => {
+  it('すべての色に質感がある。真鍮・シルバー・木は今の brass・steel・lightWood と同じ', () => {
+    expect(Object.keys(PART_COLOR_MATERIALS).sort()).toEqual([...PART_COLORS].sort());
+    expect(PART_COLOR_MATERIALS.brass).toBe('brass');
+    expect(PART_COLOR_MATERIALS.silver).toBe('steel');
+    expect(PART_COLOR_MATERIALS.wood).toBe('lightWood');
+    expect(GEAR_MATERIAL_LOOKS.steel.color).toBe(0xb9bec4);
+  });
+
+  it('テーマの系統: 真鍮は真鍮・シルバー・メタリックブルー、木は木・ダークオーク。どの色もどちらかの系統に入る', () => {
+    expect(THEME_PART_COLORS.brass).toEqual(['brass', 'silver', 'metallicBlue']);
+    expect(THEME_PART_COLORS.wood).toEqual(['wood', 'darkOak']);
+    expect([...THEME_PART_COLORS.brass, ...THEME_PART_COLORS.wood].sort()).toEqual(
+      [...PART_COLORS].sort(),
+    );
+  });
+
+  it('真鍮 × シルバー → シルバーの質感、木 × シルバー → 自動の質感', () => {
+    expect(colorMaterial('brass', 'silver')).toBe('steel');
+    expect(gearLook('brass', 'spur', 'silver')).toBe(GEAR_MATERIAL_LOOKS.steel);
+    expect(colorMaterial('wood', 'silver')).toBeNull();
+    expect(gearLook('wood', 'spur', 'silver')).toBe(gearLook('wood', 'spur'));
+    expect(gearLook('wood', 'worm', 'silver')).toBe(gearLook('wood', 'worm'));
+    expect(partLook('wood', 'rack', 'silver')).toBe(partLook('wood', 'rack'));
+    // 逆向き: 真鍮 × ダークオーク → 自動
+    expect(gearLook('brass', 'wormWheel', 'darkOak')).toBe(gearLook('brass', 'wormWheel'));
+    expect(partLook('brass', 'anchor', 'darkOak')).toBe(partLook('brass', 'anchor'));
+  });
+
+  it('色なし（自動）は種類とテーマで決まる質感のまま', () => {
+    expect(colorMaterial('brass', undefined)).toBeNull();
+    for (const theme of THEME_IDS) {
+      for (const kind of GEAR_KIND_LIST) {
+        expect(gearLook(theme, kind, undefined)).toBe(gearLook(theme, kind));
+      }
+      for (const kind of PART_KINDS) {
+        expect(partLook(theme, kind, undefined)).toBe(partLook(theme, kind));
+      }
+    }
+  });
+
+  it('系統の中の色は、歯車にも部品にも同じ質感で効く', () => {
+    for (const theme of THEME_IDS) {
+      for (const color of THEME_PART_COLORS[theme]) {
+        const look = GEAR_MATERIAL_LOOKS[PART_COLOR_MATERIALS[color]];
+        expect(gearLook(theme, 'worm', color)).toBe(look);
+        expect(partLook(theme, 'carrier', color)).toBe(look);
+      }
+    }
+  });
+
+  it('メタリックブルーは青の強い金属', () => {
+    const look = GEAR_MATERIAL_LOOKS.metallicBlue;
+    expect(look.metalness).toBe(1);
+    const [r, g, b] = [(look.color >> 16) & 0xff, (look.color >> 8) & 0xff, look.color & 0xff];
+    expect(b).toBeGreaterThan(r + 0x40);
+    expect(b).toBeGreaterThan(g);
+  });
+
+  it('ダークオークは暗い木（darkWood とは別の、黄みのあるこげ茶）で、木目が lightWood より強い', () => {
+    const oak = GEAR_MATERIAL_LOOKS.darkOak;
+    expect(oak.woodGrain).toBe(true);
+    expect(oak.metalness).toBe(0);
+    expect(oak.color).not.toBe(GEAR_MATERIAL_LOOKS.darkWood.color);
+    const channels = (hex: number): [number, number, number] => [
+      (hex >> 16) & 0xff,
+      (hex >> 8) & 0xff,
+      hex & 0xff,
+    ];
+    const [r, g, b] = channels(oak.color);
+    const [wr, wg] = channels(GEAR_MATERIAL_LOOKS.darkWood.color);
+    // 黄み: 赤に対する緑の割合が darkWood より大きい。暗さ: どの成分も 0x60 未満
+    expect(g / r).toBeGreaterThan(wg / wr);
+    expect(Math.max(r, g, b)).toBeLessThan(0x60);
+    expect(oak.grainContrast ?? 1).toBeGreaterThan(
+      GEAR_MATERIAL_LOOKS.lightWood.grainContrast ?? 1,
+    );
+  });
+
+  it('木目の強さ: 強くすると明るさの幅が広がる（1 は今の木目）', () => {
+    const range = (contrast: number): number => {
+      const values: number[] = [];
+      for (let i = 0; i < 64; i++)
+        for (let j = 0; j < 64; j++) {
+          values.push(woodGrainShade(i / 64, j / 64, contrast));
+        }
+      return Math.max(...values) - Math.min(...values);
+    };
+    expect(woodGrainShade(0.3, 0.7, 1)).toBe(woodGrainShade(0.3, 0.7));
+    expect(range(1.5)).toBeGreaterThan(range(1));
   });
 });

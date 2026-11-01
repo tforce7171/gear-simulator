@@ -76,6 +76,8 @@ export interface Renderer extends SceneView {
   applyTheme(theme: ThemeId, quality: Quality): void;
   // 今の描画の状態（S1-24。__gearSim.getRenderInfo）
   renderInfo(): RenderInfo;
+  // 部品の今の材質の色（S5-04。__gearSim.getPartMaterialColor。SceneSync.partMaterialColor）
+  partMaterialColor(id: string): number | null;
   // 描画の負荷の数（S1-31。__gearSim.getRenderStats。scripts/perf.ts が使う）
   renderStats(): RenderStats;
   // 作品のサムネイル（S1-27）。選択とマウスの強調・候補・ハンドル・付け直しの輪・情報表示の矢印を
@@ -258,6 +260,7 @@ export function createRenderer(
       shadowVersion = -1;
       redraw.invalidate();
     },
+    partMaterialColor: (id) => objects.partMaterialColor(id),
     renderInfo() {
       return {
         ...themes.current(),

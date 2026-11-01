@@ -141,6 +141,17 @@ export const en = {
   'properties.planetary.ringNote':
     'The ring tooth count follows the sun and the planets: sun + 2 × planet',
   'properties.teeth.count': '{count}',
+  // Part colors (S5-04)
+  'properties.color': 'Color',
+  'properties.color.auto': 'Auto',
+  'properties.color.brass': 'Brass',
+  'properties.color.silver': 'Silver',
+  'properties.color.metallicBlue': 'Metallic blue',
+  'properties.color.wood': 'Wood',
+  'properties.color.darkOak': 'Dark oak',
+  'properties.color.anchor': 'Anchor color',
+  'properties.color.otherTheme':
+    '{color} is not available in this theme, so the part is shown in the auto color. Switch the theme back to see it in {color}',
   'properties.anchor': 'Anchor',
   'properties.anchor.check': 'Anchor',
   'properties.anchor.gearNote': "Anchors this gear's shaft. Parts on the same shaft stop too",
