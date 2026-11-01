@@ -13,10 +13,11 @@
 
 `.claude/workflows/implement-all.js` が、上の手順をタスクごとにエージェントで回す（Claude Code で「implement-all ワークフローを実行して」）。
 
-- タスクごとに `task/<ID>` ブランチを切り、レビューに合格したら main に `--no-ff` でマージしてブランチを消す。この間だけ design.md §11 の「main に直接コミット」の例外とする。
-- 差し戻しは 2 回まで。それでも駄目なら新しい担当で 1 回やり直し、なお不合格なら `blocked`（途中の作業は `task/<ID>` に残す）。`blocked` を `todo` に戻して起動し直すと再挑戦する。
+- タスクごとに `task/<ID>` ブランチと worktree（`.claude/worktrees/task-<ID>`）を作り、実装・差し戻し・レビューはその worktree の中で行う。レビューに合格したら main に `--no-ff` でマージし、worktree とブランチを消す。この間だけ design.md §11 の「main に直接コミット」の例外とする。
+- 共有のチェックアウトは main のままにし、git の操作（merge・worktree の追加と削除・ブランチの削除）だけに使う。起動時に main でないか未コミットの変更があれば中断する。
+- 差し戻しは 2 回まで。それでも駄目なら新しい担当で 1 回やり直し、なお不合格なら `blocked`（途中の作業は `task/<ID>` と `.claude/worktrees/task-<ID>` に残す）。`blocked` を `todo` に戻して起動し直すと再挑戦する。
 - 仮定と `blocked` の理由は [implementation-log.md](implementation-log.md)、人が手で確かめる項目は [manual-checks.md](manual-checks.md) に貯める。
-- `done` と `blocked` は飛ばすので、中断しても起動し直せば続きから進む。
+- `done` と `blocked` は飛ばすので、中断しても起動し直せば続きから進む。`doing` のタスクと worktree が残っているタスクを先に再開する。
 
 ## 段階 1: 基盤
 
