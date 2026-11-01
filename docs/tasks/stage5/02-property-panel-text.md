@@ -1,7 +1,7 @@
 ---
 id: S5-02
 title: プロパティの厚さの欄をそろえ、括弧書きをなくす
-status: doing
+status: done
 depends: [S5-01]
 ---
 
@@ -59,4 +59,4 @@ depends: [S5-01]
 ## 完了の条件
 - [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
 - [x] design.md と後続のタスク資料に、必要な変更を反映した
-- [ ] `status: done` にしてコミットした
+- [x] `status: done` にしてコミットした
