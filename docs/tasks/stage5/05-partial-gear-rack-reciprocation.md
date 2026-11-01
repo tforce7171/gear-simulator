@@ -1,7 +1,7 @@
 ---
 id: S5-05
 title: 欠け歯車でラックを往復させる
-status: todo
+status: doing
 depends: [S5-02, S5-03, S5-04]
 ---
 
