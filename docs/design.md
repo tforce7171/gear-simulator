@@ -339,7 +339,7 @@ interface Rack {
   - 厚くすると、区画は `offset`（負側の面）から正の側へ伸び、中心は `offset + width/2` へ移る。木の子（mesh の子は `offset` 0）は負側の面がそろったまま。厚さの違う 2 枚も、厚さの方向に少しでも重なっていればかみ合う。
   - 遊星歯車機構を作るとき（`withPlanetary`）、太陽が `width` を持てば遊星とリングも同じ厚さにし、キャリアの板は太陽の厚さの正側の面から `CARRIER_GAP`。太陽の厚さが `AXIAL_SNAP` の倍数でなければ、厚さを `AXIAL_SNAP` の倍数に切り上げた面から離す（キャリアの `offset` を 4 の倍数に保つ。S5-01）。
   - ラック（`Rack.width?`。省けば大きさごとの歯幅。`rackWidth`）: 断面の幅（形・干渉の円柱）とかみ合いの重なりに使う。歯幅の方向の中心はピニオンの中心（ピニオンと厚さが違っても中央がそろう）。
-  - コマンド: `setGearWidth { gearId, width }`・`setRackWidth { rackId, width }`（範囲外・4 の倍数でない → `invalidValue`、変えられない種類 → `notAllowed`）。シャフトからはみ出せば `fitShaftSpans` がシャフトを伸ばし、伸びた分も含めて新しい干渉（`newInterferences`）を生むなら `notAllowed`（`growGear` coaxial・`setShaftSpan` と同じ。コマンドは干渉を理由に失敗しない、の例外）。
+  - コマンド: `setGearWidth { gearId, width }`・`setRackWidth { rackId, width }`（`GEAR_WIDTH_RANGE`（0.5〜32 mm）の外、または `GEAR_WIDTH_STEP`（0.5 mm）の倍数でない → `invalidValue`（判定は `isWidthStepMultiple`）、変えられない種類 → `notAllowed`）。シャフトからはみ出せば `fitShaftSpans` がシャフトを伸ばし、伸びた分も含めて新しい干渉（`newInterferences`）を生むなら `notAllowed`（`growGear` coaxial・`setShaftSpan` と同じ。コマンドは干渉を理由に失敗しない、の例外）。
 - `offset` は負の値もとれる（`AXIAL_SNAP` の倍数であればよい）。
 - **向きの違う子**: 段階 2 以降の、親と軸の向きが違う配置（bevel、skew、rack など）は、向きを絶対値で持たず、親の軸からの相対値（`axisStep: 1 | 2` ＝ 親の軸を x→y→z→x の順に何回進めたか）で持つ。向きの計算は `stepAxis(axis, step)`（`src/core/math/axis.ts`。S2-02 で作った）1 つにまとめる。`shaftAxis` は親をたどって `axisStep` を足し合わせる。
 - 部品の範囲（シャフトが含まなければならない区間）の決め方は、部品によって例外がある。かさ歯車が載るシャフトは、頂点側の端を `頂点 − BEVEL_APEX_CLEARANCE·apex·軸`（2 mm 手前）より先へ伸ばさない。同じシャフトの頂点側にほかの部品が載っていれば、その部品の面 + `SHAFT_END_MARGIN` まで伸ばす（S2-02。§5 の `span`）。
