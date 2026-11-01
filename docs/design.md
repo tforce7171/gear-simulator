@@ -726,7 +726,7 @@ interface Settings {
     - 固定具そのものは音を出さない。
   - かみ合い 1 組分の合成は `src/audio/mesh-voice.ts` の `createMeshVoiceSynth`（S4-06 から粒とすべりの雑音だけ。粒: 部分音の正弦波とフィルタを通したノイズを、1 ms の立ち上がりと時定数 = 表の減衰時間の指数の減衰で予約する（`playClick`）。消すときは 100 ms でフェードアウト）。ノイズは実行時に 1 秒の白色雑音の `AudioBuffer` を作って共有する。
   - **粒の音（カタカタ）**（S4-06。要件 §9 の「速いとうなり」と「モーターのうなり」を置き換えた）: かみ合いの音は速さによらず粒で鳴らし、連続音への切り替え（15〜30 Hz のクロスフェード）は無い。
-    - `clickRate(f)`: 毎秒の粒の数 = `min(f, CLICK_RATE_MAX)`（`CLICK_RATE_MAX` = 40。止まっていれば 0）。`clickPitch(f, material)`: 粒の中心周波数 = 材質の基準 × (1 + 0.2 × log2(1 + f / 10))（f について単調に増える。基準は metal 2400 Hz・wood 520 Hz なので metal が高い）。
+    - `clickRate(f)`: 毎秒の粒の数 = `min(f, CLICK_RATE_MAX)`（`CLICK_RATE_MAX` = 40。止まっていれば 0）。`clickPitch(f, material)`: 粒の中心周波数 = 材質の基準 × (1 + 0.2 × log2(1 + f / 10))（f について単調に増える。基準は metal 2400 Hz・wood 420 Hz なので metal が高い）。
     - `MATERIALS[material]` は `{ click: GrainMaterial, slide, buzz }`（連続音の `tone` は無い）。`GrainMaterial = { pitch, partials: { ratio, decay, level }[], q, noiseDecay, noiseLevel, gain }`（S5-03 で部分音ごとの音量 `level` とノイズの音量 `noiseLevel` を足した。どちらも `gain` に対する比。`ClickPartial.level`・`ClickNoise.level` に渡り、省いた衝撃音のクリックは前どおり部分音 0.6/(i+1)・ノイズ 0.8）。`clickParams(material, random, f, pitchScale = 1)` が粒 1 つ（ノイズ → 帯域通過の共鳴フィルタ、中心 = `clickPitch(f) × pitchScale`、それと部分音。高さを ±3% 揺らす）を返す。`pitchScale` は種類の音色の `pitch`。背景（`background.ts`）も同じ `clickParams` を使う。材質ごとの値（S5-03 で調整。S4-06 の値は括弧の中）:
 
       | | metal（真鍮・短く乾いたカチッ） | wood（木・低く太いコトッ） |
