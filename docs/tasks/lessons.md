@@ -27,3 +27,28 @@
 同じタスクの impl とレビューが同じことを言っていれば 1 項目にまとめる。
 
 ## 記録
+
+### S5-01 歯車とラックを 0.5 mm 刻みで薄くできるようにする
+- [還元済み chore/retro-20261101-1430] 〔レビューの指摘〕規則（値の範囲・刻み）を変えたのに、design.md を定数名でしか grep せず、§4 の `setGearWidth` の「4 の倍数でない → invalidValue」が残った。旧規則の言い回しやコマンド名でも grep する。根拠: review#1 で不合格（指摘はこの 1 行だけ）
+- [還元済み chore/retro-20261101-1430] 〔落とし穴〕引数なしの `pnpm verify` は、`e2e/fixtures/sim.ts` が `import type` している src（scene/kinematics/layout の types.ts など）を変えると e2e を全部流す。CLAUDE.md の「src だけを変えても既存の spec は流れない」は、この場合に合わない。根拠: impl・review#1・fix の 3 回とも 308 件（約 1.8 分）。fix は design.md を 1 行直しただけだった
+- [還元済み chore/retro-20261101-1430] 〔詰まったこと〕使い捨ての確認を `pnpm exec vitest run --root / /tmp/x.test.ts` で流すと、`/` 以下を走査してヒープを使い切り、落ちた。`pnpm exec tsx <file>.ts` なら数秒で通った。根拠: review#2 で OOM が 1 回
+- [見送り 1/3 遊星の件は design.md §4 に書き済みで、「width から offset を導くときは切り上げる」は他のタスクに通じるほど一般化できない] 〔落とし穴〕width を AXIAL_SNAP の倍数でなくしたことで、width から offset を導く `withPlanetary` が、validateScene の拒むシーンを作るようになった。width から offset を作るときは切り上げる。値域を広げたら、候補 → growCommand → validateScene を総当たりで確かめる。根拠: impl のテストが 1 回落ちた。review#2 は 510 件を総当たりした
+
+### S5-02 プロパティパネルの文言を直す
+- [還元済み chore/retro-20261101-1430] 〔探し直した事実〕表示の文言を変えるとき、e2e と src で旧い文言を直に比べている箇所の grep を 3 回やり直した。引用符で始まる文字列リテラルに絞り、ja.ts と en.ts を除いて grep すると 1 回で済む。根拠: impl が 3 回、review#1 が 2 回 grep した
+
+### S5-03 歯車の音の調整
+- [還元済み chore/retro-20261101-1430] 〔レビューの指摘〕既にある定数の値を変えたのに（wood の click pitch 520 → 420）、変える前の数値で design.md を grep せず、「wood 520 Hz」が残った。根拠: review#1 で不合格
+- [還元済み chore/retro-20261101-1430] 〔落とし穴〕粒とは別の経路で鳴る `buzzLevel` のジーを足したが、「範囲外」で送った後続の S5-05 の資料が、それを止めることを書いていなかった。名前の grep では、振る舞いの食い違いは見つからない。根拠: review#2 で不合格
+- [還元済み chore/retro-20261101-1430] 〔レビューの指摘〕review#1 は不合格の点を 1 つ返しただけで、S5-05 の資料の漏れ（実装の時点からあった）を見落とし、修正と再レビューが 1 往復増えた。根拠: review#1 と review#2 の issues
+
+### S5-04 部品の色
+- [還元済み chore/retro-20261101-1430] 〔落とし穴〕e2e のアプリは英語で開く（Playwright の既定の locale と、`DEFAULT_SETTINGS` の言語）。日本語の文言を確かめて落ち、原因探しに grep と Read を重ねた（S5-05 でも同じことが起き、8 回 Read した）。根拠: part-color.spec.ts の 1 回目、S5-05 impl #113〜#123
+- [還元済み chore/retro-20261101-1430] 〔詰まったこと〕`page.keyboard.press('Home')` のすぐあとに `clickGear` を呼ぶと、動いているカメラの途中の点を押して、別の歯車を選ぶ。根拠: --repeat-each=5 で 30 件中 2 件が落ちた。`settleCamera` を挟んで直った
+- [還元済み chore/retro-20261101-1430] 〔落とし穴〕`clickPerimeterCandidate` は pick が当たることを assert するので、距離だけで選んだ候補がハンドルや歯車の陰にあると落ちる。根拠: 「生やす」テストの 1 回目、sim.ts:200
+- [見送り 1/3 「fixture の中身を確かめてから書く」は一般論で、書いても振る舞いが変わりにくい] 〔落とし穴〕fixture の中身（固定された部品・ID）を思い込みで spec に書き、要素を 30 秒待ち続けた（`stage3-showcase.json` の anchor_r はリングのシャフトを固定している）。根拠: e2e の 1 回目
+
+### S5-05 欠け歯車でラックを往復させる
+- [還元済み chore/retro-20261101-1430] 〔詰まったこと〕資料の見本（36・12・12、ラック 8 mm）はそのままでは組めなかった（シャフトの干渉・ラックの届く範囲・位相の半ピッチのずれ）。使い捨てのテストで `applyCommand` → `resolveLayout` / `gatesOf` を流し、数値を振って決めた。根拠: impl #55〜#70（約 4 分）
+- [還元済み chore/retro-20261101-1430] 〔落とし穴〕同じラックを木のかみ合いと contact の 2 経路で駆動すると、位相が合うかは歯数の偶奇で決まる。`resolveLayout` は contact の位相のずれを検証エラーにしないので、見た目で重なるまで気づかない。根拠: 36/12/12 は残差 0.5、39/13/13 は 0
+- [還元済み chore/retro-20261101-1430] 〔落とし穴〕merge 担当が sed でファイル全体の `- [ ]` を `[x]` にし、受け入れ条件・テストケースまで印が付いた。merge の手順 1（完了の条件に印を付ける）と statusRule（変わるのは 2 行だけ）も食い違っている。根拠: merge の呼び出し #1〜#3
