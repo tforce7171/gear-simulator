@@ -40,6 +40,8 @@ export const MUTE_RAMP_SEC = 0.05;
 export interface ClickPartial {
   readonly frequency: number; // Hz
   readonly decay: number; // 秒
+  // 部分音の音量（クリックの音量に対する比。S5-03）。省けば i 番目（0 から）が 0.6 / (i + 1)（衝撃音のクリック）
+  readonly level?: number;
 }
 
 export interface ClickNoise {
@@ -47,6 +49,8 @@ export interface ClickNoise {
   readonly frequency: number; // フィルタの周波数（Hz）
   readonly q?: number; // フィルタの Q（省けば既定のまま）
   readonly decay: number; // 秒
+  // ノイズの音量（クリックの音量に対する比。S5-03）。省けば 0.8（衝撃音のクリック）
+  readonly level?: number;
 }
 
 // 1 回のクリック（粒・衝撃音のクリック）の合成のパラメータ
@@ -57,13 +61,27 @@ export interface ClickParams {
 }
 
 // 粒 1 つの材質（S4-06）。ノイズを共鳴フィルタ（帯域通過、中心 = clickPitch、Q = q）に通し、
-// 中心周波数の ratio 倍の減衰する部分音を重ねる
+// 中心周波数の ratio 倍の減衰する部分音を重ねる。S5-03 で部分音ごとの音量 level とノイズの音量 noiseLevel を足した
+// （どちらも粒の音量 gain に対する比。ratio < 1 の部分音は中心より低い胴鳴り）
 export interface GrainMaterial {
   readonly pitch: number; // 止まりかけ（f → 0）の粒の中心周波数（Hz）
-  readonly partials: readonly { readonly ratio: number; readonly decay: number }[];
-  readonly q: number; // 共鳴フィルタの Q（大きいほど硬く鳴る）
+  readonly partials: readonly {
+    readonly ratio: number;
+    readonly decay: number;
+    readonly level: number;
+  }[];
+  readonly q: number; // 共鳴フィルタの Q（大きいほど音程が立つ）
   readonly noiseDecay: number; // ノイズの減衰（秒）
+  readonly noiseLevel: number; // ノイズの音量（gain に対する比）
   readonly gain: number; // 粒の音量
+}
+
+// 速く回した組の「ジー」（S5-03）: 歯の通過頻度が fromHz を超えたら、すべりの雑音の経路で連続したノイズを足す。
+// 強さ = level × 種類の click × clamp(log2(f / fromHz) / log2(fullHz / fromHz), 0, 1)
+export interface BuzzMaterial {
+  readonly fromHz: number;
+  readonly fullHz: number;
+  readonly level: number; // 頭打ちの強さ（0〜1。0 なら鳴らさない）
 }
 
 // すべりの雑音（S2-05）: ループするノイズ → 帯域通過フィルタ。強さ 0〜1 に gain を掛ける。
@@ -78,37 +96,43 @@ export interface SlideNoiseMaterial {
 export interface AudioMaterialParams {
   readonly click: GrainMaterial;
   readonly slide: SlideNoiseMaterial;
+  readonly buzz: BuzzMaterial;
 }
 
-// 材質のパラメータ（S4-06 で粒の音色にした）。時間は秒。metal は硬く高めのカタカタ（鋭い共鳴と高い部分音）、
-// wood は柔らかく低めのコトコト（ゆるい共鳴）
+// 材質のパラメータ（S4-06 で粒の音色にした。S5-03 で調整）。時間は秒。
+// metal は短く乾いたカチッ（ゆるい共鳴・整数比でない 2 つの短い部分音・ノイズが主。速く回すと「ジー」）、
+// wood は低く太いコトッ（中心を下げ、中心の半分の胴鳴りを足し、高い部分音とノイズを削る。余韻は伸ばさない）
 export const MATERIALS: Readonly<Record<AudioMaterialId, AudioMaterialParams>> = {
   metal: {
     click: {
       pitch: 2400,
       partials: [
-        { ratio: 1, decay: 0.025 },
-        { ratio: 1.63, decay: 0.018 },
-        { ratio: 2.54, decay: 0.012 },
+        { ratio: 1, decay: 0.007, level: 0.22 },
+        { ratio: 2.37, decay: 0.004, level: 0.12 },
       ],
-      q: 10,
-      noiseDecay: 0.004,
+      q: 3.5,
+      noiseDecay: 0.003,
+      noiseLevel: 1.2,
       gain: 0.5,
     },
     slide: { frequency: 2600, q: 4, spread: 0.4, gain: 0.12 },
+    buzz: { fromHz: CLICK_RATE_MAX, fullHz: CLICK_RATE_MAX * 8, level: 0.5 },
   },
   wood: {
     click: {
-      pitch: 520,
+      pitch: 420,
       partials: [
-        { ratio: 1, decay: 0.018 },
-        { ratio: 2.26, decay: 0.01 },
+        { ratio: 0.5, decay: 0.016, level: 0.5 },
+        { ratio: 1, decay: 0.014, level: 0.45 },
+        { ratio: 2.26, decay: 0.006, level: 0.1 },
       ],
-      q: 3,
+      q: 2.5,
       noiseDecay: 0.008,
+      noiseLevel: 0.55,
       gain: 0.6,
     },
     slide: { frequency: 900, q: 3, spread: 0.4, gain: 0.14 },
+    buzz: { fromHz: CLICK_RATE_MAX, fullHz: CLICK_RATE_MAX * 8, level: 0 },
   },
 };
 
@@ -158,6 +182,18 @@ export function slideNoiseLevel(kind: VoiceKind, pitchLineSpeed: number): number
   const speed = Math.abs(pitchLineSpeed);
   if (!(speed > 0)) return 0;
   return MESH_TIMBRES[kind].slideNoise * Math.min(1, speed / SLIDE_NOISE_FULL_SPEED);
+}
+
+// 速く回した組の「ジー」の強さ（0〜1。S5-03）。BuzzMaterial の式。engine はすべりの雑音の強さとの大きいほうを鳴らす
+export function buzzLevel(toothPassHz: number, material: AudioMaterialId, kind: VoiceKind): number {
+  const buzz = MATERIALS[material].buzz;
+  if (!(toothPassHz > buzz.fromHz) || !(buzz.level > 0)) return 0;
+  const t = clamp(
+    Math.log2(toothPassHz / buzz.fromHz) / Math.log2(buzz.fullHz / buzz.fromHz),
+    0,
+    1,
+  );
+  return buzz.level * MESH_TIMBRES[kind].click * t;
 }
 
 // すべりの雑音の帯域の中心（Hz）と音量。level は slideNoiseLevel
@@ -316,8 +352,18 @@ export function clickParams(
   const factor = 1 + CLICK_JITTER * (2 * clamp(random(), 0, 1) - 1);
   const pitch = clickPitch(toothPassHz, material) * pitchScale * factor;
   return {
-    partials: m.partials.map((p) => ({ frequency: pitch * p.ratio, decay: p.decay })),
-    noise: { type: 'bandpass', frequency: pitch, q: m.q, decay: m.noiseDecay },
+    partials: m.partials.map((p) => ({
+      frequency: pitch * p.ratio,
+      decay: p.decay,
+      level: p.level,
+    })),
+    noise: {
+      type: 'bandpass',
+      frequency: pitch,
+      q: m.q,
+      decay: m.noiseDecay,
+      level: m.noiseLevel,
+    },
     gain: m.gain,
   };
 }

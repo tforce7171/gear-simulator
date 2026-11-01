@@ -1,4 +1,5 @@
 import {
+  buzzLevel,
   CLICK_LATENCY,
   canPlayImpact,
   clickParams,
@@ -197,9 +198,10 @@ export function createAudioEngine(options: AudioEngineOptions = {}): AudioEngine
       } else {
         synth.setPosition(voice.position);
       }
-      // 種類ごとの音色（S2-05）: 粒の音量と高さに倍率を掛け、すべりの雑音を足す
+      // 種類ごとの音色（S2-05）: 粒の音量と高さに倍率を掛け、すべりの雑音を足す。
+      // 速く回した金属の組の「ジー」（S5-03）も同じ経路で鳴らす（強さはすべりの雑音との大きいほう）
       const timbre = meshTimbre(voice.kind);
-      synth.setSlide(voice.slide);
+      synth.setSlide(Math.max(voice.slide, buzzLevel(voice.frequency, material, voice.kind)));
       // 歯の境目を跨いだ時刻をフレームの中で補間し、遅れを足して予約する
       const now = ctx.currentTime;
       for (const t of times) {

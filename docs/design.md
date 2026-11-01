@@ -727,7 +727,18 @@ interface Settings {
   - かみ合い 1 組分の合成は `src/audio/mesh-voice.ts` の `createMeshVoiceSynth`（S4-06 から粒とすべりの雑音だけ。粒: 部分音の正弦波とフィルタを通したノイズを、1 ms の立ち上がりと時定数 = 表の減衰時間の指数の減衰で予約する（`playClick`）。消すときは 100 ms でフェードアウト）。ノイズは実行時に 1 秒の白色雑音の `AudioBuffer` を作って共有する。
   - **粒の音（カタカタ）**（S4-06。要件 §9 の「速いとうなり」と「モーターのうなり」を置き換えた）: かみ合いの音は速さによらず粒で鳴らし、連続音への切り替え（15〜30 Hz のクロスフェード）は無い。
     - `clickRate(f)`: 毎秒の粒の数 = `min(f, CLICK_RATE_MAX)`（`CLICK_RATE_MAX` = 40。止まっていれば 0）。`clickPitch(f, material)`: 粒の中心周波数 = 材質の基準 × (1 + 0.2 × log2(1 + f / 10))（f について単調に増える。基準は metal 2400 Hz・wood 520 Hz なので metal が高い）。
-    - `MATERIALS[material]` は `{ click: GrainMaterial, slide }`（連続音の `tone` は無い）。`GrainMaterial = { pitch, partials: { ratio, decay }[], q, noiseDecay, gain }`: metal は部分音 ×1・×1.63・×2.54（減衰 25・18・12 ms）・共鳴の Q 10（硬く高めのカタカタ）、wood は ×1・×2.26（18・10 ms）・Q 3（柔らかく低めのコトコト）。`clickParams(material, random, f, pitchScale = 1)` が粒 1 つ（ノイズ → 帯域通過の共鳴フィルタ、中心 = `clickPitch(f) × pitchScale`、それと部分音。高さを ±3% 揺らす）を返す。`pitchScale` は種類の音色の `pitch`。
+    - `MATERIALS[material]` は `{ click: GrainMaterial, slide, buzz }`（連続音の `tone` は無い）。`GrainMaterial = { pitch, partials: { ratio, decay, level }[], q, noiseDecay, noiseLevel, gain }`（S5-03 で部分音ごとの音量 `level` とノイズの音量 `noiseLevel` を足した。どちらも `gain` に対する比。`ClickPartial.level`・`ClickNoise.level` に渡り、省いた衝撃音のクリックは前どおり部分音 0.6/(i+1)・ノイズ 0.8）。`clickParams(material, random, f, pitchScale = 1)` が粒 1 つ（ノイズ → 帯域通過の共鳴フィルタ、中心 = `clickPitch(f) × pitchScale`、それと部分音。高さを ±3% 揺らす）を返す。`pitchScale` は種類の音色の `pitch`。背景（`background.ts`）も同じ `clickParams` を使う。材質ごとの値（S5-03 で調整。S4-06 の値は括弧の中）:
+
+      | | metal（真鍮・短く乾いたカチッ） | wood（木・低く太いコトッ） |
+      |---|---|---|
+      | 基準 `pitch` | 2400 Hz（同じ） | 420 Hz（520） |
+      | 部分音（ratio・減衰・level） | ×1・7 ms・0.22 / ×2.37・4 ms・0.12（×1・×1.63・×2.54、25・18・12 ms、0.6/(i+1)） | ×0.5・16 ms・0.5（胴鳴り）/ ×1・14 ms・0.45 / ×2.26・6 ms・0.1（×1・×2.26、18・10 ms、0.6/(i+1)） |
+      | 共鳴の Q | 3.5（10） | 2.5（3） |
+      | ノイズ（減衰・`noiseLevel`） | 3 ms・1.2（4 ms・0.8） | 8 ms・0.55（8 ms・0.8） |
+      | `gain` | 0.5 | 0.6 |
+      | `buzz`（fromHz・fullHz・level） | 40・320・0.5 | 40・320・0（鳴らさない） |
+
+    - 速く回した組の「ジー」（S5-03）: `buzzLevel(f, material, kind)` = `buzz.level × MESH_TIMBRES[kind].click × clamp(log2(f / fromHz) / log2(fullHz / fromHz), 0, 1)`（f ≤ fromHz = `CLICK_RATE_MAX` では 0。粒を毎秒 40 に間引き始めたところから、連続したノイズを足して粒の詰まりをつなぐ）。`engine.ts` は組の `setSlide` に `max(voice.slide, buzzLevel(...))` を渡し、すべりの雑音の経路（材質の `slide` の帯域）で鳴らす。`getAudio().voices[].slide` は `voice.slide` のまま（ジーを含めない）。
     - 粒の時刻は `meshGrainTimes(prev, next, teeth, dt, f, carry, random)`: f ≤ 40 なら歯の通過（`toothPassTimes`）ごとに 1 粒（回転の見た目と合う）、超えたら `grainTimes(40, dt, carry)`（端数 `carry` を次のフレームに持ち越して毎秒 40 粒）に間引く。どちらも `jitterTimes` で時刻を間隔の ±25%（±6 ms まで）揺らし、一定の間隔のブーという音にしない。`engine.ts` は組ごとに `carry` と予約した粒の数を持つ。粒の音量は種類の `click`。
     - 選び方の候補の `level` は `grainLevel(f, material)`（動いている組は材質の粒の音量 × 0.4、止まっていれば 0）。
     - 背景（`src/audio/background.ts`）は持続音をやめ、粒を重ねたざわざわ: `summarizeBackground` が `rate`（各組の `clickRate` の和、`BACKGROUND_MAX_RATE` = 80 まで）を足して返し、毎フレーム `grainTimes(rate)` の時刻を間隔の ±50% 揺らして、`clickParams(material, random, frequency)` の粒を音量 `level` でパンなしに鳴らす。
