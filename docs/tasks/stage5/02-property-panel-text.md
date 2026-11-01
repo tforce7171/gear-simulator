@@ -37,6 +37,7 @@ depends: [S5-01]
 
 ## 関連箇所
 - `widthRows`・歯数の行（`gearSection` の中の `prop-teeth-dec` / `prop-teeth-inc`）（`src/ui/properties.ts`）
+  - S5-01 で済み: `widthRows` の刻みは `GEAR_WIDTH_STEP`（0.5 mm）、入力欄は `numberField(..., step)` で 0.5 mm の倍数に丸める（`parseClampedStep`）。`properties.width.range` の `{min}`・`{step}` には 0.5 が入る
 - 影響を受けるテスト: 文言を直に比べている e2e（`grep -rln "mm（\|rpm\|properties\.width" e2e`）と i18n の Vitest
 - 見た目の確認: `e2e/visual/` のプロパティパネルが写る場面（`ui-ja-settings` など）を撮り直して Read で見る
 - 保存形式: 変えない

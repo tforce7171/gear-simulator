@@ -15,37 +15,72 @@ async function widthOf(page: Page, gearId: string): Promise<number | undefined> 
   return (await getScene(page)).gears[gearId]?.width;
 }
 
-test('平歯車を選び、厚さの［＋］を 2 回押す → __gearSim の歯車の width が 8 mm 増え、シャフトが伸びる。Undo/Redo できる', async ({
+test('平歯車を選び、厚さの［＋］を 2 回押す → __gearSim の歯車の width が 1 mm 増え、シャフトが伸びる。Undo/Redo できる', async ({
   page,
 }) => {
   await openApp(page, { scene: twoGears, camera: TOP_VIEW });
   await clickGear(page, 'gear_1');
   await expect(page.getByTestId('prop-width')).toHaveValue('8');
+  // S5-01 から 0.5 mm 刻み
   await page.getByTestId('prop-width-inc').click();
-  await expect(page.getByTestId('prop-width')).toHaveValue('12');
+  await expect(page.getByTestId('prop-width')).toHaveValue('8.5');
   await page.getByTestId('prop-width-inc').click();
-  await expect(page.getByTestId('prop-width')).toHaveValue('16');
-  expect(await widthOf(page, 'gear_1')).toBe(16);
-  // 厚くしてはみ出した分だけシャフトが伸びる（[−4, 12] → [−4, 20]）
-  expect((await getScene(page)).shafts.shaft_1?.span).toEqual([-4, 20]);
-  // 厚さの違う 2 枚（16 mm と 8 mm）もかみ合ったまま
+  await expect(page.getByTestId('prop-width')).toHaveValue('9');
+  expect(await widthOf(page, 'gear_1')).toBe(9);
+  // 厚くしてはみ出した分だけシャフトが伸びる（[−4, 12] → [−4, 13]）
+  expect((await getScene(page)).shafts.shaft_1?.span).toEqual([-4, 13]);
+  // 厚さの違う 2 枚（9 mm と 8 mm）もかみ合ったまま
   const meshes = await page.evaluate(() => window.__gearSim?.getLayout().meshes ?? []);
   expect(meshes.map((m) => [m.a, m.b])).toEqual([['gear_1', 'gear_2']]);
 
   await blur(page);
   await page.keyboard.press('Control+z');
-  expect(await widthOf(page, 'gear_1')).toBe(12);
+  expect(await widthOf(page, 'gear_1')).toBe(8.5);
   await page.keyboard.press('Control+Shift+z');
-  expect(await widthOf(page, 'gear_1')).toBe(16);
+  expect(await widthOf(page, 'gear_1')).toBe(9);
 });
 
-test('厚さを入力すると 4 mm の倍数・範囲に丸める', async ({ page }) => {
+test('小の平歯車を選び、厚さの［−］を 7 回押す → width が 0.5 になり、［−］が無効（S5-01）', async ({
+  page,
+}) => {
+  // two-spur: gear_1 は小・12 歯（厚さは省略 = 4 mm）
+  await openApp(page, { scene: fixtureScene('two-spur') });
+  await page.evaluate(() => window.__gearSim?.select('gear_1'));
+  const field = page.getByTestId('prop-width');
+  const dec = page.getByTestId('prop-width-dec');
+  await expect(field).toHaveValue('4');
+  const expected = ['3.5', '3', '2.5', '2', '1.5', '1', '0.5'];
+  for (const value of expected) {
+    await dec.click();
+    await expect(field).toHaveValue(value);
+  }
+  expect(await widthOf(page, 'gear_1')).toBe(0.5);
+  await expect(dec).toBeDisabled();
+  // 薄くしてもかみ合ったまま
+  const meshes = await page.evaluate(() => window.__gearSim?.getLayout().meshes ?? []);
+  expect(meshes.map((m) => [m.a, m.b])).toEqual([['gear_1', 'gear_2']]);
+  // Undo/Redo で 0.5 mm 刻みの値が保たれる
+  await blur(page);
+  await page.keyboard.press('Control+z');
+  expect(await widthOf(page, 'gear_1')).toBe(1);
+  await page.keyboard.press('Control+Shift+z');
+  expect(await widthOf(page, 'gear_1')).toBe(0.5);
+});
+
+test('厚さを入力すると 0.5 mm の倍数に丸めてから範囲に収める', async ({ page }) => {
   await openApp(page, { scene: twoGears, camera: TOP_VIEW });
   await page.evaluate(() => window.__gearSim?.select('gear_1'));
   const field = page.getByTestId('prop-width');
   await field.fill('19');
   await field.press('Enter');
-  expect(await widthOf(page, 'gear_1')).toBe(20);
+  expect(await widthOf(page, 'gear_1')).toBe(19);
+  await field.fill('1.3');
+  await field.press('Enter');
+  expect(await widthOf(page, 'gear_1')).toBe(1.5);
+  await field.fill('0.1');
+  await field.press('Enter');
+  expect(await widthOf(page, 'gear_1')).toBe(0.5);
+  await expect(page.getByTestId('prop-width-dec')).toBeDisabled();
   await field.fill('100');
   await field.press('Enter');
   expect(await widthOf(page, 'gear_1')).toBe(32);
@@ -84,7 +119,10 @@ test('同じシャフトの歯車とぶつかるときは変わらず、理由�
   };
   await openApp(page, { scene: stacked, camera: TOP_VIEW });
   await page.evaluate(() => window.__gearSim?.select('gear_1'));
-  await page.getByTestId('prop-width-inc').click();
+  // 接するまで（12 mm）は通り、そこから［＋］で 12.5 mm にすると gear_3 にぶつかる
+  const field = page.getByTestId('prop-width');
+  await field.fill('12');
+  await field.press('Enter');
   await expect(page.getByTestId('prop-width')).toHaveValue('12');
   await page.getByTestId('prop-width-inc').click();
   const toast = page.getByTestId('toast');
@@ -99,5 +137,22 @@ test('ラックの厚さも変えられる', async ({ page }) => {
   const rackId = Object.keys((await getScene(page)).racks)[0] ?? '';
   await page.evaluate((id) => window.__gearSim?.select(id), rackId);
   await page.getByTestId('prop-rack-width-inc').click();
-  expect((await getScene(page)).racks[rackId]?.width).toBe(12);
+  expect((await getScene(page)).racks[rackId]?.width).toBe(8.5);
+});
+
+test('ラックも 0.5 mm まで薄くでき、0.5 mm で［−］が無効（S5-01）', async ({ page }) => {
+  await openApp(page, { scene: fixtureScene('rack-basic') });
+  const rackId = Object.keys((await getScene(page)).racks)[0] ?? '';
+  await page.evaluate((id) => window.__gearSim?.select(id), rackId);
+  const field = page.getByTestId('prop-rack-width');
+  await field.fill('1');
+  await field.press('Enter');
+  await expect(field).toHaveValue('1');
+  const dec = page.getByTestId('prop-rack-width-dec');
+  await dec.click();
+  await expect(field).toHaveValue('0.5');
+  expect((await getScene(page)).racks[rackId]?.width).toBe(0.5);
+  await expect(dec).toBeDisabled();
+  const layout = await page.evaluate(() => window.__gearSim?.getLayout());
+  expect(layout?.rackMeshes.length).toBe(1);
 });

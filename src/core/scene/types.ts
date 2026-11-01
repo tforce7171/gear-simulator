@@ -106,7 +106,7 @@ export interface GearBase {
   readonly teeth: number;
   readonly offset: number; // シャフトの原点から、歯幅の負側の面までの軸方向の位置（mm）。AXIAL_SNAP の倍数
   // 歯車の厚さ（歯幅。mm。S4-03 で保存形式に入れた省略できる欄、S4-05 から形・干渉・かみ合い・シャフトの範囲に使う）。
-  // GEAR_WIDTH_RANGE の AXIAL_SNAP の倍数。省くと大きさごとの歯幅（gearWidth）。かさ歯車・ウォーム・ホイールは
+  // GEAR_WIDTH_RANGE の GEAR_WIDTH_STEP（0.5 mm）の倍数（S5-01）。省くと大きさごとの歯幅（gearWidth）。かさ歯車・ウォーム・ホイールは
   // 大きさごとの歯幅で固定（持つなら同じ値。S4-05）。音・運動には使わない
   readonly width?: number;
 }
@@ -224,7 +224,7 @@ export interface Rack {
   readonly size: SizeKey;
   readonly teeth: number; // RACK_TEETH の範囲の整数
   readonly placement: RackPlacement;
-  // 厚さ（歯幅の方向の幅。mm。S4-05 で足した省略できる欄）。GEAR_WIDTH_RANGE の AXIAL_SNAP の倍数。
+  // 厚さ（歯幅の方向の幅。mm。S4-05 で足した省略できる欄）。GEAR_WIDTH_RANGE の GEAR_WIDTH_STEP（0.5 mm）の倍数（S5-01）。
   // 省くと大きさごとの歯幅（rackWidth）。歯幅の方向の中心はピニオンの中心（ピニオンの厚さが違っても中央をそろえる）
   readonly width?: number;
 }

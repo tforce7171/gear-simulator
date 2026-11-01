@@ -79,8 +79,16 @@ describe('setGearWidth', () => {
     }
   });
 
-  it('2・36・6 mm → invalidValue', () => {
-    for (const width of [2, 36, 6]) {
+  it('0.5・1・1.5・32 mm → 通る（S5-01: 0.5 mm 刻み）', () => {
+    for (const width of [0.5, 1, 1.5, 32]) {
+      const next = ok(apply(single, { type: 'setGearWidth', gearId: 'gear_a', width }));
+      expect(next.gears.gear_a?.width).toBe(width);
+      expect(validateScene(next)).toEqual({ ok: true });
+    }
+  });
+
+  it('0・0.25・0.7・32.5・36 mm → invalidValue', () => {
+    for (const width of [0, 0.25, 0.7, 32.5, 36]) {
       expect(code(apply(single, { type: 'setGearWidth', gearId: 'gear_a', width }))).toBe(
         'invalidValue',
       );
@@ -234,6 +242,42 @@ describe('厚さとかみ合い・干渉', () => {
     expect(w2.shaft_b).toBeCloseTo(w1.shaft_b ?? Number.NaN, 10);
   });
 
+  it('1 mm の平歯車どうし → かみ合いとして認識され、速度比が今と同じ（S5-01）', () => {
+    const thin = scene(
+      [root('shaft_a', [0, 0, 0]), root('shaft_b', [60, 0, 0])],
+      [spur('gear_a', 'shaft_a', 0, 20, 1), spur('gear_b', 'shaft_b', 0, 40, 1)],
+      [motor],
+    );
+    expect(validateScene(thin)).toEqual({ ok: true });
+    const layout = resolveLayout(thin);
+    expect(layout.meshes.map((m) => [m.a, m.b])).toEqual([['gear_a', 'gear_b']]);
+    expect(layout.interferences).toEqual([]);
+    const w = omegas(thin);
+    const w8 = omegas(pair(8));
+    expect(w.shaft_a).toBeCloseTo(Math.PI, 10);
+    expect(w.shaft_b).toBeCloseTo(-Math.PI / 2, 10);
+    expect(w.shaft_b).toBeCloseTo(w8.shaft_b ?? Number.NaN, 10);
+  });
+
+  it('1 mm と 8 mm の平歯車もかみ合う（S5-01）', () => {
+    const s = scene(
+      [root('shaft_a', [0, 0, 0]), root('shaft_b', [60, 0, 0])],
+      [spur('gear_a', 'shaft_a', 0, 20, 1), spur('gear_b', 'shaft_b', 0, 40, 8)],
+      [motor],
+    );
+    expect(resolveLayout(s).meshes.map((m) => [m.a, m.b])).toEqual([['gear_a', 'gear_b']]);
+    expect(omegas(s).shaft_b).toBeCloseTo(-Math.PI / 2, 10);
+  });
+
+  it('同じシャフトの、4 mm 離れた位置にある 1 mm の歯車 2 枚は干渉しない（S5-01）', () => {
+    const s = scene(
+      [root('shaft_a', [0, 0, 0], [-4, 12])],
+      [spur('gear_a', 'shaft_a', 0, 20, 1), spur('gear_b', 'shaft_a', 4, 30, 1)],
+    );
+    expect(validateScene(s)).toEqual({ ok: true });
+    expect(resolveLayout(s).interferences).toEqual([]);
+  });
+
   it('厚さの方向に少しでも重なっていればかみ合う（B は [−16, 4]、A は [0, 8]）', () => {
     const layout = resolveLayout(pair(20, -16));
     expect(layout.meshes.map((m) => [m.a, m.b])).toEqual([['gear_a', 'gear_b']]);
@@ -270,9 +314,25 @@ describe('厚さとかみ合い・干渉', () => {
   });
 });
 
+describe('薄い太陽歯車の遊星歯車機構（S5-01）', () => {
+  it('厚さ 1.5 mm の太陽 → キャリアは 4 mm の区画の外に置かれ（offset が AXIAL_SNAP の倍数）、シーンが正しい', () => {
+    const sun = scene([root('shaft_a', [0, 60, 0])], [spur('gear_a', 'shaft_a', 0, 24, 1.5)]);
+    const next = ok(apply(sun, { type: 'growGear', mode: 'planetary', parentGearId: 'gear_a' }));
+    const carrier = Object.values(next.carriers)[0];
+    expect(carrier?.offset).toBe(8);
+    expect(validateScene(next)).toEqual({ ok: true });
+    expect(resolveLayout(next).interferences).toEqual([]);
+  });
+});
+
 describe('検証', () => {
-  it('width が 4〜32 の 4 の倍数でない → invalidWidth', () => {
-    for (const width of [0, 2, 6, 36]) {
+  it('width: 1.5 → 通る（S5-01）', () => {
+    const s = scene([root('shaft_a', [0, 0, 0])], [spur('gear_a', 'shaft_a', 0, 20, 1.5)]);
+    expect(validateScene(s)).toEqual({ ok: true });
+  });
+
+  it('width が 0.5〜32 の 0.5 の倍数でない → invalidWidth', () => {
+    for (const width of [0, 0.3, 0.25, 32.5, 36]) {
       const s = scene([root('shaft_a', [0, 0, 0])], [spur('gear_a', 'shaft_a', 0, 20, width)]);
       const result = validateScene(s);
       expect(result.ok ? [] : result.errors.map((e) => e.code)).toContain('invalidWidth');
@@ -296,7 +356,7 @@ describe('検証', () => {
     expect(validateScene(scene([root('shaft_a', [0, 0, 0])], [same]))).toEqual({ ok: true });
   });
 
-  it('ラックの width が 4〜32 の 4 の倍数でない → invalidWidth', () => {
+  it('ラックの width が 0.5〜32 の 0.5 の倍数でない → invalidWidth', () => {
     const s = scene(
       [root('shaft_a', [0, 0, 0])],
       [spur('gear_a', 'shaft_a')],
@@ -312,11 +372,13 @@ describe('ラックの厚さ（setRackWidth）', () => {
   // A（中・20 歯）をピニオンにしたラック（中・20 歯）
   const base = scene([root('shaft_a', [0, 0, 0])], [spur('gear_a', 'shaft_a')], [], [pinionRack()]);
 
-  it('4〜32 mm の 4 mm の倍数 → 通る。範囲外・4 の倍数でない → invalidValue。無いラック → notFound', () => {
-    const next = ok(apply(base, { type: 'setRackWidth', rackId: 'rack_a', width: 20 }));
-    expect(next.racks.rack_a?.width).toBe(20);
-    expect(validateScene(next)).toEqual({ ok: true });
-    for (const width of [2, 6, 36]) {
+  it('0.5〜32 mm の 0.5 mm の倍数 → 通る。範囲外・0.5 の倍数でない → invalidValue。無いラック → notFound', () => {
+    for (const width of [0.5, 1, 1.5, 20, 32]) {
+      const next = ok(apply(base, { type: 'setRackWidth', rackId: 'rack_a', width }));
+      expect(next.racks.rack_a?.width).toBe(width);
+      expect(validateScene(next)).toEqual({ ok: true });
+    }
+    for (const width of [0, 0.25, 0.7, 32.5, 36]) {
       expect(code(apply(base, { type: 'setRackWidth', rackId: 'rack_a', width }))).toBe(
         'invalidValue',
       );
@@ -351,6 +413,14 @@ describe('保存と読み込み', () => {
     const parsedRack = parseSaveFile(serializeSaveFile(toSaveFile(withRack)));
     if (!parsedRack.ok) throw new Error(parsedRack.error.code);
     expect(parsedRack.file.scene.racks.rack_a?.width).toBe(12);
+  });
+
+  it('厚さ 1.5 mm のシーンを保存・読み込み → 同じ値（S5-01）', () => {
+    const s = ok(apply(single, { type: 'setGearWidth', gearId: 'gear_a', width: 1.5 }));
+    const parsed = parseSaveFile(serializeSaveFile(toSaveFile(s)));
+    if (!parsed.ok) throw new Error(parsed.error.code);
+    expect(parsed.file.scene.gears.gear_a?.width).toBe(1.5);
+    expect(parsed.file.scene).toEqual(s);
   });
 
   it('厚さを変えていない歯車・ラックは width を省いたまま書き、読み込むと大きさごとの値になる', () => {

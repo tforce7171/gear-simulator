@@ -22,8 +22,10 @@ export const AUTOSAVE_DEBOUNCE_MS = 1000;
 export const MAX_SAVE_FILE_BYTES = 5 * 1024 * 1024; // 読み込める JSON ファイルの上限（5 MB。S1-28）
 export const THUMBNAIL_SIZE = 256;
 export const AXIAL_SNAP = 4; // mm。シャフト上の位置の吸着の単位（全サイズ共通）
-// mm。歯車・ラックの厚さ（width）の範囲（S4-05）。AXIAL_SNAP 刻み
-export const GEAR_WIDTH_RANGE = { min: 4, max: 32 } as const;
+// mm。歯車・ラックの厚さ（width）の範囲（S4-05。下限は S5-01 で 0.5 mm に）。GEAR_WIDTH_STEP 刻み
+export const GEAR_WIDTH_RANGE = { min: 0.5, max: 32 } as const;
+// mm。厚さの刻み（S5-01）。軸方向の配置の刻み AXIAL_SNAP とは別。薄い歯車も 4 mm の区画の中に置かれる
+export const GEAR_WIDTH_STEP = 0.5;
 export const MESH_PHASE_EPS = 1e-6; // rad。位相を歯のピッチを法として比べるしきい値（contact の判定には使わない）
 export const COLLISION_EPS = 1e-6; // mm。干渉の判定で、触れているだけを干渉としないための重なりの深さのしきい値
 export const SHAFT_END_MARGIN = 4; // mm。シャフトを歯車の端から伸ばす長さ

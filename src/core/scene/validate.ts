@@ -2,6 +2,7 @@ import {
   AXIAL_SNAP,
   GEAR_SIZES,
   GEAR_WIDTH_RANGE,
+  GEAR_WIDTH_STEP,
   MOTOR_RPM_RANGE,
   RACK_TEETH,
   WORM_THREADS,
@@ -62,7 +63,7 @@ export type SceneErrorCode =
   | 'planetaryMismatch' // 遊星歯車機構の歯数が配置の条件（同心・等配・隣の遊星）を満たさない（S3-05）
   | 'invalidSpan' // シャフトの範囲が有限の 2 つの数 [始まり < 終わり] でない（S4-03）
   | 'spanTooShort' // シャフトの範囲が、載っている部品の範囲（余白込み）を含まない（S4-03）
-  // 歯車・ラックの厚さ width が GEAR_WIDTH_RANGE の AXIAL_SNAP の倍数でない（S4-03・S4-05）。
+  // 歯車・ラックの厚さ width が GEAR_WIDTH_RANGE の GEAR_WIDTH_STEP の倍数でない（S4-03・S4-05・S5-01）。
   // 厚さを変えられない種類（かさ歯車・ウォーム・ホイール）が大きさごとの歯幅と違う width を持つ（S4-05）
   | 'invalidWidth';
 
@@ -724,5 +725,5 @@ function planetaryProblem(scene: Scene, carrierId: string, carrierShaftId: Shaft
 }
 
 function widthMessage(width: unknown): string {
-  return `width must be a multiple of ${AXIAL_SNAP} in [${GEAR_WIDTH_RANGE.min}, ${GEAR_WIDTH_RANGE.max}]: ${String(width)}`;
+  return `width must be a multiple of ${GEAR_WIDTH_STEP} in [${GEAR_WIDTH_RANGE.min}, ${GEAR_WIDTH_RANGE.max}]: ${String(width)}`;
 }
