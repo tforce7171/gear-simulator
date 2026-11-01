@@ -1,7 +1,7 @@
 ---
 id: S5-01
 title: 歯車とラックを 0.5 mm 刻みで薄くできるようにする
-status: todo
+status: doing
 depends: []
 ---
 
