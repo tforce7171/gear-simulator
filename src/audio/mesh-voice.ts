@@ -15,8 +15,9 @@ const RELEASE_SEC = VOICE_FADE_SEC;
 const CLICK_ATTACK_SEC = 0.001;
 // 指数の減衰で鳴り終わったとみなす時間（減衰時間の倍数。約 −52 dB）
 const CLICK_TAIL_FACTOR = 6;
-// クリックのノイズの音量（クリックの音量に対する比）
+// クリックのノイズ・最初の部分音の音量（クリックの音量に対する比）。粒は材質の値（S5-03）を使い、これは衝撃音のクリック
 const CLICK_NOISE_RATIO = 0.8;
+const CLICK_PARTIAL_RATIO = 0.6;
 
 export interface MeshVoiceSynth {
   // time（コンテキストの時刻）に粒を 1 回鳴らす。gain は粒の音量に掛ける倍率（種類の音色の click）
@@ -114,12 +115,12 @@ export function playClick(
 ): void {
   if (gain <= 0) return;
   const peak = params.gain * gain;
-  // 共鳴の部分音: 正弦波を指数で減衰させる。高い部分音ほど小さく（1, 1/2, 1/3, …）
+  // 共鳴の部分音: 正弦波を指数で減衰させる。音量は部分音の level（粒。S5-03）、省けば高い部分音ほど小さく（1, 1/2, 1/3, …）
   params.partials.forEach((partial, i) => {
     const o = ctx.createOscillator();
     o.frequency.value = partial.frequency;
     const g = ctx.createGain();
-    envelope(g.gain, time, (peak / (i + 1)) * 0.6, partial.decay);
+    envelope(g.gain, time, peak * (partial.level ?? CLICK_PARTIAL_RATIO / (i + 1)), partial.decay);
     o.connect(g).connect(output);
     const end = time + CLICK_ATTACK_SEC + partial.decay * CLICK_TAIL_FACTOR;
     o.start(time);
@@ -134,7 +135,7 @@ export function playClick(
   f.frequency.value = params.noise.frequency;
   if (params.noise.q !== undefined) f.Q.value = params.noise.q;
   const g = ctx.createGain();
-  envelope(g.gain, time, peak * CLICK_NOISE_RATIO, params.noise.decay);
+  envelope(g.gain, time, peak * (params.noise.level ?? CLICK_NOISE_RATIO), params.noise.decay);
   n.connect(f).connect(g).connect(output);
   const end = time + CLICK_ATTACK_SEC + params.noise.decay * CLICK_TAIL_FACTOR;
   n.start(time, Math.random() * Math.max(0, noise.duration - 0.2));

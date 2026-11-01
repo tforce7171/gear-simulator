@@ -39,6 +39,7 @@ depends: [S5-02, S5-03, S5-04]
 
 ### 音
 - 欠け歯車を含むかみ合いの声は、かかっていない間は粒を鳴らさない（`computeMeshVoices` / `meshGrainTimes` の声に「かかっているか」を持たせる）
+- かかっていない間は、速く回した金属の組の「ジー」（S5-03 の `buzzLevel`。`src/audio/engine.ts` がすべりの雑音の経路に `setSlide(max(voice.slide, buzzLevel(voice.frequency, material, voice.kind)))` で渡す強さ）も 0 にする。すべりの雑音（`voice.slide`）も同じく 0 にする。`voice.frequency` は歯数 × 回転数のままなので、手当てしないと歯のない区間でも、金属のテーマで f > `CLICK_RATE_MAX`（40 Hz）ならジーが鳴り続ける（例: A 36 歯を 120 rpm で回すと 72 Hz）
 - かかっていないことを、ラックの端の音（`rackEndHits`）やロックの音として鳴らさない
 
 ### 見本
@@ -63,12 +64,12 @@ depends: [S5-02, S5-03, S5-04]
   export function isEngaged(gear: SpurGear, shaftAngle: number, contactAngle: number): boolean;
   ```
 - `src/core/kinematics/`: かかっているかみ合いだけで式を組む。入る・外れる瞬間での区切り、`toothClash` のロック
-- `src/core/audio-model/index.ts`: かかっていない声の粒を止める
+- `src/core/audio-model/index.ts`: かかっていない声の粒を止める。`src/audio/engine.ts`: かかっていない声の `setSlide` に 0 を渡す（ジー・すべりの雑音を止める）
 - `src/core/edit/commands.ts`: `setToothCount`・`setToothStart`（add-edit-command スキルを使う）
 - `src/ui/properties.ts`: 2 つの欄
 - 見本の作品と `e2e/fixtures/rack-reciprocation.json`
 - `src/core/i18n/ja.ts` / `en.ts`: 欄の名前、注意書き、`toothClash` の理由
-- **design.md の書き換え**: §4（`toothCount`・`toothStart`）、§5（欠け歯車の形、かみ合いの位相）、§6（かみ合いの入り切り、`toothClash`）、音の節、§10（見本の場面、`__gearSim` の表）
+- **design.md の書き換え**: §4（`toothCount`・`toothStart`）、§5（欠け歯車の形、かみ合いの位相）、§6（かみ合いの入り切り、`toothClash`）、音の節（かかっていない声の粒と「速く回した組の『ジー』（S5-03）」を止めること）、§10（見本の場面、`__gearSim` の表）
 
 ## 関連箇所
 - 調べて分かった今の作り
@@ -78,6 +79,7 @@ depends: [S5-02, S5-03, S5-04]
   - B を A と同じ歯数にすると、B 自身がラックの幅に入ってラックとかみ合ってしまう。B を小さくすれば当たらない（例の歯数で約 11 m のすき間）
   - ラックの干渉の外形は、送りの範囲全体を覆う円柱。幅を広げすぎると小さい歯車のシャフトに当たる（例では幅 8 mm で足りる）
   - 音の粒は「軸の角度 × 歯数」から出す（`toothPassTimes`）ので、手当てしないと歯のない区間でも鳴る
+  - 粒とは別に、金属の組は f > `CLICK_RATE_MAX`（40 Hz）で連続した「ジー」が鳴る（S5-03。`buzzLevel(f, material, kind)` を `engine.ts` が `setSlide(max(voice.slide, buzzLevel(...)))` ですべりの雑音の経路に渡す。design.md の音の節「速く回した組の『ジー』（S5-03）」）。f は角度に依らず歯数 × 回転数なので、粒を止めるだけではジーが残る。かかっていない声では `setSlide` に渡す強さ（`buzzLevel` と `slide`）も 0 にする
 - 歯車の種類は足さない（平歯車の欄として持つ）ので add-gear-kind スキルは使わないが、その「型で拾えない落とし穴」（位相を回しながら確かめる、干渉の外形、性能の目安）は同じく確かめる
 - 保存形式: version は上げない（2 つの欄は省略でき、省略は普通の平歯車と同じ意味）
 - 影響を受けるテスト: 運動の Vitest（`src/core/kinematics/*.test.ts`）、`src/app/grow.test.ts`（新しい fixture の候補）、`pnpm test` の性能の目安（2 回流す）

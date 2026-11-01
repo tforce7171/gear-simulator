@@ -255,19 +255,19 @@ describe('clickParams（S4-06: 粒 1 つ）', () => {
 });
 
 describe('MATERIALS（S4-06: 粒の音色）', () => {
-  it('真鍮は硬く高め（基準 2400 Hz、共鳴が鋭い）、木は柔らかく低め（基準 520 Hz、共鳴がゆるい）', () => {
+  it('真鍮は高めの乾いたカチッ（基準 2400 Hz）、木は低く太いコトッ（基準 420 Hz、胴鳴り ×0.5。S5-03）', () => {
     expect(MATERIALS.metal.click.pitch).toBe(2400);
-    expect(MATERIALS.wood.click.pitch).toBe(520);
+    expect(MATERIALS.wood.click.pitch).toBe(420);
     expect(MATERIALS.metal.click.q).toBeGreaterThan(MATERIALS.wood.click.q);
-    expect(MATERIALS.metal.click.partials.map((p) => p.ratio)).toEqual([1, 1.63, 2.54]);
-    expect(MATERIALS.wood.click.partials.map((p) => p.ratio)).toEqual([1, 2.26]);
+    expect(MATERIALS.metal.click.partials.map((p) => p.ratio)).toEqual([1, 2.37]);
+    expect(MATERIALS.wood.click.partials.map((p) => p.ratio)).toEqual([0.5, 1, 2.26]);
   });
 
   it.each(MATERIAL_IDS)(
     '%s: 連続音の欄は無い。減衰は正で短い（50 ms 未満。粒が重ならない）',
     (material) => {
       const m = MATERIALS[material];
-      expect(Object.keys(m).sort()).toEqual(['click', 'slide']);
+      expect(Object.keys(m).sort()).toEqual(['buzz', 'click', 'slide']);
       const decays = [...m.click.partials.map((p) => p.decay), m.click.noiseDecay];
       for (const d of decays) {
         expect(d).toBeGreaterThan(0);
