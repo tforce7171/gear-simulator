@@ -118,6 +118,11 @@ export interface GearSimDebug {
     textures: number;
   };
   /**
+   * 部品の今の材質の色（S5-04）。歯車・ラック・キャリア・固定具の ID を受け、描いている材質の色（0xRRGGBB）を返す。
+   * 色（color）とテーマの系統で決まる（系統にない色・色なしは種類とテーマの質感）。描いていない・色を持てない部品は null
+   */
+  getPartMaterialColor(id: string): number | null;
+  /**
    * 描画の負荷（S1-31。scripts/perf.ts が使う）。frame は実際に描いた回数（renderer.info.render.frame。
    * 見た目が変わらないフレームは描かないので、rAF の回数より少ないことがある）、calls・triangles は
    * 最後に描いたフレームの値、redrawChecks・redrawCheckMs は描き直しの判定の回数と時間の合計（ms）

@@ -7,6 +7,7 @@ import type {
   Gear,
   Hand,
   Motor,
+  PartColor,
   Rack,
   RackPlacement,
   Scene,
@@ -110,6 +111,9 @@ export function parseScene(raw: unknown): SceneParseResult {
     shape(`${base}.${field}`, `${field} must be x, y or z: ${String(item[field])}`, key);
     return 'x';
   };
+  // 色（S5-04）。省いてもよい。知らない色・文字列でない値かは validateScene が確かめる（invalidColor）
+  const color = (item: Raw): { color?: PartColor } =>
+    item.color === undefined ? {} : { color: item.color as PartColor };
   const size = (item: Raw, base: string, key: string): SizeKey => {
     if (SIZES.includes(item.size)) return item.size as SizeKey;
     shape(`${base}.size`, `size must be S, M or L: ${String(item.size)}`, key);
@@ -213,6 +217,7 @@ export function parseScene(raw: unknown): SceneParseResult {
       offset: num(item, 'offset', base, key),
       // 厚さ（S4-03。省いてもよい。省けば大きさごとの歯幅 gearWidth）
       ...(item.width === undefined ? {} : { width: num(item, 'width', base, key) }),
+      ...color(item),
     };
     // 種類ごとのフィールド（S2-01）。値が許された範囲か（hand が left・right か）は validateScene が確かめる
     const kind: unknown = item.kind;
@@ -277,6 +282,7 @@ export function parseScene(raw: unknown): SceneParseResult {
           kind: str(target, 'kind', base, key) as 'shaft',
           id: str(target, 'id', base, key),
         },
+        ...color(item),
       },
     ]);
   }
@@ -292,6 +298,7 @@ export function parseScene(raw: unknown): SceneParseResult {
         shaftId: str(item, 'shaftId', base, key),
         offset: num(item, 'offset', base, key),
         size: size(item, base, key),
+        ...color(item),
       },
     ]);
   }
@@ -335,6 +342,7 @@ export function parseScene(raw: unknown): SceneParseResult {
         placement,
         // 厚さ（S4-05。省いてもよい。省けば大きさごとの歯幅 rackWidth）
         ...(item.width === undefined ? {} : { width: num(item, 'width', base, key) }),
+        ...color(item),
       },
     ]);
   }

@@ -238,7 +238,10 @@ interface GearBase {
   readonly teeth: number;
   readonly offset: number; // シャフトの原点から、歯幅の負側の面までの軸方向の位置（mm）。AXIAL_SNAP の倍数
   readonly width?: number; // 厚さ（歯幅。mm。S4-03 で足した省略できる欄。省けば GEAR_SIZES の faceWidth。S4-05 から使う。0.5〜32 mm の 0.5 mm 刻み（S5-01））
+  readonly color?: PartColor; // 色（S5-04）。省くと「自動」（テーマと種類で決まる質感）
 }
+// 部品の色（S5-04）。歯車・ラック・キャリア・固定具が省略できる color に持つ。シャフト・モーターは持たない
+type PartColor = 'brass' | 'silver' | 'metallicBlue' | 'wood' | 'darkOak';
 interface SpurGear extends GearBase { readonly kind: 'spur' }
 interface HelicalGear extends GearBase { readonly kind: 'helical'; readonly hand: 'left' | 'right' } // S2-01
 interface BevelGear extends GearBase { readonly kind: 'bevel'; readonly apex: 1 | -1 } // S2-02
@@ -268,6 +271,7 @@ interface Carrier {
   readonly shaftId: ShaftId; // このシャフトと一緒に回る
   readonly offset: number;   // 板の負側の面の位置（mm）。AXIAL_SNAP の倍数（Gear.offset と同じ考え方）
   readonly size: SizeKey;    // 板の厚み（CARRIER_THICKNESS）に使う
+  readonly color?: PartColor; // 色（S5-04）
 }
 
 interface Anchor {
@@ -275,6 +279,7 @@ interface Anchor {
   readonly target:
     | { readonly kind: 'shaft'; readonly id: ShaftId }
     | { readonly kind: 'rack'; readonly id: RackId }; // S3-04（ラックの拘束 v = 0）
+  readonly color?: PartColor; // 色（S5-04）
 }
 
 // ラック（S3-04）。直線に動く剛体。長さ L = 歯数 × π·m、歯形は圧力角 20° の直線歯（台形）
@@ -296,6 +301,8 @@ interface Rack {
         readonly normal: Axis;       // direction と異なる
         readonly normalSign: 1 | -1;
       };
+  readonly width?: number;    // 厚さ（S4-05）
+  readonly color?: PartColor; // 色（S5-04）
 }
 ```
 
@@ -340,6 +347,12 @@ interface Rack {
   - 遊星歯車機構を作るとき（`withPlanetary`）、太陽が `width` を持てば遊星とリングも同じ厚さにし、キャリアの板は太陽の厚さの正側の面から `CARRIER_GAP`。太陽の厚さが `AXIAL_SNAP` の倍数でなければ、厚さを `AXIAL_SNAP` の倍数に切り上げた面から離す（キャリアの `offset` を 4 の倍数に保つ。S5-01）。
   - ラック（`Rack.width?`。省けば大きさごとの歯幅。`rackWidth`）: 断面の幅（形・干渉の円柱）とかみ合いの重なりに使う。歯幅の方向の中心はピニオンの中心（ピニオンと厚さが違っても中央がそろう）。
   - コマンド: `setGearWidth { gearId, width }`・`setRackWidth { rackId, width }`（`GEAR_WIDTH_RANGE`（0.5〜32 mm）の外、または `GEAR_WIDTH_STEP`（0.5 mm）の倍数でない → `invalidValue`（判定は `isWidthStepMultiple`）、変えられない種類 → `notAllowed`）。シャフトからはみ出せば `fitShaftSpans` がシャフトを伸ばし、伸びた分も含めて新しい干渉（`newInterferences`）を生むなら `notAllowed`（`growGear` coaxial・`setShaftSpan` と同じ。コマンドは干渉を理由に失敗しない、の例外）。
+- **色（`color`）**（S5-04）: 歯車（すべての種類）・ラック・キャリア・固定具が持つ省略できる `PartColor`（`'brass' | 'silver' | 'metallicBlue' | 'wood' | 'darkOak'`。一覧と判定は `src/core/scene/part-color.ts` の `PART_COLORS`・`isPartColor`）。省けば「自動」（今までどおりテーマと種類で決まる質感）。シャフト・モーターは持たない。
+  - テーマの系統（`core/theme.ts` の `THEME_PART_COLORS`・`partColorFitsTheme`）: 真鍮のテーマ（金属）は真鍮・シルバー・メタリックブルー、木のテーマは木・ダークオーク。シーンにはどの色も入れられ、今のテーマの系統にない色を持つ部品は「自動」の質感で描く（値は消さない。テーマを戻すとその色で描く）。
+  - 生やした部品は元の部品の色を引き継ぐ（`inheritedColor`）: `growGear` の `perimeter`・`enclose`・`bevel`・`skew` の子は親の色、`planetary` のキャリア・遊星・リングは太陽の色（`withPlanetary`）、`growRack` のラックはピニオンの色、`growGear` の `rack`（2 つ目以降のピニオン）はラックの色、`setPlanetCount` で作り直す遊星は 1 本目の遊星の歯車の写し。起点のシャフトの最初の歯車（`addRootShaft`）・シャフトの上に置く歯車（`coaxial`）・固定具（`addAnchor`）は「自動」。
+  - コマンド: `setPartColor { target, color }`（`target` は部品の ID、`color` は `PartColor | null`。`null` は `color` を消す。無い部品 → `notFound`、シャフト・モーター → `notAllowed`、`PartColor` でない色 → `invalidValue`。今と同じなら同じシーンの参照。テーマの系統は見ない）。
+  - 検証（`validateScene`）: 歯車・ラック・キャリア・固定具の `color` が `PartColor` でない（文字列でない値も）→ `invalidColor`（path `<コレクション>.<ID>.color`）。`parseScene` は値をそのまま写して `validateScene` に任せる。
+  - 音は変わらない（テーマの `THEME_AUDIO_MATERIAL` で決まる）。
 - `offset` は負の値もとれる（`AXIAL_SNAP` の倍数であればよい）。
 - **向きの違う子**: 段階 2 以降の、親と軸の向きが違う配置（bevel、skew、rack など）は、向きを絶対値で持たず、親の軸からの相対値（`axisStep: 1 | 2` ＝ 親の軸を x→y→z→x の順に何回進めたか）で持つ。向きの計算は `stepAxis(axis, step)`（`src/core/math/axis.ts`。S2-02 で作った）1 つにまとめる。`shaftAxis` は親をたどって `axisStep` を足し合わせる。
 - 部品の範囲（シャフトが含まなければならない区間）の決め方は、部品によって例外がある。かさ歯車が載るシャフトは、頂点側の端を `頂点 − BEVEL_APEX_CLEARANCE·apex·軸`（2 mm 手前）より先へ伸ばさない。同じシャフトの頂点側にほかの部品が載っていれば、その部品の面 + `SHAFT_END_MARGIN` まで伸ばす（S2-02。§5 の `span`）。
@@ -626,6 +639,7 @@ interface Settings {
   - `addMotor { shaftId, size }`（`rpm` は `MOTOR_SIZES[size].defaultRpm`、`direction 1`、`on: true`。1 本に 1 個）、`updateMotor { motorId, patch: { size?, rpm?, direction?, on? } }`（`size` を変えても `rpm` は変えない）
   - `moveShaft { shaftId, origin }`・`setShaftAxis { shaftId, axis }`（`root`・`detached` だけ。その先の `mesh`・`bevel`・`skew` は書き換えない）
   - `reattachShaft { shaftId, childGearId, parentGearId, angle }`（`detached` だけ。大きさが同じで、親がこのシャフトとその先（`descendantShafts`）に無いこと。付け直しは `mesh` だけなので、かさ歯車の組（S2-02）とウォーム・ホイール（S2-03）は `notAllowed`）
+  - `setPartColor { target, color }`（S5-04。歯車・ラック・キャリア・固定具の色。`color: null` で消す。無い部品 → `notFound`、シャフト・モーター → `notAllowed`、知らない色 → `invalidValue`。生やした部品の色の引き継ぎは §4 の「色」）
   - `replaceScene { scene }`（`validateScene` を通らなければ `invalidValue`）
 - **削除の規則**: 歯車を消すと、その歯車を `parentGearId` に持つ `mesh`・`bevel`・`skew` のシャフトと、その歯車を `childGearId` に持つ自分のシャフトは、消す直前（入力のシーンの `resolveLayout`）の原点と向きで `detached` になる（その先はそのまま）。歯車が 1 枚も残らなくなったシャフトはモーター（と固定具。S3-01）ごと消す。シャフトを消すと載っている歯車とモーター・固定具も消える。同じコマンドの中で先に消えた ID は無視し、シーンに無い ID が 1 つでもあれば `notFound`。遊星歯車（S3-03）: `deleteParts` はキャリアの ID も受け付ける。キャリアを消すと、その遊星のシャフトは消す直前の基準配置の位置で `detached` になり、キャリアのシャフトに歯車もほかのキャリアも残らなければシャフトも消す。シャフトを消すと、載っているキャリアも消え（遊星のシャフトは `detached`）、`concentric` の子のシャフトはその場に `detached` で残る。太陽歯車を消すと、それを親とする遊星のシャフトは `detached` になる（`planet` も `isChildPlacement`）。ラック（S3-04）: `deleteParts` はラックの ID も受け付ける。ピニオン（`pinion` の相手）を消すと、ラックは消す直前の基準位置と向きで `detached` になる（`'rack'` のシャフトはラックについたまま）。`'rack'` のシャフトの子を消すと、そのシャフトは `detached`。ラックを消すと、それに載った `'rack'` のシャフトは消す直前の位置で `detached` になり、ラックの固定具も消える。
 - **Undo/Redo の履歴**（S1-11。`src/core/edit/history.ts`）: `History { past（古い順）, future（次に Redo するものが先頭）, coalesceKey }`。`execute(state, command, ctx, { coalesceKey? })` は成功し、シーンの参照が変わったときだけ積み（未来は消える。上限 `HISTORY_LIMIT`、古いものから捨てる）、失敗・何も変えないコマンドでは履歴もそのまま。`coalesceKey` を渡すと、直前に積んだときと同じキーなら新しく積まない（ドラッグなど連続した入力を 1 回の Undo にする。UI は操作ごとに別のキーを作る）。Undo・Redo・キーなしの実行でキーは途切れる。
@@ -691,6 +705,7 @@ interface Settings {
   - コンテキストメニュー: キャリア・ラックの上の「固定する／固定を外す」「ここに寄る」「削除」は S3-03・S3-04 で済。
 - **プロパティパネル**（S1-20。`src/ui/properties.ts` の `createProperties({ setContent, getState, getLayout, dispatch })`。S2-05 で種類ごとの表示を足した: 種類の名前 `prop-kind`（`data-kind`、辞書 `gearKind.<種類>`）、ハスバ歯車のねじれの向き `prop-hand`（表示だけ）、かさ歯車の注記 `prop-bevel-note` と「向きを反転」`prop-bevel-flip`（`flipBevelApex`。`bevel` のシャフトの子では `disabled`）、ウォームの「1 条」`prop-worm-threads`（歯数の欄を出さない）。ホイール・ねじ歯車は歯数を編集できる）: `main.ts` がストアの購読で `refresh()` を呼び、選択かシーン（Undo を含む）の参照が前回と変わったときと、言語が変わったときに中身を作り直して `UiShell.properties.setContent` に渡す（選択が無ければ `null` で案内文）。作り直す前にフォーカスのあった要素は、作り直した後の同じ `data-testid` の要素に戻す。
   - 歯車を選んでいるとき: 見出し（`prop-heading`）・種類（平歯車）・大きさ（`prop-size`）・歯数（`prop-teeth`、`prop-teeth-dec`、`prop-teeth-inc`。範囲は `GEAR_SIZES[size]`）と、そのシャフトのモーターの欄。シャフトを選んでいるとき: 見出し・向き（`prop-shaft-axis`、`getLayout().shafts[id].axis`）とモーターの欄。
+  - 色（S5-04）: 歯車（大きさの下）・ラック（厚さの下）・キャリア（遊星の数の下）に色の欄 `prop-color`（`role="radiogroup"`、`data-color` は今の値か `auto`）。「自動」`prop-color-auto` と、今のテーマの系統の色見本 `prop-color-<色>`（`role="radio"`・`aria-checked`・`title`/`aria-label` に色の名前 `properties.color.<色>`）。押すと `setPartColor`（自動は `color: null`。今と同じなら出さない）。今の色が系統にないときは、どれも選ばれていない状態にして注意書き `prop-color-note`（`properties.color.otherTheme`）を出す。固定具は選べないので、固定しているときの固定具の欄に `prop-anchor-color`（`-auto`・`-<色>`・`-note`。見出し `properties.color.anchor`）を出す。シャフト・モーターには色の欄を出さない。テーマが変わったときも中身を作り直す（`refresh` は選択・シーン・テーマを比べる）。
   - 厚さ（S4-05）: 厚さを変えられる歯車（`isWidthAdjustable`）は大きさの下に厚さの欄（`prop-width`、`prop-width-dec`・`prop-width-inc` で `GEAR_WIDTH_STEP`（0.5 mm）ずつ。S5-01 まで `AXIAL_SNAP`。範囲の説明 `properties.width.range` に単位と刻みを書く。S5-02 で［−］入力［＋］の右の単位の欄をなくし、歯数の行と左端・右端・入力欄の幅をそろえた）。入力した値は 0.5 mm の倍数に四捨五入してから `GEAR_WIDTH_RANGE` に収める（`ui/number-input.ts` の `parseClampedStep`・`clampToStep`。入力欄は `inputMode: 'decimal'`）。かさ歯車・ウォーム・ホイールには出さない。ラックは歯数の下に `prop-rack-width`（`-dec`・`-inc`）。確定するとまず今のシーンで `applyCommand` を試し、`notAllowed`（ほかの部品とぶつかる）ならコマンドを出さずにトースト `properties.width.blocked`（error）で理由を出す。
   - モーターの欄（`prop-motor`、見出し `prop-motor-heading`）: 無ければ `prop-motor-add-<S|M|L>`（`addMotor`）。あれば大きさ `prop-motor-size-<S|M|L>`（`role="radio"`・`aria-checked`）、rpm のスライダー `prop-motor-rpm-slider`（`input` は表示だけ、`change` で確定）と入力欄 `prop-motor-rpm`、向き `prop-motor-direction`（`data-direction` が `1`／`-1`）、ON/OFF `prop-motor-on`（`aria-pressed`）、外す `prop-motor-remove`。
   - 固定具の欄（S3-01。`prop-anchor`、見出し「固定具」）: 「固定する」のチェック `prop-anchor-check`（`addAnchor`／`removeAnchor`）。歯車を選んでいるときは、そのシャフトを固定する旨の注記 `prop-anchor-note` を出す。歯車・シャフトのどちらでもモーターの欄の後に置く。
@@ -708,6 +723,8 @@ interface Settings {
     | キャリア | 鋼（銀色） | 濃い木 |
     | ラック | 真鍮 | 明るい木 |
     | 固定具（台座・支柱・足） | 黒い鉄 | 濃い木 |
+
+    **部品の色**（S5-04）: 色ごとの材質 `PART_COLOR_MATERIALS`（`Record<PartColor, MaterialId>`。真鍮 → `brass`、シルバー → `steel`（`0xb9bec4`）、メタリックブルー → `metallicBlue`（`0x3d68c4`、metalness 1、roughness 0.32）、木 → `lightWood`、ダークオーク → `darkOak`（`0x4a3220` の黄みのあるこげ茶、roughness 0.72、木目の強さ `grainContrast` 1.5））。`colorMaterial(theme, color)` は色なし・系統にない色で `null`、`gearLook(theme, kind, color?)`・`partLook(theme, kind, color?)` は色があれば色の見た目、無ければ種類の見た目。`PartLook.grainContrast`（省くと 1）は木目の強さで、`woodGrainShade(u, v, contrast)` の筋の濃さに掛ける。テーマのコントローラは使う強さごとに木目のテクスチャを 1 枚ずつ持つ（`woodGrainContrasts(theme)`）。`SceneSync.setBaseMaterials` は省略できる `colors`（`Partial<Record<PartColor, MeshStandardMaterial>>`。今のテーマの系統の色だけ。同じ材質の ID は歯車・部品と共有）も受け取り、色を持つ歯車・ラック・キャリア・固定具は `colors[color]` の組、無ければ種類の組で描く（材質の組は種類 × 色ではなく基の材質ごとに 1 つ。真鍮のテーマで増えるのはメタリックブルー、木のテーマではダークオークの組だけ）。色を変えると部品の参照が変わり、`sync` が作り直して `applyHighlight` で材質を選び直す（`version` が増える）。選択・ロック・干渉の強調は色の組からも同じように作る。
 
     シャフトは `ThemeLook.shaft` のまま。**モーターの材質**（S4-07。`ThemeLook.motor` を無くした）: 部分ごとの表 `MOTOR_PART_LOOKS`（`Record<MotorPart, Record<ThemeId, PartLook>>`。部分の追加漏れを型で検出する）と `motorLook(theme, part)`。真鍮のテーマは銀色の金属の缶（`0xc4c8cc`、metalness 1）・黒い樹脂の端の蓋（`0x1e1e20`）・真鍮の端子・黒っぽい鋼の継手・赤い線、木製のテーマは木のおもちゃ（赤く塗った木の缶・明るい木目の端の蓋・濃い木目の端子・黄色く塗った木の継手・青い線。どれも metalness 0）。`SceneSync.setBaseMaterials` の `motor` は `Record<MotorPart, MeshStandardMaterial>`（同じ材質の部分は材質の組を共有する）。`SceneSync.setBaseMaterials` は `{ gear, part, shaft, motor }` を受け取り（`part` は `Record<PartKind, MeshStandardMaterial>`。歯車と同じ材質は同じものを共有し、材質の組も歯車と部品の間で共有する）、キャリア・ラック・固定具はそれぞれの組の材質で選択・ロック・干渉に光る。音の材質（`THEME_AUDIO_MATERIAL`）はテーマで決まるままで、歯車の種類では変えない。`createRenderer(canvas, { theme, quality })` が作り、`Renderer.applyTheme(theme, quality)`（同じ値なら何もしない）で切り替える。`main.ts` はストアの購読で設定が変わるたびに呼ぶ。
   - 床（照明を計算しない色の板、y = −0.2 mm）と影を受ける面（`ShadowMaterial`。部品の範囲 `boundsOf` に合わせて、平行光源の影のカメラと一緒にレイアウトが変わるたびに置き直す。`ThemeController.fitShadows`）・グリッド・背景・環境マップ（`RoomEnvironment` を `PMREMGenerator` で変換し `scene.environment`・`scene.environmentIntensity`）・平行光源の影（`PCFShadowMap`。three r186 で `PCFSoftShadowMap` が無くなったため。`shadow.radius` でぼかす）はテーマのコントローラが持つ。トーンマッピングは ACESFilmic、アンチエイリアスは常に ON。
@@ -823,6 +840,7 @@ interface SaveFile {
 - **version 4**（S4-03）: `CURRENT_SAVE_VERSION = 4`。シャフトの範囲 `span: [始まり, 終わり]`（必須）と、歯車の省略できる厚さ `width`（無ければ大きさごとの値 `gearWidth`）を足した。S4-05 は version を上げずに、ラックにも省略できる `width`（`rackWidth`）を足した。厚さを変えた歯車・ラックは `width` を持つのでそのまま書き出し、変えていないものは省いたまま書く（読み込むと同じシーンに戻る。省いた値は大きさごとの歯幅）。
   - `MIGRATIONS[3]`（3 → 4）: version 3 の `parseScene`（`span` を省いたシャフトを受け付ける）で読み、`withShaftSpans` で各シャフトに version 3 までの長さ（部品の範囲。部品が無ければ ±`EMPTY_SHAFT_HALF_LENGTH`）を入れる（生の値のシャフトに `span` を足す）。読めなければそのまま渡し、version 4 の検証で弾く。1 → 2 → 3 → 4 と順に移行できる。
   - version 4 の検証: `parseSaveFileObject` は、移行のあとにシャフトが `span` を持たなければ `invalid-scene`（path `shafts.<ID>.span`）。`parseScene` は `span`（2 つの数）・`width`（数）の形を、`validateScene` は `invalidSpan`・`spanTooShort`・`invalidWidth`（§4）を確かめる。
+  - S5-04 は version を上げずに、歯車・ラック・キャリア・固定具に省略できる `color`（§4）を足した。省いた部品は今までと同じ見た目（「自動」）なので、古いファイルはそのまま読める。色を付けた部品だけが `color` を持って書き出され、知らない色は `invalidColor`（`invalid-scene`、path `<コレクション>.<ID>.color`）。
   - 書き出し: `toSaveFile(scene)` は `withShaftSpans` を通す（範囲を省いたシャフトがあれば部品から入れる）。
   - テストのフィクスチャ: `src/core/io/save-file-v3.json`（S3-05 の時点の version 3 の `SaveFile`。シーンは `stage3-showcase` から `span` を除いたもの）。
 - **S1-28 で作ったもの**:
@@ -854,7 +872,7 @@ interface SaveFile {
   - 段階 2 の場面: `helical-closeup`（S2-01。`helical-pair` のかみ合いを接点から 60 mm）、`bevel-closeup`（S2-02。`bevel-pair` のかみ合いの歯の中ほどを 60 mm から）、`worm-closeup`（S2-03。`worm-basic` の接点 `[16, 70, 0]` を斜め前から）、`worm-locked`（S2-03。`worm-backdrive` のロック中。`pause: false`）、`crossed-helical-closeup`（S2-04。`crossed-pair` の接点 `[4, 100, 0]` を、接点での歯すじ `(1, 0, 1)` と中心を結ぶ線のどちらとも直交する向きの少し上から）。S2-05（`e2e/visual/stage2.spec.ts`）: `stage2-showcase-brass`・`stage2-showcase-wood`（`stage2-showcase` の全体。Home）、`stage2-<helical|bevel|worm|crossed-helical>-<brass|wood>`（`stage2-showcase` の各かみ合いの接点から 70 mm）、`stage2-info-worm`（`worm-basic` の情報表示 ON。ラベルの 3 行目にウォーム比 `30:1`。`pause: false`）、`stage2-ui-ja`・`stage2-ui-en`（パレットでウォームを選び、かさ歯車を選んだ状態）。
   - 段階 3 の場面: `anchor-locked`（S3-01。`anchor-pair` の B を固定してロックしている場面。台座・支柱と赤い震え。`pause: false`）、`internal-closeup`（S3-02。`internal-pair` の接点 `[0, 39, −20]` を、開いている側（上）から斜めに見下ろす拡大）、`planetary`（S3-03。`planetary-ring-fixed` を斜め上から）、`rack-closeup`（S3-04。`rack-basic` の接点 `[0, 40, 4]` を正面の少し上から）、`rack-end-locked`（S3-04。`rack-basic` で端に達してロックした場面。`pause: false`）。 S3-05（`e2e/visual/stage3.spec.ts`）: `stage3-showcase-brass`・`stage3-showcase-wood`（`stage3-showcase` の全体。Home）、`stage3-<planetary|rack|anchor>-<brass|wood>`（遊星歯車機構を開いている側（上）から、ラックを正面の少し上から、リングの固定具を斜め横から）、`stage3-info`（情報表示 ON。キャリアの rpm、ラックの速度と向きの矢印。`pause: false`）、`stage3-ui-ja`・`stage3-ui-en`（キャリアを選んだプロパティパネル）と `stage3-ui-rack-ja`・`stage3-ui-rack-en`（ラックを選んだプロパティパネル）。
   - 段階 4 の場面: `palette-icons-<ja|en>`（S4-08。`e2e/visual/palette-icons.spec.ts`。アイコン入りのパレットの部分だけを `deviceScaleFactor: 2` で撮った画像。ハスバ歯車・中を選んだ状態）と `palette-icons-<ja|en>-full`（同じ状態の画面全体）。
-  - 段階 5 の場面: `thin-gears-<1mm|0.5mm>-<oblique|side>`（S5-01。`e2e/visual/thin-gears.spec.ts`。`two-gears` の gear_1 を 1 mm / 0.5 mm、gear_2 を 8 mm にした組を、斜め上からと、2 枚の中心を結ぶ線に直交する真横から）。
+  - 段階 5 の場面: `thin-gears-<1mm|0.5mm>-<oblique|side>`（S5-01。`e2e/visual/thin-gears.spec.ts`。`two-gears` の gear_1 を 1 mm / 0.5 mm、gear_2 を 8 mm にした組を、斜め上からと、2 枚の中心を結ぶ線に直交する真横から）。`part-colors-brass`（S5-04。`e2e/visual/part-colors.spec.ts`。真鍮のテーマで真鍮・シルバー・メタリックブルーの平歯車を並べた場面）・`part-colors-wood`（木のテーマで木・ダークオーク・シルバー（自動の明るい木で描かれる）の平歯車と、自動の濃い木のウォーム）と、それぞれ歯車を選んで色の欄を写した `-panel`。
 - **通しテスト**（`e2e/flows/`。S1-31）: 主要な操作の流れを、操作は画面（パレット・候補・プロパティパネル・ツールバー・キー・メニュー）から行い、状態は `__gearSim` で確かめる。`loadScene` は準備にだけ使う。共通の操作は `e2e/fixtures/sim.ts`（`fixtureScene`・`openApp`・`getScene` などの読み出し・`gearPoint`（pick がその歯車を返す画面の点）・`clickGear`・`clickPerimeterCandidate`（中心が近い外周の候補）・`deselect`・`setPaused`・`settleCamera`・`nextFrames`・`waitAutosaved`）。新しい spec はこれを使う（S1-30 までの spec は各自の補助関数のまま）。
 - **性能の計測**（S1-31。`pnpm perf`、`scripts/perf.ts`。`pnpm verify` には入れない）: `vite build --mode e2e` → `vite preview --mode e2e --port 4175` を起動し、Playwright の Chromium を画面ありで開く（`--ignore-gpu-blocklist --disable-gpu-vsync --disable-frame-rate-limit`。SwiftShader は使わない）。画面は 1280×800、`devicePixelRatio` は実機の値。`generatePerfScene(count)`（`src/debug/perf-scene.ts`）を読み込み、条件（高品質／軽量・情報表示 ON／OFF・音あり／ミュート、テーマは真鍮）ごとに、キャンバスをクリック（音を開始）→ Home → 眺めるモード → 3 秒待つ → 指定の秒数だけページ内の `requestAnimationFrame` の間隔を記録する。平均 fps・フレーム時間の中央値・p95・p99・最大、実際に描いた回数（`renderer.info.render.frame` の増え方）、`calls`・`triangles`、描き直しの判定 1 回の時間を表で出し、`perf-results/<YYYYMMDD-HHmmss>.json`（git で無視）にも書く。平均 60fps 以上かつ p95 ≤ 16.7 ms で `OK`、それ以外は `BELOW TARGET`。終了コードは結果によらない。引数は `--count <n>`（初期値 200）・`--seconds <n>`（初期値 10）・`--headless`（動くかの確かめ用。数値は参考にならない）。TypeScript は `tsx` で動かす（`page.evaluate` に関数を渡すと tsx が差し込む `__name` がページに無いので、ページで動かす長い処理は文字列で渡す）。
   - `generatePerfScene(count, seed = 1)`: 歯車 count 枚の、干渉もロックもない、すべて回る 1 本の木（根のシャフト 1 本）。10 枚ずつの列（大きさは S・M・L の順、歯数は 20〜40 を seed で決める、±30° の折れ線）を、前の列の先頭のシャフトに重ねた歯車（列ごとに上の層へ。同じシャフトに 2 枚）と間の 1 枚でつなぎ、各列の先頭のシャフトに列の大きさのモーター（初期値の rpm、+1、ON）を付ける。200 枚でかみ合い 180 組、重ねた歯車 19 枚。
@@ -907,6 +925,7 @@ interface GearSimDebug {
   // arrows は今描いている回転方向の矢印（gearId の昇順。止まっている歯車は含まない。10 Hz で書き換える）
   getInfoOverlay(): { enabled: boolean; arrows: Array<{ gearId: GearId; direction: 1 | -1 }> };
   getRenderInfo(): { theme: ThemeId; quality: Quality; shadowMapEnabled: boolean; pixelRatio: number; textures: number }; // S1-24
+  getPartMaterialColor(id: string): number | null; // 部品の今の材質の色（S5-04）
   // 描画の負荷（S1-31。scripts/perf.ts が使う。型は src/render/renderer.ts の RenderStats）。frame は実際に描いた回数
   // （renderer.info.render.frame）、calls・triangles は最後に描いたフレームの値、redrawChecks・redrawCheckMs は
   // 描き直しの判定（render/redraw.ts）を呼んだ回数とその時間の合計（ms）
@@ -982,6 +1001,7 @@ API はタスクで必要になった時点で足していく。足したらこ�
 | S4-06 | `getAudio` を変えた（済。`voices[].click`・`tone` を無くし `rate`・`pitch`・`clicks` を足した。`background.rate` を足した。`motors[].frequency` を無くした）。新しい関数は足していない |
 | S4-07 | なし（モーターの形・材質は描画の中だけ。選択は既存の `pick` / `getSelection`、見た目は `e2e/visual/motor.spec.ts` で撮る） |
 | S4-08 | なし（パレットのアイコンは DOM だけ。確かめは `e2e/palette-icons.spec.ts`、見た目は `e2e/visual/palette-icons.spec.ts`） |
+| S5-04 | `getPartMaterialColor(id)`（済。歯車・ラック・キャリア・固定具の今の材質の色 `0xRRGGBB`。描いていない・色を持てない部品は `null`。`SceneSync.partMaterialColor`）。`getScene()` の歯車・ラック・キャリア・固定具に省略できる `color` が増えた |
 
 - トーストは `__gearSim` を通さず、Playwright から `page.evaluate` で `/src/ui/toast.ts` を動的 import して呼ぶ（S1-15）。`tsconfig.json` の `paths`（`/src/*` → `./src/*`）で、この形の import にも型が付く。時間で消えることは `page.clock.install()` で開いたあと `pauseAt` で時計を止め、`runFor` で進めて確かめる（`e2e/fixtures/sim.ts` の `openWithPausedClock`）。
 - 描画領域は S1-15 からページより小さい（ツールバーとパネルの分）。ページ座標で「画面の内側」を確かめるときは、`page.viewportSize()` ではなく `page.locator('canvas').boundingBox()` を使う。

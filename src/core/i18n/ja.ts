@@ -140,6 +140,17 @@ export const ja = {
   'properties.planetary.ringNote':
     'リングの歯数は、太陽と遊星の歯数から決まります。太陽 + 2 × 遊星 です',
   'properties.teeth.count': '{count} 歯',
+  // 部品の色（S5-04）。色の欄・色の名前・今のテーマの系統にない色の注意書き
+  'properties.color': '色',
+  'properties.color.auto': '自動',
+  'properties.color.brass': '真鍮',
+  'properties.color.silver': 'シルバー',
+  'properties.color.metallicBlue': 'メタリックブルー',
+  'properties.color.wood': '木',
+  'properties.color.darkOak': 'ダークオーク',
+  'properties.color.anchor': '固定具の色',
+  'properties.color.otherTheme':
+    '{color}は今のテーマでは選べない色なので、自動の色で表示しています。テーマを戻すと{color}で表示します',
   'properties.anchor': '固定具',
   'properties.anchor.check': '固定する',
   'properties.anchor.gearNote': 'この歯車のシャフトを固定します。同じシャフトの部品も止まります',

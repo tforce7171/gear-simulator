@@ -31,6 +31,7 @@ import type {
   GearKind,
   Motor,
   MotorId,
+  PartColor,
   Rack,
   RackId,
   Scene,
@@ -220,10 +221,13 @@ function pulseLocked(set: MaterialSet, timeSec: number): void {
 
 // 部品の種類ごとの基の材質（テーマが決める。S1-24）。歯車は種類ごと（S2-05。同じ材質を共有してよい）、
 // キャリア・ラック・固定具は part（S3-05。render/themes.ts の PART_KIND_MATERIALS。歯車と共有してよい）、
-// モーターは部分ごと（S4-07。render/themes.ts の MOTOR_PART_LOOKS。部分の間で共有してよい）
+// モーターは部分ごと（S4-07。render/themes.ts の MOTOR_PART_LOOKS。部分の間で共有してよい）。
+// colors は部品の色（S5-04）ごとの材質で、今のテーマの系統の色だけを持つ（歯車・部品と共有してよい）。
+// 色を持つ歯車・ラック・キャリア・固定具は colors[color]、無ければ（色なし・系統にない色）種類の材質で描く
 export interface BaseMaterials {
   readonly gear: Readonly<Record<GearKind, MeshStandardMaterial>>;
   readonly part: Readonly<Record<PartKind, MeshStandardMaterial>>;
+  readonly colors?: Readonly<Partial<Record<PartColor, MeshStandardMaterial>>>;
   readonly shaft: MeshStandardMaterial;
   readonly motor: Readonly<Record<MotorPart, MeshStandardMaterial>>;
 }
@@ -235,13 +239,16 @@ function disposeSet(set: MaterialSet): void {
 
 type GearMaterialSets = Readonly<Record<GearKind, MaterialSet>>;
 type PartMaterialSets = Readonly<Record<PartKind, MaterialSet>>;
+type ColorMaterialSets = Readonly<Partial<Record<PartColor, MaterialSet>>>;
 const PART_KIND_LIST: readonly PartKind[] = ['carrier', 'rack', 'anchor'];
 
-// 歯車と部品（S3-05）の種類ごとの材質の組。基の材質が同じ種類は同じ組を共有する（歯車と部品の間でも）
+// 歯車と部品（S3-05）の種類ごとの材質の組と、色（S5-04）ごとの材質の組。基の材質が同じものは同じ組を共有する
+// （歯車・部品・色の間でも）
 function materialSets(
   gear: Readonly<Record<GearKind, MeshStandardMaterial>>,
   part: Readonly<Record<PartKind, MeshStandardMaterial>>,
-): { gear: GearMaterialSets; part: PartMaterialSets } {
+  colors: Readonly<Partial<Record<PartColor, MeshStandardMaterial>>> = {},
+): { gear: GearMaterialSets; part: PartMaterialSets; colors: ColorMaterialSets } {
   const byBase = new Map<MeshStandardMaterial, MaterialSet>();
   const setOf = (material: MeshStandardMaterial): MaterialSet => {
     let set = byBase.get(material);
@@ -255,11 +262,21 @@ function materialSets(
   for (const kind of GEAR_KIND_LIST) gears[kind] = setOf(gear[kind]);
   const parts = {} as Record<PartKind, MaterialSet>;
   for (const kind of PART_KIND_LIST) parts[kind] = setOf(part[kind]);
-  return { gear: gears, part: parts };
+  const colorSets: Partial<Record<PartColor, MaterialSet>> = {};
+  for (const [color, material] of Object.entries(colors) as Array<
+    [PartColor, MeshStandardMaterial | undefined]
+  >) {
+    if (material !== undefined) colorSets[color] = setOf(material);
+  }
+  return { gear: gears, part: parts, colors: colorSets };
 }
 
-function uniqueSets(gear: GearMaterialSets, part: PartMaterialSets): MaterialSet[] {
-  return [...new Set([...Object.values(gear), ...Object.values(part)])];
+function uniqueSets(
+  gear: GearMaterialSets,
+  part: PartMaterialSets,
+  colors: ColorMaterialSets,
+): MaterialSet[] {
+  return [...new Set([...Object.values(gear), ...Object.values(part), ...Object.values(colors)])];
 }
 
 type MotorMaterialSets = Readonly<Record<MotorPart, MaterialSet>>;
@@ -350,6 +367,9 @@ export interface SceneSync {
   setBaseMaterials(materials: BaseMaterials): void;
   // 部品の形・位置・向き・材質が変わるたびに増える数（影マップを描き直すかの判断に使う。S1-24）
   version(): number;
+  // 歯車・ラック・キャリア・固定具の今の材質の色（0xRRGGBB。S5-04。__gearSim.getPartMaterialColor）。
+  // 描いていない・色を持てない部品は null。選択・マウスの強調では色は変わらない（発光だけ）
+  partMaterialColor(id: string): number | null;
   gearCount(): number;
   anchorCount(): number; // 描いている固定具の数（S3-01）
   carrierCount(): number; // 描いているキャリアの数（S3-03）
@@ -372,6 +392,10 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
   );
   let gearMaterials = initialSets.gear;
   let partMaterials = initialSets.part;
+  let colorMaterials = initialSets.colors;
+  // 色を持つ部品（S5-04）は今のテーマの系統の色の組、無ければ（色なし・系統にない色）種類の組
+  const colorSetOr = (color: PartColor | undefined, fallback: MaterialSet): MaterialSet =>
+    (color === undefined ? undefined : colorMaterials[color]) ?? fallback;
   let shaftMaterials = materialSet(
     new MeshStandardMaterial({ color: 0x7a7f87, metalness: 0.4, roughness: 0.4 }),
   );
@@ -536,7 +560,7 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
       if (entry === undefined) {
         const body = new Mesh(
           cache.acquire(gear, gear.size, gear.teeth, gearWidth(gear)),
-          gearMaterials[gear.kind].none,
+          colorSetOr(gear.color, gearMaterials[gear.kind]).none,
         );
         body.scale.z = gearBodyScaleZ(gear);
         // 影（S1-24）: 歯車は影を落とし、受ける。品質が軽量なら renderer 側で影の計算ごと止める
@@ -706,7 +730,9 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
   function applyHighlight(): void {
     version++;
     for (const [id, entry] of gears) {
-      entry.body.material = gearMaterials[entry.gear.kind][levelOf(id)];
+      entry.body.material = colorSetOr(entry.gear.color, gearMaterials[entry.gear.kind])[
+        levelOf(id)
+      ];
     }
     for (const [id, entry] of shafts) entry.object.material = shaftMaterials[levelOf(id)];
     // モーターはシャフトとして選ばれるので、シャフトと同じに光らせる（仮の部品の見た目も同じ）
@@ -716,14 +742,18 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
     }
     // キャリアは自分とそのシャフトの状態で光らせる（S3-03）。材質はキャリアの表（S3-05）
     for (const [id, entry] of carriers) {
-      const material = partMaterials.carrier[levelOf(id, entry.carrier.shaftId)];
+      const set = colorSetOr(entry.carrier.color, partMaterials.carrier);
+      const material = set[levelOf(id, entry.carrier.shaftId)];
       for (const part of entry.parts) part.material = material;
     }
     // ラック（S3-04）。材質はラックの表（S3-05）
-    for (const [id, entry] of racks) entry.body.material = partMaterials.rack[levelOf(id)];
+    for (const [id, entry] of racks) {
+      entry.body.material = colorSetOr(entry.rack.color, partMaterials.rack)[levelOf(id)];
+    }
     // 固定具は固定したシャフト（ラック）と同じに光らせる（ロックの赤・選択の水色。S3-01）。材質は固定具の表（S3-05）
     for (const entry of anchors.values()) {
-      const material = partMaterials.anchor[levelOf(entry.anchor.target.id)];
+      const set = colorSetOr(entry.anchor.color, partMaterials.anchor);
+      const material = set[levelOf(entry.anchor.target.id)];
       for (const part of entry.parts) part.material = material;
     }
   }
@@ -850,26 +880,38 @@ export function createSceneSync(cache: GeometryCache = createGeometryCache()): S
       }
       if (warnings.locked.size > 0) {
         version++; // 震えている
-        for (const set of uniqueSets(gearMaterials, partMaterials)) pulseLocked(set, timeSec);
+        for (const set of uniqueSets(gearMaterials, partMaterials, colorMaterials)) {
+          pulseLocked(set, timeSec);
+        }
         pulseLocked(shaftMaterials, timeSec);
         for (const set of new Set(Object.values(motorMaterials))) pulseLocked(set, timeSec);
       }
     },
     setBaseMaterials(materials) {
       const old = [
-        ...uniqueSets(gearMaterials, partMaterials),
+        ...uniqueSets(gearMaterials, partMaterials, colorMaterials),
         shaftMaterials,
         ...new Set(Object.values(motorMaterials)),
       ];
-      const sets = materialSets(materials.gear, materials.part);
+      const sets = materialSets(materials.gear, materials.part, materials.colors);
       gearMaterials = sets.gear;
       partMaterials = sets.part;
+      colorMaterials = sets.colors;
       shaftMaterials = materialSet(materials.shaft);
       motorMaterials = motorMaterialSets(materials.motor);
       applyHighlight();
       for (const set of old) disposeSet(set);
     },
     version: () => version,
+    partMaterialColor(id) {
+      const mesh =
+        gears.get(id)?.body ??
+        racks.get(id)?.body ??
+        carriers.get(id)?.parts[0] ??
+        anchors.get(id)?.parts[0];
+      if (mesh === undefined) return null;
+      return (mesh.material as MeshStandardMaterial).color.getHex();
+    },
     gearCount: () => gears.size,
     anchorCount: () => anchors.size,
     carrierCount: () => carriers.size,
