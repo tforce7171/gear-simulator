@@ -26,4 +26,7 @@
 - 文言は `src/core/i18n/ja.ts` と `en.ts` の両方に足す（`MessageKey` は ja.ts から導かれ、en の過不足は型エラーになる）。
 - 編集コマンドを足すときは add-edit-command スキル、歯車の種類を足すときは add-gear-kind スキルを使う。
 - PR は draft にせず、ready の状態で出す。
+- PR を出したら、そのまま監視する。`gh pr view <番号> --json state -q .state` が `MERGED` か `CLOSED` になるまで 60 秒おきに確かめるループを、Bash の `run_in_background` で流して待つ。
+  - `MERGED` になったら、作業した worktree を ExitWorktree（`action: "remove"`）で消す。その前に `git fetch origin && git cherry origin/main HEAD` の出力が空であること（ブランチのコミットがすべて main に入っていること）を確かめる。ExitWorktree がコミットの残りを理由に止めても、この確認が通っていれば `discard_changes: true` で消してよい。
+  - `CLOSED`（マージされずに閉じられた）なら、worktree は消さずにユーザーに知らせる。
 - 描画（`src/render`）を変えるときは、design.md §7 の「描画を軽くする仕組み」を読む。見た目を行列・visible・材質の差し替え以外で変える（材質の色を直に書き換えるなど）なら `invalidate` するか `SceneSync.version()` を増やす。そうしないと見た目が変わっても描き直されない。重さは `pnpm perf --headless` で、main を `git worktree add --detach` したものと比べる。
