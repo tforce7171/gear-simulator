@@ -3,6 +3,7 @@ import {
   DEFAULT_PLANET_COUNT,
   GEAR_SIZES,
   GEAR_WIDTH_RANGE,
+  GEAR_WIDTH_STEP,
   MOTOR_RPM_RANGE,
   MOTOR_SIZES,
   PLANET_COUNT_RANGE,
@@ -132,7 +133,7 @@ export type Command =
   | { type: 'growRack'; gearId: GearId; axisStep: 1 | 2; normalSign: 1 | -1; teeth: number }
   // ラックの歯数を変える（S3-04。RACK_TEETH の範囲）。長さと s の範囲が変わる（今の s が範囲外なら運動の側で端に寄せる）
   | { type: 'setRackTeeth'; rackId: RackId; teeth: number }
-  // 歯車の厚さを変える（S4-05）。GEAR_WIDTH_RANGE の AXIAL_SNAP の倍数でなければ invalidValue、厚さを変えられない種類
+  // 歯車の厚さを変える（S4-05）。GEAR_WIDTH_RANGE の GEAR_WIDTH_STEP の倍数でなければ invalidValue、厚さを変えられない種類
   // （かさ歯車・ウォーム・ホイール）は notAllowed。シャフトからはみ出せばシャフトが伸び（fitShaftSpans）、
   // 伸びる分も含めて新しい干渉を生む（同じシャフトのほかの歯車やほかの部品にぶつかる）なら notAllowed
   | { type: 'setGearWidth'; gearId: GearId; width: number }
@@ -731,7 +732,7 @@ function widthError(width: number): Failure | null {
   if (typeof width === 'number' && widthInRange(width)) return null;
   return fail(
     'invalidValue',
-    `width ${String(width)} is not a multiple of ${AXIAL_SNAP} in [${GEAR_WIDTH_RANGE.min}, ${GEAR_WIDTH_RANGE.max}]`,
+    `width ${String(width)} is not a multiple of ${GEAR_WIDTH_STEP} in [${GEAR_WIDTH_RANGE.min}, ${GEAR_WIDTH_RANGE.max}]`,
   );
 }
 

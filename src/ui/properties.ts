@@ -8,8 +8,8 @@
 import { onLanguageChange, t } from '../app/i18n';
 import type { AppAction, AppState } from '../app/store';
 import {
-  AXIAL_SNAP,
   GEAR_WIDTH_RANGE,
+  GEAR_WIDTH_STEP,
   MOTOR_RPM_RANGE,
   PLANET_COUNT_RANGE,
   RACK_TEETH,
@@ -27,7 +27,7 @@ import type { Layout } from '../core/layout/types';
 import { anchorOfRack, anchorOfShaft, planetShaftsOf } from '../core/scene/scene';
 import type { Axis, Gear, Motor, Rack, Scene, ShaftId, SizeKey } from '../core/scene/types';
 import { h } from './dom';
-import { parseClampedInt } from './number-input';
+import { clampToStep, parseClampedInt, parseClampedStep } from './number-input';
 import { showToast } from './toast';
 import './properties.css';
 
@@ -105,10 +105,11 @@ export function createProperties(deps: PropertiesDeps): Properties {
     max: number,
     labelKey: MessageKey,
     commit: (next: number) => void,
+    step = 1, // 確定する値の刻み（S5-01。厚さは GEAR_WIDTH_STEP）
   ): HTMLInputElement {
     const input = h('input', 'gs-prop__number', testId);
     input.type = 'text';
-    input.inputMode = 'numeric';
+    input.inputMode = step < 1 ? 'decimal' : 'numeric';
     input.autocomplete = 'off';
     input.value = String(value);
     input.setAttribute('aria-label', t(labelKey));
@@ -123,7 +124,7 @@ export function createProperties(deps: PropertiesDeps): Properties {
     });
     input.addEventListener('blur', () => {
       if (building) return;
-      const next = parseClampedInt(input.value, min, max);
+      const next = parseClampedStep(input.value, min, max, step);
       input.value = String(value);
       if (next === null || next === value) return;
       commit(next);
@@ -280,22 +281,29 @@ export function createProperties(deps: PropertiesDeps): Properties {
     command(c);
   }
 
-  // 厚さの欄（S4-05）: [−] 入力 [＋]（AXIAL_SNAP 刻み、GEAR_WIDTH_RANGE）と範囲の説明。
-  // 入力した値は範囲に丸め、AXIAL_SNAP の倍数に四捨五入する
+  // 厚さの欄（S4-05）: [−] 入力 [＋]（GEAR_WIDTH_STEP 刻み。S5-01 で軸方向の刻み AXIAL_SNAP と切り離した。
+  // GEAR_WIDTH_RANGE）と範囲の説明。入力した値は GEAR_WIDTH_STEP の倍数に四捨五入してから範囲に収める
   function widthRows(prefix: string, value: number, commit: (next: number) => void): HTMLElement[] {
     const { min, max } = GEAR_WIDTH_RANGE;
-    const step = AXIAL_SNAP;
-    const snap = (x: number) => Math.min(max, Math.max(min, Math.round(x / step) * step));
+    const step = GEAR_WIDTH_STEP;
+    const snap = (x: number) => clampToStep(x, min, max, step);
     const dec = button('gs-prop__step', `${prefix}-dec`, '−', t('properties.width.dec', { step }));
     dec.disabled = value <= min;
     dec.addEventListener('click', () => commit(snap(value - step)));
     const inc = button('gs-prop__step', `${prefix}-inc`, '+', t('properties.width.inc', { step }));
     inc.disabled = value >= max;
     inc.addEventListener('click', () => commit(snap(value + step)));
-    const input = numberField(prefix, value, min, max, 'properties.width', (next) => {
-      const snapped = snap(next);
-      if (snapped !== value) commit(snapped);
-    });
+    const input = numberField(
+      prefix,
+      value,
+      min,
+      max,
+      'properties.width',
+      (next) => {
+        if (next !== value) commit(next);
+      },
+      step,
+    );
     const unit = text('span', 'gs-prop__unit', 'properties.width.unit');
     const stepper = h('div', 'gs-prop__stepper');
     stepper.append(dec, input, inc, unit);

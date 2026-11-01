@@ -1,4 +1,4 @@
-import { CARRIER_GAP } from '../constants';
+import { AXIAL_SNAP, CARRIER_GAP } from '../constants';
 import { gearWidth } from '../geometry/dimensions';
 import { makeGear } from './gear-shape';
 import type { Carrier, CarrierId, Gear, GearId, Scene, Shaft, ShaftId } from './types';
@@ -15,7 +15,8 @@ export interface PlanetaryIds {
 
 // 部品を足したシーン:
 // - キャリアのシャフト（太陽と同じ線上の concentric）とキャリア。板はリングのウェブの反対側（太陽の軸の正の側）に、
-//   太陽の歯幅の正側の面から CARRIER_GAP 離して置く
+//   太陽の歯幅の正側の面から CARRIER_GAP 離して置く。太陽が AXIAL_SNAP の倍数でない厚さ（S5-01 の薄い歯車）なら、
+//   太陽の 4 mm の区画の正側の面から離す（キャリアの offset を AXIAL_SNAP の倍数に保つ）
 // - 遊星のシャフト（planet、angle = 2πk/n）と遊星歯車（太陽と同じ大きさ、z_p 歯、offset 0）
 // - リングのシャフト（concentric）と内歯車（webSide −1、z_r 歯）。原点が太陽のシャフトと同じなので、offset を太陽と
 //   同じにすれば同じ面にそろう
@@ -35,7 +36,7 @@ export function withPlanetary(
   const carrier: Carrier = {
     id: ids.carrierId,
     shaftId: ids.carrierShaftId,
-    offset: sun.offset + gearWidth(sun) + CARRIER_GAP,
+    offset: sun.offset + Math.ceil(gearWidth(sun) / AXIAL_SNAP) * AXIAL_SNAP + CARRIER_GAP,
     size: sun.size,
   };
   const width = sun.width === undefined ? {} : { width: gearWidth(sun) };

@@ -826,7 +826,7 @@ describe('version 4 の検証（S4-03）', () => {
     ['span が数 1 つ', (s) => (shaft1(s).span = [0]), 'shafts.shaft_1.span'],
     ['span が逆向き', (s) => (shaft1(s).span = [8, -4]), 'shafts.shaft_1.span'],
     ['span が歯車より短い', (s) => (shaft1(s).span = [0, 8]), 'shafts.shaft_1.span'],
-    ['width が 4 の倍数でない', (s) => (gear1(s).width = 6), 'gears.gear_1.width'],
+    ['width が 0.5 の倍数でない', (s) => (gear1(s).width = 0.7), 'gears.gear_1.width'],
     ['width が 0', (s) => (gear1(s).width = 0), 'gears.gear_1.width'],
     ['width が文字列', (s) => (gear1(s).width = '8'), 'gears.gear_1.width'],
   ];

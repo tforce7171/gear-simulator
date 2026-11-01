@@ -1,8 +1,8 @@
 import {
-  AXIAL_SNAP,
   COLLISION_EPS,
   GEAR_SIZES,
   GEAR_WIDTH_RANGE,
+  GEAR_WIDTH_STEP,
   INTERNAL_MIN_TEETH,
   WORM_THREADS,
 } from '../constants';
@@ -38,13 +38,18 @@ export function isWidthAdjustable(kind: GearKind): boolean {
   }
 }
 
-// 厚さが範囲（GEAR_WIDTH_RANGE、AXIAL_SNAP 刻み）に入るか（S4-05。歯車とラックで共通）
+// 厚さが GEAR_WIDTH_STEP の倍数か（S5-01）。浮動小数の誤差を許す
+export function isWidthStepMultiple(width: number): boolean {
+  return Math.abs(width - Math.round(width / GEAR_WIDTH_STEP) * GEAR_WIDTH_STEP) < 1e-9;
+}
+
+// 厚さが範囲（GEAR_WIDTH_RANGE、GEAR_WIDTH_STEP 刻み）に入るか（S4-05。歯車とラックで共通）
 export function widthInRange(width: number): boolean {
   return (
     Number.isFinite(width) &&
     width >= GEAR_WIDTH_RANGE.min &&
     width <= GEAR_WIDTH_RANGE.max &&
-    width % AXIAL_SNAP === 0
+    isWidthStepMultiple(width)
   );
 }
 

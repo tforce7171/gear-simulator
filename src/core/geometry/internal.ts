@@ -53,7 +53,8 @@ export function internalHollowRange(gear: InternalLike): AxialRange {
   return gear.webSide === -1 ? [lo - INTERNAL_WEB_GAP, hi] : [lo, hi + INTERNAL_WEB_GAP];
 }
 
-// 内歯車全体（リング・筒・ウェブ）が軸方向に占める範囲。どの端も AXIAL_SNAP の倍数
+// 内歯車全体（リング・筒・ウェブ）が軸方向に占める範囲。厚さが AXIAL_SNAP の倍数なら、どの端も AXIAL_SNAP の倍数
+// （S5-01 の薄い内歯車では、ウェブの側によって端が 4 mm の格子から外れる）
 export function internalExtent(gear: InternalLike): AxialRange {
   const [hollowLo, hollowHi] = internalHollowRange(gear);
   const [webLo, webHi] = internalWebRange(gear);

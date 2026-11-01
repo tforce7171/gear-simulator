@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseClampedInt } from './number-input';
+import { clampToStep, parseClampedInt, parseClampedStep } from './number-input';
 
 describe('parseClampedInt', () => {
   it('範囲内の整数はそのまま', () => {
@@ -22,5 +22,23 @@ describe('parseClampedInt', () => {
   it('数でなければ null', () => {
     expect(parseClampedInt('abc', 12, 60)).toBeNull();
     expect(parseClampedInt('', 12, 60)).toBeNull();
+  });
+});
+
+describe('parseClampedStep（S5-01: 厚さの 0.5 mm 刻み）', () => {
+  it('0.5 の倍数に丸めてから範囲に収める', () => {
+    expect(parseClampedStep('1.5', 0.5, 32, 0.5)).toBe(1.5);
+    expect(parseClampedStep('1.3', 0.5, 32, 0.5)).toBe(1.5);
+    expect(parseClampedStep('1.2', 0.5, 32, 0.5)).toBe(1);
+    expect(parseClampedStep('0.1', 0.5, 32, 0.5)).toBe(0.5);
+    expect(parseClampedStep('0', 0.5, 32, 0.5)).toBe(0.5);
+    expect(parseClampedStep('40', 0.5, 32, 0.5)).toBe(32);
+    expect(parseClampedStep('abc', 0.5, 32, 0.5)).toBeNull();
+  });
+
+  it('clampToStep: 端の値から 1 刻み動かしても範囲の外に出ない', () => {
+    expect(clampToStep(0.5 - 0.5, 0.5, 32, 0.5)).toBe(0.5);
+    expect(clampToStep(32 + 0.5, 0.5, 32, 0.5)).toBe(32);
+    expect(clampToStep(4 - 0.5, 0.5, 32, 0.5)).toBe(3.5);
   });
 });
