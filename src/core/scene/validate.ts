@@ -67,7 +67,9 @@ export type SceneErrorCode =
   // 歯車・ラックの厚さ width が GEAR_WIDTH_RANGE の GEAR_WIDTH_STEP の倍数でない（S4-03・S4-05・S5-01）。
   // 厚さを変えられない種類（かさ歯車・ウォーム・ホイール）が大きさごとの歯幅と違う width を持つ（S4-05）
   | 'invalidWidth'
-  | 'invalidColor'; // 歯車・ラック・キャリア・固定具の color が PartColor のどれでもない（S5-04）
+  | 'invalidColor' // 歯車・ラック・キャリア・固定具の color が PartColor のどれでもない（S5-04）
+  // 平歯車の toothCount が 1〜teeth の整数でない、toothStart が 0〜teeth − 1 の整数でない（S5-05）
+  | 'invalidToothArc';
 
 const AXES: readonly unknown[] = ['x', 'y', 'z'];
 
@@ -502,6 +504,33 @@ export function validateScene(scene: Scene): { ok: true } | { ok: false; errors:
         `${base}.offset`,
         `offset ${gear.offset} is not a multiple of ${AXIAL_SNAP}`,
       );
+    }
+    // 欠け歯車の欄（S5-05）。toothCount は 1〜teeth、toothStart は 0〜teeth − 1 の整数
+    if (gear.kind === 'spur') {
+      const count: unknown = gear.toothCount;
+      const start: unknown = gear.toothStart;
+      if (
+        count !== undefined &&
+        !(Number.isInteger(count) && (count as number) >= 1 && (count as number) <= gear.teeth)
+      ) {
+        push(
+          'invalidToothArc',
+          key,
+          `${base}.toothCount`,
+          `toothCount must be an integer in [1, ${gear.teeth}]: ${String(count)}`,
+        );
+      }
+      if (
+        start !== undefined &&
+        !(Number.isInteger(start) && (start as number) >= 0 && (start as number) < gear.teeth)
+      ) {
+        push(
+          'invalidToothArc',
+          key,
+          `${base}.toothStart`,
+          `toothStart must be an integer in [0, ${gear.teeth - 1}]: ${String(start)}`,
+        );
+      }
     }
     // 厚さ（S4-03 で足した省略できる欄。範囲は S4-05 の GEAR_WIDTH_RANGE。変えられない種類は大きさごとの歯幅だけ）
     const width: unknown = gear.width;

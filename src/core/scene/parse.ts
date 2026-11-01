@@ -227,7 +227,20 @@ export function parseScene(raw: unknown): SceneParseResult {
     }
     switch (kind) {
       case 'spur':
-        gears.push([key, { ...common, kind }]);
+        // 欠け歯車の欄（S5-05。省いてもよい）。範囲は validateScene が確かめる
+        gears.push([
+          key,
+          {
+            ...common,
+            kind,
+            ...(item.toothCount === undefined
+              ? {}
+              : { toothCount: num(item, 'toothCount', base, key) }),
+            ...(item.toothStart === undefined
+              ? {}
+              : { toothStart: num(item, 'toothStart', base, key) }),
+          },
+        ]);
         break;
       case 'helical':
         gears.push([key, { ...common, kind, hand: str(item, 'hand', base, key) as Hand }]);

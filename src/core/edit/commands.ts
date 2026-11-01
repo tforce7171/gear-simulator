@@ -18,6 +18,7 @@ import {
   teethRange,
   widthInRange,
 } from '../geometry/dimensions';
+import { clampToothArc } from '../geometry/partial-gear';
 import { defaultPlanetTeeth, planetaryOk, planetCountInRange } from '../geometry/planetary';
 import { rackTeethInRange, rackWidth, snapRackPosition } from '../geometry/rack';
 import { newInterferences } from '../layout/interference-diff';
@@ -152,6 +153,11 @@ export type Command =
   // かさ歯車では、木の親子（bevel の配置）でつながったかさ歯車すべての歯数を同じ値にする（S2-02）。
   // ウォームの歯数（条数）は変えられない（notAllowed。S2-03）
   | { type: 'setGearTeeth'; gearId: GearId; teeth: number }
+  // 欠け歯車（S5-05）: 平歯車の残す歯数（1〜teeth の整数。teeth なら普通の平歯車に戻し、欄を消す）と、
+  // 歯のある弧の始まり（0〜teeth − 1 の整数。0 なら欄を消す）。平歯車でない → notAllowed、範囲外 → invalidValue。
+  // 外形（干渉の円柱）は変わらないので、干渉は確かめない
+  | { type: 'setToothCount'; gearId: GearId; toothCount: number }
+  | { type: 'setToothStart'; gearId: GearId; toothStart: number }
   // かさ歯車の apex を反転する（S2-02）。bevel の配置の子（apex は −side で決まる）は notAllowed
   | { type: 'flipBevelApex'; gearId: GearId }
   // 内歯車のウェブの向きを変える（S3-02。区画（offset）はそのまま。UI は S3-05）
@@ -351,6 +357,10 @@ function applyRaw(scene: Scene, command: Command, ctx: CommandContext): CommandR
       return setPlanetCount(scene, command, ctx);
     case 'setGearTeeth':
       return setGearTeeth(scene, command);
+    case 'setToothCount':
+      return setToothCount(scene, command);
+    case 'setToothStart':
+      return setToothStart(scene, command);
     case 'flipBevelApex':
       return flipBevelApex(scene, command);
     case 'setWebSide':
@@ -1298,7 +1308,7 @@ function setGearTeeth(scene: Scene, c: Extract<Command, { type: 'setGearTeeth' }
   const planetary = planetaryOfGear(scene, gear.id);
   if (planetary !== null) return setPlanetaryTeeth(scene, planetary, gear, c.teeth);
   if (gear.kind !== 'bevel') {
-    const next = { ...gear, teeth: c.teeth };
+    const next = withTeeth(gear, c.teeth);
     // 木の親子（mesh の配置）が、内歯車の歯数差の条件を満たさなくなる変更は拒否する（S3-02）
     const broken = brokenMeshPartner(scene, next);
     if (broken !== null) {
@@ -1310,9 +1320,52 @@ function setGearTeeth(scene: Scene, c: Extract<Command, { type: 'setGearTeeth' }
   const gears: Record<GearId, Gear> = { ...scene.gears };
   for (const id of bevelTreeOf(scene, gear.id)) {
     const g = scene.gears[id];
-    if (g !== undefined && g.teeth !== c.teeth) gears[id] = { ...g, teeth: c.teeth };
+    if (g !== undefined && g.teeth !== c.teeth) gears[id] = withTeeth(g, c.teeth);
   }
   return done({ ...scene, gears });
+}
+
+// 歯数を変えた歯車。欠け歯車（S5-05）の toothCount・toothStart を新しい歯数の範囲に収める。
+// 全部の歯を残していた（toothCount が前の歯数以上）なら、普通の平歯車のまま（欄を消す）
+function withTeeth(gear: Gear, teeth: number): Gear {
+  if (gear.kind !== 'spur') return { ...gear, teeth };
+  const { toothCount, toothStart, ...rest } = gear;
+  const count = toothCount !== undefined && toothCount >= gear.teeth ? undefined : toothCount;
+  return { ...rest, teeth, ...clampToothArc(count, toothStart, teeth) };
+}
+
+// 欠け歯車の残す歯数（S5-05）。teeth と同じなら欄を消す（普通の平歯車）
+function setToothCount(
+  scene: Scene,
+  c: Extract<Command, { type: 'setToothCount' }>,
+): CommandResult {
+  const gear = scene.gears[c.gearId];
+  if (gear === undefined) return fail('notFound', `gear ${c.gearId} not found`);
+  if (gear.kind !== 'spur') return fail('notAllowed', `${gear.kind} ${gear.id} cannot lose teeth`);
+  if (!Number.isInteger(c.toothCount) || c.toothCount < 1 || c.toothCount > gear.teeth) {
+    return fail('invalidValue', `toothCount ${c.toothCount} out of range [1, ${gear.teeth}]`);
+  }
+  if ((gear.toothCount ?? gear.teeth) === c.toothCount) return done(scene);
+  const { toothCount: _, ...rest } = gear;
+  const next: Gear = c.toothCount === gear.teeth ? rest : { ...rest, toothCount: c.toothCount };
+  return done({ ...scene, gears: withEntry(scene.gears, gear.id, next) });
+}
+
+// 欠け歯車の歯のある弧の始まり（S5-05）。0 なら欄を消す
+function setToothStart(
+  scene: Scene,
+  c: Extract<Command, { type: 'setToothStart' }>,
+): CommandResult {
+  const gear = scene.gears[c.gearId];
+  if (gear === undefined) return fail('notFound', `gear ${c.gearId} not found`);
+  if (gear.kind !== 'spur') return fail('notAllowed', `${gear.kind} ${gear.id} cannot lose teeth`);
+  if (!Number.isInteger(c.toothStart) || c.toothStart < 0 || c.toothStart >= gear.teeth) {
+    return fail('invalidValue', `toothStart ${c.toothStart} out of range [0, ${gear.teeth - 1}]`);
+  }
+  if ((gear.toothStart ?? 0) === c.toothStart) return done(scene);
+  const { toothStart: _, ...rest } = gear;
+  const next: Gear = c.toothStart === 0 ? rest : { ...rest, toothStart: c.toothStart };
+  return done({ ...scene, gears: withEntry(scene.gears, gear.id, next) });
 }
 
 // 遊星歯車機構の中の歯数の変更（S3-03）。太陽か遊星を変えると、リングを z_r = z_s + 2·z_p にする。
@@ -1339,7 +1392,7 @@ function setPlanetaryTeeth(
   }
   const gears: Record<GearId, Gear> = { ...scene.gears };
   const set = (g: Gear, z: number) => {
-    if (g.teeth !== z) gears[g.id] = { ...g, teeth: z };
+    if (g.teeth !== z) gears[g.id] = withTeeth(g, z);
   };
   set(sun, zs);
   for (const p of planets) set(p, zp);

@@ -66,3 +66,9 @@
 .gs-info-label__arrow[hidden] {
   display: none;
 }
+
+/* ロックの理由（S5-05。「歯が合わない」） */
+.gs-info-label__lock {
+  color: #ff8a80;
+  font-weight: 600;
+}

@@ -89,6 +89,15 @@ export const en = {
   'properties.teeth.range': '{min}–{max}',
   'properties.teeth.dec': 'One tooth fewer',
   'properties.teeth.inc': 'One tooth more',
+  'properties.toothCount': 'Teeth kept',
+  'properties.toothCount.range': '1–{max}',
+  'properties.toothCount.dec': 'Keep one tooth fewer',
+  'properties.toothCount.inc': 'Keep one tooth more',
+  'properties.toothStart': 'Teeth position',
+  'properties.toothStart.dec': 'Move the toothed part back by one tooth',
+  'properties.toothStart.inc': 'Move the toothed part ahead by one tooth',
+  'properties.toothArc.note':
+    'A gear with missing teeth turns its partner only while its toothed part faces it. To move a rack back and forth with two such gears A and B on one shaft and an idler, give A as many teeth as B plus twice the idler.',
   'properties.width': 'Width',
   'properties.width.range': '{min}–{max} mm, in {step} mm steps',
   'properties.width.dec': 'Make {step} mm thinner',
@@ -167,6 +176,7 @@ export const en = {
   'info.speed': '{speed} mm/s',
   'info.rack.direction': 'Direction',
   'info.rack.stopped': 'Stopped',
+  'info.lock.toothClash': 'Teeth clash',
   // Pause indicator (S1-22)
   'sim.paused': 'Paused (Space to resume)',
   // Axis gizmo (S1-14)
@@ -198,6 +208,10 @@ export const en = {
   'works.delete.no': 'Cancel',
   'works.updatedAt': 'Updated {date}',
   'works.thumbnail': 'Thumbnail of "{name}"',
+  'samples.title': 'Examples',
+  'samples.rackReciprocation': 'Rack back and forth',
+  'samples.rackReciprocation.description':
+    'Two gears with missing teeth and an idler move a rack left and right',
   'storage.unavailable':
     'Browser storage (IndexedDB) is not available, so saving and the works list cannot be used',
   'storage.failed': 'Could not read or write the browser storage (IndexedDB)',

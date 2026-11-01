@@ -6,6 +6,7 @@ import { nextDefaultWorkName } from '../core/io/thumbnail';
 import type { WorkRecord, WorkSummary } from '../storage/db';
 import type { SaveChoice, SaveDialogOptions } from '../ui/save-dialog';
 import type { WorksDialogDeps } from '../ui/works-dialog';
+import { SAMPLES } from './samples';
 import type { Store } from './store';
 
 export interface WorksDb {
@@ -104,6 +105,18 @@ export function createWorks(deps: WorksDeps): Works {
     return true;
   }
 
+  // 見本を開く（S5-05）。replaceScene で読み込み（Undo で戻せる）、保存した作品ではないので今の作品はなしにする
+  function openSample(id: string): boolean {
+    const sample = SAMPLES.find((s) => s.id === id);
+    if (sample === undefined) return false;
+    deps.store.dispatch({
+      type: 'command',
+      command: { type: 'replaceScene', scene: sample.scene },
+    });
+    deps.store.dispatch({ type: 'setCurrentWork', work: null });
+    return true;
+  }
+
   async function openList(): Promise<void> {
     if (busy || unavailable()) return;
     busy = true;
@@ -128,6 +141,8 @@ export function createWorks(deps: WorksDeps): Works {
         },
         formatDate: (ms) => formatWorkDate(ms, deps.getLanguage()),
         onError: fail,
+        samples: SAMPLES,
+        openSample,
       });
     } catch (error) {
       fail(error);

@@ -97,7 +97,7 @@
 | [S5-02](stage5/02-property-panel-text.md) | プロパティの厚さの欄をそろえ、括弧書きをなくす | S5-01 | done |
 | [S5-03](stage5/03-gear-sound-tuning.md) | 金属の音を歯車らしく、木の音を重くする | - | done |
 | [S5-04](stage5/04-part-colors.md) | 歯車・ラック・キャリア・アンカーの色を部品ごとに選べるようにする | - | done |
-| [S5-05](stage5/05-partial-gear-rack-reciprocation.md) | 欠け歯車でラックを往復させる | S5-02, S5-03, S5-04 | todo |
+| [S5-05](stage5/05-partial-gear-rack-reciprocation.md) | 欠け歯車でラックを往復させる | S5-02, S5-03, S5-04 | done |
 
 ## タスク資料のひな形
 

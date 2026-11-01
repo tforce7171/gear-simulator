@@ -39,3 +39,18 @@ describe('gearShapeKey', () => {
     expect(keys[3]).toBe(gearShapeKey(spur, 'S', 30));
   });
 });
+
+describe('gearShapeKey の欠け歯車（S5-05）', () => {
+  it('toothCount・toothStart をキーに含める。全部の歯を残すなら普通の平歯車と同じキー', () => {
+    const a = gearShapeKey({ kind: 'spur', toothCount: 10, toothStart: 0 }, 'M', 30);
+    const b = gearShapeKey({ kind: 'spur', toothCount: 10, toothStart: 1 }, 'M', 30);
+    const c = gearShapeKey({ kind: 'spur', toothCount: 11, toothStart: 0 }, 'M', 30);
+    expect(a).toBe('spur:M:30:t10@0');
+    expect(new Set([a, b, c, gearShapeKey(spur, 'M', 30)]).size).toBe(4);
+    expect(gearShapeKey({ kind: 'spur', toothCount: 30, toothStart: 5 }, 'M', 30)).toBe(
+      'spur:M:30',
+    );
+    // toothStart を省くと 0
+    expect(gearShapeKey({ kind: 'spur', toothCount: 10 }, 'M', 30)).toBe(a);
+  });
+});

@@ -19,6 +19,7 @@ import { BEVEL_COS, bevelConeDistance, bevelToothWidth } from '../core/geometry/
 import { helicalSliceCount, helicalTwistAt, rotateOutline } from '../core/geometry/helical';
 import { internalOutline, internalRimRadius, internalRootRadius } from '../core/geometry/internal';
 import { spurOutline, type Vec2 } from '../core/geometry/involute';
+import { type ToothArc, toothArcOf } from '../core/geometry/partial-gear';
 import { gearShapeKey } from '../core/geometry/shape-key';
 import {
   WORM_LEAD_ANGLE,
@@ -37,9 +38,10 @@ export function buildSpurGeometry(
   size: SizeKey,
   teeth: number,
   faceWidth: number = GEAR_SIZES[size].faceWidth,
+  toothArc: ToothArc | null = null, // 欠け歯車の残す歯（S5-05）
 ): BufferGeometry {
   const { module } = GEAR_SIZES[size];
-  const outline = spurOutline(module, teeth);
+  const outline = spurOutline(module, teeth, { toothArc });
   const shape = new Shape(outline.map(([x, y]) => new Vector2(x, y)));
   const geometry = new ExtrudeGeometry(shape, {
     depth: faceWidth,
@@ -295,7 +297,7 @@ function buildGeometry(
 ): BufferGeometry {
   switch (shape.kind) {
     case 'spur':
-      return buildSpurGeometry(size, teeth, width);
+      return buildSpurGeometry(size, teeth, width, toothArcOf(shape, teeth));
     case 'helical':
       return buildHelicalGeometry(size, teeth, shape.hand, HELIX_ANGLE, width);
     case 'bevel':

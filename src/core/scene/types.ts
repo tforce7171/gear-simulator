@@ -117,6 +117,10 @@ export interface GearBase {
 
 export interface SpurGear extends GearBase {
   readonly kind: 'spur';
+  // 欠け歯車（S5-05）。残す歯数（1〜teeth の整数）。省略または teeth のときは普通の平歯車
+  readonly toothCount?: number;
+  // 歯のある弧の始まりの歯の番号（0〜teeth − 1 の整数）。省略は 0。歯 toothStart から toothCount 個を残す（S5-05）
+  readonly toothStart?: number;
 }
 
 // ハスバ歯車（S2-01）。ねじれ角は HELIX_ANGLE で固定。'right' は軸の正の向きに進むほど歯が正の向きに回る
