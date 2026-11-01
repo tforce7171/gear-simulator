@@ -12,6 +12,7 @@ import {
   getScene,
   openApp,
   project,
+  settleCamera,
   waitAutosaved,
   waitReady,
 } from './fixtures/sim';
@@ -43,6 +44,7 @@ test('平歯車を選び、色の欄でメタリックブルーを押す → col
 }) => {
   await openApp(page, { scene: twoGears });
   await page.keyboard.press('Home');
+  await settleCamera(page);
   await clickGear(page, 'gear_1');
   const field = page.getByTestId('prop-color');
   await expect(field).toHaveAttribute('role', 'radiogroup');
@@ -122,6 +124,7 @@ test('木のテーマでダークオークを選べる', async ({ page }) => {
 test('色を付けた歯車から候補で歯車を生やす → 新しい歯車の color が同じ', async ({ page }) => {
   await openApp(page, { scene: twoGears });
   await page.keyboard.press('Home');
+  await settleCamera(page);
   await clickGear(page, 'gear_1');
   await page.getByTestId('prop-color-metallicBlue').click();
   expect(await colorOf(page, 'gear_1')).toBe('metallicBlue');
