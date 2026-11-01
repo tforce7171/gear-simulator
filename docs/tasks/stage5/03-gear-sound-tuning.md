@@ -1,7 +1,7 @@
 ---
 id: S5-03
 title: 金属の音を歯車らしく、木の音を重くする
-status: todo
+status: doing
 depends: []
 ---
 
