@@ -173,6 +173,7 @@ describe('表示した候補はどれも置ける（S4-02）', () => {
     'bevel-pair',
     'crossed-pair',
     'helical-pair',
+    'rack-reciprocation', // S5-05（欠け歯車）
   ];
   for (const name of SCENES) {
     it(`${name}: すべての歯車・ラック × パレットの種類の候補を growCommand で置くと、拒否されず干渉も増えない`, () => {

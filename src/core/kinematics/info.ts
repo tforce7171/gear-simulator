@@ -1,6 +1,7 @@
 import { LOCK_OMEGA_EPS } from '../constants';
 import type { Layout } from '../layout/types';
 import type { CarrierId, GearId, MotorId, RackId, Scene, ShaftId } from '../scene/types';
+import { currentEngagement } from './engagement';
 import { speedRatio } from './graph';
 import { anchoredMeshGraphOf, meshGraphOf } from './motion';
 import type { MotionState } from './types';
@@ -71,10 +72,12 @@ function shaftInfoOf(
   layout: Layout,
   motion: MotionState,
 ): (shaftId: ShaftId) => Omit<GearInfo, 'gearId' | 'wormRatio'> {
-  const graph = meshGraphOf(scene, layout);
+  // 欠け歯車（S5-05）のかみ合いは、今の角度でかかっている組だけでギア比を求める（欠け歯車が無ければ全部）
+  const masks = currentEngagement(scene, layout, motion.angles);
+  const graph = meshGraphOf(scene, layout, masks);
   // 固定具（S3-01）で自由度が減ると速度比が決まることがある（S3-03 の遊星歯車など）ので、固定具の拘束を入れた
   // グラフで先に求め、決まらなければ（固定具で止まった成分など）かみ合いだけのグラフで求める
-  const anchoredGraph = anchoredMeshGraphOf(scene, layout);
+  const anchoredGraph = anchoredMeshGraphOf(scene, layout, masks);
   // 連結成分ごとの基準のモーター: ID の文字列順で最初のもの（ON/OFF は問わない）
   const referenceOf = new Map<number, { motorId: MotorId; shaftId: string }>();
   const motors = Object.values(scene.motors).sort((a, b) => compareIds(a.id, b.id));

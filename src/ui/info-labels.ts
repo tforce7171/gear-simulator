@@ -20,6 +20,7 @@ export interface RotationLabelValues {
   readonly rpm: number;
   readonly ratio: number | null;
   readonly wormRatio?: WormRatio | null; // ウォームの組のギア比（S2-05）
+  readonly toothClash?: boolean; // 'toothClash' のロックの成分の部品（S5-05）。「歯が合わない」を出す
 }
 
 // ラックの値（S3-05）。direction は動く向き（止まっていれば 0）
@@ -27,6 +28,7 @@ export interface RackLabelValues {
   readonly kind: 'rack';
   readonly speed: number; // mm/s（絶対値）
   readonly direction: 1 | -1 | 0;
+  readonly toothClash?: boolean; // S5-05
 }
 
 export type InfoLabelValues = RotationLabelValues | RackLabelValues;
@@ -47,11 +49,14 @@ interface Label {
   readonly sub: HTMLElement;
   readonly worm: HTMLElement;
   readonly arrow: HTMLElement;
+  readonly lock: HTMLElement; // ロックの理由（S5-05。今は 'toothClash' だけ）
   values: InfoLabelValues;
 }
 
 function render(label: Label): void {
   const v = label.values;
+  label.lock.hidden = v.toothClash !== true;
+  label.lock.textContent = v.toothClash === true ? t('info.lock.toothClash') : '';
   if (v.kind === 'rack') {
     label.main.textContent = t('info.speed', { speed: formatSpeed(v.speed) });
     label.sub.textContent = v.direction === 0 ? t('info.rack.stopped') : t('info.rack.direction');
@@ -76,6 +81,7 @@ function sameWorm(a: WormRatio | null | undefined, b: WormRatio | null | undefin
 }
 
 function sameValues(a: InfoLabelValues, b: InfoLabelValues): boolean {
+  if ((a.toothClash === true) !== (b.toothClash === true)) return false;
   if (a.kind === 'rack' || b.kind === 'rack') {
     return (
       a.kind === 'rack' && b.kind === 'rack' && a.speed === b.speed && a.direction === b.direction
@@ -118,9 +124,11 @@ export function createInfoLabels(host: HTMLElement): InfoLabels {
           const row = h('div', 'gs-info-label__sub');
           row.append(sub, arrow);
           const worm = h('div', 'gs-info-label__worm', 'info-label-worm');
-          el.append(main, row, worm);
+          const lock = h('div', 'gs-info-label__lock', 'info-label-lock');
+          lock.hidden = true;
+          el.append(main, row, worm, lock);
           layer.append(el);
-          label = { el, main, sub, worm, arrow, values: value };
+          label = { el, main, sub, worm, arrow, lock, values: value };
           labels.set(id, label);
         } else if (sameValues(label.values, value)) {
           continue;

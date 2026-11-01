@@ -1,12 +1,14 @@
 import { GEAR_SIZES } from '../constants';
 import { assertNever } from '../scene/gear-shape';
 import type { GearShape, SizeKey } from '../scene/types';
+import { toothArcOf } from './partial-gear';
 
 // 形状データ（BufferGeometry）を共有するためのキー（design.md §7）。
 // (種類, 大きさ, 歯数, 形を変える属性)。ハスバ歯車では hand を含める。
 // かさ歯車の apex は描画の向き（ローカルの z の反転）で表すので含めない（S2-02）。
 // ウォームは (種類, 大きさ)、ホイールは (種類, 大きさ, 歯数)（S2-03）。ねじ歯車は (種類, 大きさ, 歯数)（S2-04）。
 // 内歯車は (種類, 大きさ, 歯数)。webSide は描画の向きで表す（S3-02）。
+// 欠け歯車（S5-05）は平歯車のキーに `:t残す歯数@始まり` を足す。
 // 厚さ width（S4-05）が大きさごとの歯幅と違えば、末尾に `:w厚さ` を足す（省くか同じなら前と同じキー）
 export function gearShapeKey(
   shape: GearShape,
@@ -20,8 +22,13 @@ export function gearShapeKey(
 
 function baseShapeKey(shape: GearShape, size: SizeKey, teeth: number): string {
   switch (shape.kind) {
-    case 'spur':
-      return `spur:${size}:${teeth}`;
+    case 'spur': {
+      // 欠け歯車（S5-05）は残す歯の弧を足す。普通の平歯車は前と同じキー
+      const arc = toothArcOf(shape, teeth);
+      return arc === null
+        ? `spur:${size}:${teeth}`
+        : `spur:${size}:${teeth}:t${arc.count}@${arc.start}`;
+    }
     case 'helical':
       return `helical:${size}:${teeth}:${shape.hand}`;
     case 'bevel':

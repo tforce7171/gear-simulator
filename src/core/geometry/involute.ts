@@ -1,4 +1,5 @@
 import { PRESSURE_ANGLE } from '../constants';
+import { hasTooth, type ToothArc } from './partial-gear';
 
 // 平歯車の 2D の歯形（要件 §3.2、§8）。
 // 向きの取り決め（design.md §5）: 歯車の中心が原点、0 番目の歯の中心線が +x 軸に乗り、
@@ -45,6 +46,8 @@ export interface OutlineOptions {
   flankSegments?: number; // 歯面 1 本を何本の線分で近似するか（初期値 8）
   tipSegments?: number; // 歯先の円弧の分割数（初期値 2）
   rootSegments?: number; // 歯底の円弧の分割数（初期値 3）
+  // 欠け歯車（S5-05）。残す歯の弧。省くか null なら全部の歯。外の歯は歯底円の弧にする（点の数は歯のある周期と同じ）
+  toothArc?: ToothArc | null;
 }
 
 const DEFAULT_FLANK_SEGMENTS = 8;
@@ -119,10 +122,18 @@ export function spurOutline(module: number, teeth: number, options?: OutlineOpti
   }
   if (hasRadialLine) template.push([rf, psiStart]);
 
+  // 歯の無い周期（S5-05）: 手前の歯底の円弧の始まり（含めない）から、次の周期の始まり（ψ_start）までの歯底円の弧。
+  // 点の数を歯のある周期と同じにして、toothStart を 1 増やすと点の並びも 1 周期ずれるだけにする
+  const n = template.length;
+  const blank: [number, number][] = [];
+  for (let i = 1; i <= n; i++) blank.push([rf, rootFrom + ((psiStart - rootFrom) * i) / n]);
+
+  const arc = options?.toothArc ?? null;
   const out: Vec2[] = [];
   for (let j = 0; j < teeth; j++) {
     const offset = j * pitchAngle;
-    for (const [r, angle] of template) out.push(polar(r, angle + offset));
+    const period = hasTooth(arc, teeth, j) ? template : blank;
+    for (const [r, angle] of period) out.push(polar(r, angle + offset));
   }
   return out;
 }

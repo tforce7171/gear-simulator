@@ -126,3 +126,24 @@
   height: 26px;
   padding: 0 8px;
 }
+
+/* 作品一覧の見本（S5-05）。保存した作品の一覧の上に並べる */
+.gs-works__samples {
+  margin-bottom: 14px;
+}
+
+.gs-works__samples-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--gs-text-muted, #9aa1ab);
+}
+
+.gs-works__sample-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.gs-work-card--sample .gs-work-card__date {
+  white-space: normal;
+}

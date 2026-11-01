@@ -1,5 +1,4 @@
 import {
-  buzzLevel,
   CLICK_LATENCY,
   canPlayImpact,
   clickParams,
@@ -14,12 +13,13 @@ import {
   type MeshVoice,
   type MotorVoice,
   MUTE_RAMP_SEC,
-  meshGrainTimes,
   meshTimbre,
   rackEndHits,
   selectVoices,
   summarizeBackground,
   type VoiceKind,
+  voiceGrainTimes,
+  voiceSlideLevel,
 } from '../core/audio-model';
 import { MAX_AUDIO_VOICES } from '../core/constants';
 import type { LockInfo } from '../core/kinematics/types';
@@ -148,7 +148,8 @@ export function createAudioEngine(options: AudioEngineOptions = {}): AudioEngine
   const updateMeshVoices = (frame: AudioFrame, listener: Vec3): void => {
     const candidates: Selected[] = frame.voices.map((v) => ({
       ...v,
-      level: grainLevel(v.frequency, material),
+      // かかっていない欠け歯車の組（S5-05）は鳴らないので、背景の音量にも数えない
+      level: v.engaged ? grainLevel(v.frequency, material) : 0,
     }));
     const previous = new Set(active.map((v) => v.key));
     const { selected, rest } = selectVoices(candidates, listener, previous, MAX_AUDIO_VOICES);
@@ -177,12 +178,12 @@ export function createAudioEngine(options: AudioEngineOptions = {}): AudioEngine
       // 粒の時刻（S4-06）: 遅ければ歯の通過ごと、速ければ毎秒 CLICK_RATE_MAX 粒に間引き、時刻を少し揺らす
       let times: number[] = [];
       if (prev !== undefined) {
-        const grains = meshGrainTimes(
+        // かかっていない欠け歯車の組（S5-05）は粒を出さない
+        const grains = voiceGrainTimes(
+          voice,
           prev,
           angle,
-          voice.teeth,
           frame.dt,
-          voice.frequency,
           carries.get(voice.key) ?? 0,
           random,
         );
@@ -199,9 +200,10 @@ export function createAudioEngine(options: AudioEngineOptions = {}): AudioEngine
         synth.setPosition(voice.position);
       }
       // 種類ごとの音色（S2-05）: 粒の音量と高さに倍率を掛け、すべりの雑音を足す。
-      // 速く回した金属の組の「ジー」（S5-03）も同じ経路で鳴らす（強さはすべりの雑音との大きいほう）
+      // 速く回した金属の組の「ジー」（S5-03）も同じ経路で鳴らす（強さはすべりの雑音との大きいほう）。
+      // かかっていない欠け歯車の組（S5-05）は 0（voiceSlideLevel）
       const timbre = meshTimbre(voice.kind);
-      synth.setSlide(Math.max(voice.slide, buzzLevel(voice.frequency, material, voice.kind)));
+      synth.setSlide(voiceSlideLevel(voice, material));
       // 歯の境目を跨いだ時刻をフレームの中で補間し、遅れを足して予約する
       const now = ctx.currentTime;
       for (const t of times) {

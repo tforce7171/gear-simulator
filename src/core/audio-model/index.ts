@@ -1,4 +1,5 @@
 import type { MeshKind } from '../geometry/can-mesh';
+import { currentEngagement } from '../kinematics/engagement';
 
 export type { MeshKind } from '../geometry/can-mesh';
 
@@ -381,6 +382,29 @@ export interface MeshVoice {
   readonly position: Vec3; // かみ合いの接点（meshContactPoint。S1-26）
   readonly kind: VoiceKind; // かみ合いの種類（音色を決める。S2-05。ラックの組は 'rack'。S3-05）
   readonly slide: number; // すべりの雑音の強さ（slideNoiseLevel。S2-05）
+  // かみ合いがかかっているか（S5-05）。欠け歯車の組は、歯のある弧が接点に来ている間だけ真。ほかの組は常に真。
+  // かかっていない声は粒・すべりの雑音・ジーを鳴らさない（voiceGrainTimes・voiceSlideLevel）。frequency はそのまま
+  readonly engaged: boolean;
+}
+
+// 声の 1 フレームの粒の時刻（S5-05）。かかっていない声は粒を出さない（ほかは meshGrainTimes と同じ）
+export function voiceGrainTimes(
+  voice: MeshVoice,
+  prevAngle: number,
+  nextAngle: number,
+  dt: number,
+  carry: number,
+  random: () => number,
+): { times: number[]; carry: number } {
+  if (!voice.engaged) return { times: [], carry: 0 };
+  return meshGrainTimes(prevAngle, nextAngle, voice.teeth, dt, voice.frequency, carry, random);
+}
+
+// 声のすべりの雑音の経路に渡す強さ（S5-05）: すべりの雑音と、速く回した金属の組のジー（S5-03）の大きいほう。
+// かかっていない声は 0
+export function voiceSlideLevel(voice: MeshVoice, material: AudioMaterialId): number {
+  if (!voice.engaged) return 0;
+  return Math.max(voice.slide, buzzLevel(voice.frequency, material, voice.kind));
 }
 
 // Layout.meshes の順に、かみ合い 1 組ずつの音源の状態を返し（止まっている組も含む）、続けて Layout.rackMeshes の順に
@@ -389,7 +413,9 @@ export interface MeshVoice {
 // 音色（こもり）は MESH_TIMBRES が決める
 export function computeMeshVoices(scene: Scene, layout: Layout, motion: MotionState): MeshVoice[] {
   const voices: MeshVoice[] = [];
-  for (const mesh of layout.meshes) {
+  // 欠け歯車（S5-05）の組が今かかっているか（欠け歯車が無ければ全部真）
+  const engagement = currentEngagement(scene, layout, motion.angles);
+  for (const [meshIndex, mesh] of layout.meshes.entries()) {
     const [gearId = mesh.a] = [mesh.a, mesh.b].sort();
     const gear = scene.gears[gearId];
     if (gear === undefined) continue;
@@ -415,10 +441,11 @@ export function computeMeshVoices(scene: Scene, layout: Layout, motion: MotionSt
       position: meshContactPoint(layout, mesh, motion),
       kind: mesh.kind,
       slide: slideNoiseLevel(mesh.kind, speed),
+      engaged: engagement.meshes[meshIndex] !== false,
     };
     voices.push(carrier === undefined ? voice : { ...voice, carrierShaftId: carrier });
   }
-  for (const rm of layout.rackMeshes) {
+  for (const [rackIndex, rm] of layout.rackMeshes.entries()) {
     const gear = scene.gears[rm.gear];
     const rack = scene.racks[rm.rack];
     const placed = layout.racks[rm.rack];
@@ -443,6 +470,7 @@ export function computeMeshVoices(scene: Scene, layout: Layout, motion: MotionSt
       position,
       kind: 'rack',
       slide: 0,
+      engaged: engagement.rackMeshes[rackIndex] !== false,
     });
   }
   return voices;

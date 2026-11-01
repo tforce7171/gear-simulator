@@ -113,6 +113,13 @@ export function createInfoOverlay(deps: InfoOverlayDeps): InfoOverlay {
     const info: Record<GearId, GearInfo> =
       ids.length === 0 ? {} : computeGearInfo(state.scene, layout, state.motion);
     const values = new Map<string, InfoLabelValues>();
+    // 'toothClash' のロックの成分の部品（S5-05）。ラベルに「歯が合わない」を出す
+    const clashed = new Set<string>();
+    for (const lock of state.motion.locks) {
+      if (lock.reason !== 'toothClash') continue;
+      for (const id of [...lock.gearIds, ...(lock.rackIds ?? [])]) clashed.add(id);
+    }
+    const clash = (id: string) => (clashed.has(id) ? { toothClash: true } : {});
     const parts: Array<{ kind: 'gear' | 'carrier' | 'rack'; id: string }> = [];
     const specs: InfoArrowSpec[] = [];
     const nextArrows: Array<{ gearId: GearId; direction: 1 | -1 }> = [];
@@ -121,7 +128,12 @@ export function createInfoOverlay(deps: InfoOverlayDeps): InfoOverlay {
       const gear = state.scene.gears[id];
       const gearLayout = layout.gears[id];
       if (item === undefined || gear === undefined || gearLayout === undefined) continue;
-      values.set(id, { rpm: item.rpm, ratio: item.ratio, wormRatio: item.wormRatio });
+      values.set(id, {
+        rpm: item.rpm,
+        ratio: item.ratio,
+        wormRatio: item.wormRatio,
+        ...clash(id),
+      });
       parts.push({ kind: 'gear', id });
       if (item.direction === 0) continue;
       // 遊星の歯車（S3-03）は今の公転の位置に置く（10 Hz で置き直す）
@@ -144,7 +156,7 @@ export function createInfoOverlay(deps: InfoOverlayDeps): InfoOverlay {
     for (const id of visible.racks) {
       const item = racks[id];
       if (item === undefined || layout.racks[id] === undefined) continue;
-      values.set(id, { kind: 'rack', speed: item.speed, direction: item.direction });
+      values.set(id, { kind: 'rack', speed: item.speed, direction: item.direction, ...clash(id) });
       parts.push({ kind: 'rack', id });
       nextDirections.set(id, item.direction);
     }
