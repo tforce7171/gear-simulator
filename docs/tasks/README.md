@@ -92,7 +92,7 @@
 
 | ID | 題名 | 依存 | 状態 |
 |---|---|---|---|
-| [S5-01](stage5/01-thin-gears.md) | 歯車とラックを 0.5 mm 刻みで薄くできるようにする | - | doing |
+| [S5-01](stage5/01-thin-gears.md) | 歯車とラックを 0.5 mm 刻みで薄くできるようにする | - | done |
 | [S5-02](stage5/02-property-panel-text.md) | プロパティの厚さの欄をそろえ、括弧書きをなくす | S5-01 | todo |
 | [S5-03](stage5/03-gear-sound-tuning.md) | 金属の音を歯車らしく、木の音を重くする | - | todo |
 | [S5-04](stage5/04-part-colors.md) | 歯車・ラック・キャリア・アンカーの色を部品ごとに選べるようにする | - | todo |
