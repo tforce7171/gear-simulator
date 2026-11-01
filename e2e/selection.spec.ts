@@ -3,7 +3,7 @@ import type { Page } from '@playwright/test';
 import type { Layout } from '../src/core/layout/types';
 import type { Vec3 } from '../src/core/math/vec3';
 import type { Scene } from '../src/core/scene/types';
-import type { CameraPose } from '../src/input/camera';
+import { settledCamera } from './fixtures/sim';
 import { expect, test } from './fixtures/test';
 
 // 縦軸の起点のシャフト（原点 [0, 20, 0]）に A、+Z の向きに B、さらに +Z に C（どれも中・20 歯）
@@ -45,12 +45,6 @@ async function getSelection(page: Page): Promise<string[] | undefined> {
   return page.evaluate(() => window.__gearSim?.getSelection());
 }
 
-async function getCamera(page: Page): Promise<CameraPose> {
-  const pose = await page.evaluate(() => window.__gearSim?.getCamera());
-  if (pose === undefined) throw new Error('__gearSim が無い');
-  return pose;
-}
-
 async function project(page: Page, world: Vec3): Promise<{ x: number; y: number }> {
   const point = await page.evaluate((w) => window.__gearSim?.projectToScreen(w), world);
   if (point === undefined) throw new Error('__gearSim が無い');
@@ -73,24 +67,6 @@ async function drag(page: Page, from: { x: number; y: number }, dx = 100, dy = 0
   await page.mouse.down();
   await page.mouse.move(from.x + dx, from.y + dy, { steps: 10 });
   await page.mouse.up();
-}
-
-// 移り終わる（100ms のあいだに位置も注視点も動かない）まで待って、その視点を返す
-async function settledCamera(page: Page): Promise<CameraPose> {
-  let last = await getCamera(page);
-  await expect
-    .poll(
-      async () => {
-        await page.waitForTimeout(100);
-        const now = await getCamera(page);
-        const moved = dist(now.position, last.position) + dist(now.target, last.target);
-        last = now;
-        return moved;
-      },
-      { timeout: 5000 },
-    )
-    .toBeLessThan(1e-3);
-  return last;
 }
 
 async function selectB(page: Page): Promise<void> {

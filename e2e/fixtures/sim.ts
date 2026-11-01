@@ -47,6 +47,18 @@ export async function openApp(
   if (options.camera !== undefined) await setCamera(page, options.camera);
 }
 
+/**
+ * 時計を入れてから開き、止める（以後は page.clock.runFor の分だけ進む）。トーストが消えるまでの
+ * 秒数など、時間で変わる表示を実時間で待たずに確かめる（S1-15）
+ */
+export async function openWithPausedClock(page: Page): Promise<void> {
+  await page.clock.install();
+  await page.goto('/');
+  await waitReady(page);
+  const now = await page.evaluate(() => Date.now());
+  await page.clock.pauseAt(now + 100);
+}
+
 export async function loadScene(page: Page, scene: Scene): Promise<void> {
   await page.evaluate((s) => window.__gearSim?.loadScene(s), scene);
 }
@@ -245,6 +257,12 @@ export async function settleCamera(page: Page): Promise<void> {
         requestAnimationFrame(tick);
       }),
   );
+}
+
+/** カメラの移動が終わるのを待ち（settleCamera）、そのときのカメラを返す */
+export async function settledCamera(page: Page): Promise<CameraPose> {
+  await settleCamera(page);
+  return read(page, 'getCamera');
 }
 
 /** Space の押して離すで一時停止を切り替え、on になったことを確かめる */

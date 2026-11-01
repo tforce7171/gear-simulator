@@ -17,10 +17,13 @@
 - 見た目の確認は画像の比較ではなく、撮った png を Read で見て確かめる。手順は design.md §10 の「見た目の確認」（`e2e/fixtures/visual.ts` の `captureScene` → `screenshots/<場面名>.png`）。
 - `e2e/fixtures/*.json` は Vitest も使う。`src/app/demo-scene.test.ts` は `two-spur.json` と一致することを、`src/app/grow.test.ts` は全 fixture の候補を確かめている。シーンの形を変えたら fixture を全部直す（保存形式も変えるなら save-format-bump スキル）。
 - `window.__gearSim` の型は `src/debug/gear-sim.ts` の `GearSimDebug`、実装をつなぐのは `src/main.ts` の `installGearSim(...)`。
+- e2e は時間（`waitForTimeout`）で待たない。状態は `expect.poll`、カメラは `sim.ts` の `settleCamera` / `settledCamera`、描画は `nextFrames`、時計は `openWithPausedClock` で待ち、spec に自前の待ち関数を書かない。時間に依るテストは `--repeat-each=5` で確かめる（design.md §10 の「待ち方」）。
 
 ## コードを読む・直す
 
 - 千行を超えるファイル（`src/core/edit/commands.ts`、`src/core/layout/resolve.ts`、`docs/design.md`）や `src/main.ts`・`src/app/interactions.ts` は、`grep -n "^export\|^function" <file>` で目次を出し、必要な関数だけを読む。
 - `Scene`・`Command`・`GrowSpec` などの型を変えたら、まず `pnpm typecheck` で壊れた箇所の一覧を出し、その一覧に沿って直す。
 - 文言は `src/core/i18n/ja.ts` と `en.ts` の両方に足す（`MessageKey` は ja.ts から導かれ、en の過不足は型エラーになる）。
-- 編集コマンドを足すときは add-edit-command スキルを使う。
+- 編集コマンドを足すときは add-edit-command スキル、歯車の種類を足すときは add-gear-kind スキルを使う。
+- PR は draft にせず、ready の状態で出す。
+- 描画（`src/render`）を変えるときは、design.md §7 の「描画を軽くする仕組み」を読む。見た目を行列・visible・材質の差し替え以外で変える（材質の色を直に書き換えるなど）なら `invalidate` するか `SceneSync.version()` を増やす。そうしないと見た目が変わっても描き直されない。重さは `pnpm perf --headless` で、main を `git worktree add --detach` したものと比べる。

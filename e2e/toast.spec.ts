@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test';
 import { en } from '../src/core/i18n/en';
 import { ja } from '../src/core/i18n/ja';
+import { openWithPausedClock } from './fixtures/sim';
 import { expect, test } from './fixtures/test';
 
 test.use({ locale: 'ja-JP' });
@@ -8,14 +9,6 @@ test.use({ locale: 'ja-JP' });
 async function open(page: Page): Promise<void> {
   await page.goto('/');
   await page.waitForFunction(() => window.__gearSim?.isReady() === true);
-}
-
-// page.clock.install() のあとで開き、時計を止める（以後は runFor の分だけ進む）
-async function openWithPausedClock(page: Page): Promise<void> {
-  await page.clock.install();
-  await open(page);
-  const now = await page.evaluate(() => Date.now());
-  await page.clock.pauseAt(now + 100);
 }
 
 test('エラーのトーストが出て、言語の切り替えで書き換わり、閉じるボタンで消える', async ({

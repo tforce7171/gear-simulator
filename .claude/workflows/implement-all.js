@@ -109,6 +109,11 @@ const COMMON_RULES = `
 - タスク資料の「範囲外」に書かれたものには手を出さない。
 `
 
+// 状態の書き換えで他の行を巻き込まない（S3-02 は依存の列の文字列で照合して S3-04 の行まで変えた）
+function statusRule(t) {
+  return `状態は前の値に依らずに書き換える（資料は ^status: の行、README は [${t.id}]( で始まる行の最後の列）。書き換えたら git diff で、変わったのがこの 2 行だけであることを確かめる。`
+}
+
 function implPrompt(t, mode, issues) {
   const header = {
     first: `タスク ${t.id}「${t.title}」（${t.path}）を実装して、レビューに出せる状態にしてください。`,
@@ -125,11 +130,11 @@ ${PLACES}
    - ブランチ task/${t.id} だけあって worktree が無ければ、共有のチェックアウトで git worktree add ${wt(t)} task/${t.id} を実行する。
    - どちらも無ければ、共有のチェックアウトで git worktree add ${wt(t)} -b task/${t.id} main を実行する。
    作ったときは、その worktree の中で pnpm install --frozen-lockfile を流す。以降の作業はすべてその worktree の中で行う。
-2. まだ doing でなければ、タスク資料の front matter と docs/tasks/README.md の状態欄を doing にする。
+2. まだ doing でなければ、タスク資料の front matter と docs/tasks/README.md の状態欄を doing にする。${statusRule(t)}
 3. タスク資料を全部読む。docs/design.md、docs/requirements.md の関連する節、依存タスクの資料（特に「作るもの」）も読む。既存のコードも確かめる。
 4. 「テストケース」の節のテストを先に書き、それから実装する（Vitest / Playwright / Playwright（見た目））。期待値は資料の値をそのまま使う。
-5. pnpm verify が通るまで直す。
-6. 「完了の条件」の 2 つ目: 前提が変わったら docs/design.md と後続のタスク資料を書き換える。window.__gearSim の API を足したら design.md §10 の表も更新する。
+5. pnpm verify が通るまで直す。時間に依るテスト（カメラの移動・アニメーション・自動保存・トーストなど）を足したり変えたりしたら、pnpm e2e <spec> --repeat-each=5 でも全部通ることを確かめる（design.md §10 の「時間に依るテストの確かめ方」）。
+6. 「完了の条件」の 2 つ目: 前提が変わったら docs/design.md と後続のタスク資料を書き換える。window.__gearSim の API を足したら design.md §10 の表も更新する。足した型・関数・辞書のキー・testid の名前で grep -rn '<名前>' docs/tasks を流し、後続のタスク資料で「足す・作る」と書かれている箇所を「${t.id} で足し済み」に直す（S1-15 で直し漏れがあり、後続が同じキーを二重に足すおそれがあった）。
 7. 「人が手で確かめる項目」と、エージェントの環境では確かめられない受け入れ条件（ブラウザでの目視、実機での計測など）は、docs/tasks/manual-checks.md に「タスク ID・項目・確かめ方」を追記する。自動で確かめられるもの（わざと違反を入れて失敗を確かめて戻す、など）は自分で実際に行い、結果を summary に書く。
 8. タスクの worktree の中ですべてコミットして、作業ツリーをきれいにして終える。worktree は消さない（レビューとマージで使う）。status を done にするのは、あなたではなくマージ担当の仕事なので、doing のままにする。
 ${COMMON_RULES}
@@ -146,7 +151,8 @@ ${PLACES}
 2. タスクの worktree の中で git diff main...task/${t.id} を読み、資料の「受け入れ条件」がすべて満たされているか。
 3. 資料の「テストケース」がすべてテストとして書かれていて、資料の期待値どおりに検証しているか。skip や期待値の緩和がないか。Biome や tsconfig の規則が緩められていないか。
 4. タスクの worktree の中で pnpm verify を自分で実行して、通るか。
-5. 「完了の条件」の 2 つ目: 必要な docs/design.md や後続のタスク資料の更新（§10 の API の表など）が漏れていないか。
+5. 「完了の条件」の 2 つ目: 必要な docs/design.md や後続のタスク資料の更新（§10 の API の表など）が漏れていないか。このタスクで足した名前（型・関数・辞書のキー・testid）を docs/tasks で grep し、後続の資料にまだ「足す・作る」と書かれていないか。
+   時間に依るテストを足したり変えたりしていれば、その spec を pnpm e2e <spec> --repeat-each=5 で流して全部通るか。
 6. 「範囲外」に書かれたものに手を出していないか。
 7. 置いた仮定が docs/tasks/implementation-log.md に、人が手で確かめる項目が docs/tasks/manual-checks.md に記録されているか。
 
@@ -157,7 +163,7 @@ ${PLACES}
 function mergePrompt(t) {
   return `タスク ${t.id}「${t.title}」はレビューに合格しました。完了の処理と main へのマージをしてください。
 ${PLACES}
-1. タスクの worktree（${wt(t)}）の中で、${t.path} の front matter を status: done にし、「完了の条件」のチェックボックスを [x] にする。docs/tasks/README.md の状態欄も done にする。コミットする（例: docs(${t.id}): 完了にする）。
+1. タスクの worktree（${wt(t)}）の中で、${t.path} の front matter を status: done にし、「完了の条件」のチェックボックスを [x] にする。docs/tasks/README.md の状態欄も done にする。${statusRule(t)} コミットする（例: docs(${t.id}): 完了にする）。
 2. 共有のチェックアウトが main で、作業ツリーがきれいなことを確かめる。違えば何も変えずに ok=false にして、状態を detail に書く。
 3. 共有のチェックアウトで git merge --no-ff task/${t.id} -m "merge(${t.id}): ${t.title}" を実行する。
 4. 競合したら、共有のチェックアウトでは git merge --abort して、ファイルは編集しない。代わりにタスクの worktree の中で git merge main を行い、両方の意図を残して解消し、pnpm verify が通ることを確かめてからコミットする。そのあと 3 をやり直す。
@@ -172,7 +178,7 @@ function blockPrompt(t, reason) {
 ${PLACES}
 1. タスクの worktree（${wt(t)}）に未コミットの変更があれば、その中で wip(${t.id}): 途中の状態 としてコミットする。worktree とブランチは消さない。
 2. main の上での記録は、共有のチェックアウトを編集せずに行う。共有のチェックアウトで git worktree add --detach .claude/worktrees/block-${t.id} main を実行し、その一時の worktree の中で:
-   - ${t.path} の front matter を status: blocked にし、docs/tasks/README.md の状態欄も blocked にする。
+   - ${t.path} の front matter を status: blocked にし、docs/tasks/README.md の状態欄も blocked にする。${statusRule(t)}
    - docs/tasks/implementation-log.md に「${t.id} は blocked。理由、最後の指摘、task/${t.id} ブランチ（${wt(t)}）に途中の作業がある」と追記する。
    - docs(${t.id}): blocked にする としてコミットする。
 3. 共有のチェックアウト（main で作業ツリーがきれいなこと）で git merge --ff-only <2 のコミット> を実行して main を進める。
