@@ -1,7 +1,7 @@
 ---
 id: S5-04
 title: 歯車・ラック・キャリア・アンカーの色を部品ごとに選べるようにする
-status: doing
+status: done
 depends: []
 ---
 
@@ -78,4 +78,4 @@ depends: []
 ## 完了の条件
 - [x] 上のテストケースがすべて実装済みで、`pnpm verify` が通る
 - [x] design.md と後続のタスク資料に、必要な変更を反映した
-- [ ] `status: done` にしてコミットした
+- [x] `status: done` にしてコミットした
