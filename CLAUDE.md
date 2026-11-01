@@ -25,4 +25,5 @@
 - `Scene`・`Command`・`GrowSpec` などの型を変えたら、まず `pnpm typecheck` で壊れた箇所の一覧を出し、その一覧に沿って直す。
 - 文言は `src/core/i18n/ja.ts` と `en.ts` の両方に足す（`MessageKey` は ja.ts から導かれ、en の過不足は型エラーになる）。
 - 編集コマンドを足すときは add-edit-command スキル、歯車の種類を足すときは add-gear-kind スキルを使う。
+- PR は draft にせず、ready の状態で出す。
 - 描画（`src/render`）を変えるときは、design.md §7 の「描画を軽くする仕組み」を読む。見た目を行列・visible・材質の差し替え以外で変える（材質の色を直に書き換えるなど）なら `invalidate` するか `SceneSync.version()` を増やす。そうしないと見た目が変わっても描き直されない。重さは `pnpm perf --headless` で、main を `git worktree add --detach` したものと比べる。
