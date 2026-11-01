@@ -17,6 +17,7 @@
 - 共有のチェックアウトは main のままにし、git の操作（merge・worktree の追加と削除・ブランチの削除）だけに使う。起動時に main でないか未コミットの変更があれば中断する。
 - 差し戻しは 2 回まで。それでも駄目なら新しい担当で 1 回やり直し、なお不合格なら `blocked`（途中の作業は `task/<ID>` と `.claude/worktrees/task-<ID>` に残す）。`blocked` を `todo` に戻して起動し直すと再挑戦する。
 - 仮定と `blocked` の理由は [implementation-log.md](implementation-log.md)、人が手で確かめる項目は [manual-checks.md](manual-checks.md) に貯める。
+- 担当が作業中に得た知見（探し直した事実・落とし穴など）は [lessons.md](lessons.md) に貯める。ループが最後まで回ると、Retro が retro スキル（`.claude/skills/retro/SKILL.md`）に従ってそれを CLAUDE.md・スキル・design.md・このワークフローに還元し、`chore/retro-*` の PR を ready で出す（push するのはこの PR だけ。マージは人）。Retro が失敗したときや、過去の実行の記録から還元したいときは `/retro` を手で回す。
 - `done` と `blocked` は飛ばすので、中断しても起動し直せば続きから進む。`doing` のタスクと worktree が残っているタスクを先に再開する。
 
 ## 段階 1: 基盤

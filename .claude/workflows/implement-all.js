@@ -5,6 +5,7 @@ export const meta = {
   phases: [
     { title: 'State', detail: 'タスク資料と git の状態を読む' },
     { title: 'Tasks', detail: 'タスクごとに 実装 → レビュー → 差し戻し → マージ' },
+    { title: 'Retro', detail: 'docs/tasks/lessons.md の知見を還元して PR を出す' },
   ],
 }
 
@@ -16,7 +17,9 @@ export const meta = {
 // - agent() の isolation: 'worktree' は使わない（担当ごとの使い捨てになり、同じブランチを引き継げないため）
 // - 差し戻しは 2 回まで。それでも不合格なら、まっさらなエージェントで 1 回やり直す。駄目なら blocked
 // - 人には聞かない。仮定は docs/tasks/implementation-log.md、手で確かめる項目は docs/tasks/manual-checks.md
-// - push しない
+// - push しない（例外は Retro が出す chore/retro-* の PR だけ）
+// - 担当は知見（lessons）も返し、merge・block の担当が docs/tasks/lessons.md に追記する。
+//   ループが最後まで回ったら Retro が retro スキル（.claude/skills/retro/SKILL.md）に従って還元し、ready の PR を出す。マージは人
 
 const MAX_FIXES = 2
 const MAX_LOOP = 80
@@ -59,6 +62,21 @@ const STATE_SCHEMA = {
   required: ['currentBranch', 'dirty', 'taskBranches', 'taskWorktrees', 'tasks'],
 }
 
+const LESSONS_FIELD = {
+  type: 'array',
+  description:
+    '次に別のタスクをする担当が知っていれば、速く・確実に済んだこと（探し直した事実・詰まったこと・落とし穴）。タスク固有の仕様の仮定は含めない（implementation-log.md に書く）。無ければ空配列',
+  items: {
+    type: 'object',
+    properties: {
+      kind: { type: 'string', enum: ['探し直した事実', '詰まったこと', '落とし穴'] },
+      text: { type: 'string', description: '1〜3 文。ファイル・関数・コマンドの名前を入れる' },
+      evidence: { type: 'string', description: '回数・かかった手間・関わったファイルやコマンド' },
+    },
+    required: ['kind', 'text', 'evidence'],
+  },
+}
+
 const IMPL_SCHEMA = {
   type: 'object',
   properties: {
@@ -66,8 +84,9 @@ const IMPL_SCHEMA = {
     verifyPassed: { type: 'boolean' },
     summary: { type: 'string', description: '何を作り、何を決めたか（日本語、数行）' },
     stuckReason: { type: 'string' },
+    lessons: LESSONS_FIELD,
   },
-  required: ['outcome', 'verifyPassed', 'summary'],
+  required: ['outcome', 'verifyPassed', 'summary', 'lessons'],
 }
 
 const REVIEW_SCHEMA = {
@@ -76,8 +95,20 @@ const REVIEW_SCHEMA = {
     pass: { type: 'boolean' },
     verifyPassed: { type: 'boolean' },
     issues: { type: 'array', items: { type: 'string' }, description: '直すべき点。具体的に（ファイル、条件、期待値）' },
+    lessons: LESSONS_FIELD,
   },
-  required: ['pass', 'verifyPassed', 'issues'],
+  required: ['pass', 'verifyPassed', 'issues', 'lessons'],
+}
+
+const RETRO_SCHEMA = {
+  type: 'object',
+  properties: {
+    outcome: { type: 'string', enum: ['pr', 'status-only', 'nothing', 'failed'] },
+    branch: { type: 'string' },
+    prUrl: { type: 'string' },
+    detail: { type: 'string', description: '反映したもの・見送ったものの要約' },
+  },
+  required: ['outcome', 'detail'],
 }
 
 const DONE_SCHEMA = {
@@ -137,6 +168,7 @@ ${PLACES}
 6. 「完了の条件」の 2 つ目: 前提が変わったら docs/design.md と後続のタスク資料を書き換える。window.__gearSim の API を足したら design.md §10 の表も更新する。足した型・関数・辞書のキー・testid の名前で grep -rn '<名前>' docs/tasks を流し、後続のタスク資料で「足す・作る」と書かれている箇所を「${t.id} で足し済み」に直す（S1-15 で直し漏れがあり、後続が同じキーを二重に足すおそれがあった）。
 7. 「人が手で確かめる項目」と、エージェントの環境では確かめられない受け入れ条件（ブラウザでの目視、実機での計測など）は、docs/tasks/manual-checks.md に「タスク ID・項目・確かめ方」を追記する。自動で確かめられるもの（わざと違反を入れて失敗を確かめて戻す、など）は自分で実際に行い、結果を summary に書く。
 8. タスクの worktree の中ですべてコミットして、作業ツリーをきれいにして終える。worktree は消さない（レビューとマージで使う）。status を done にするのは、あなたではなくマージ担当の仕事なので、doing のままにする。
+9. 振り返って lessons を返す: 何度も grep し直した名前や場所、落ちてから原因に気づいた検証、資料や CLAUDE.md に書いてあれば避けられた回り道。ファイルには書かない（マージ担当が docs/tasks/lessons.md に書く）。
 ${COMMON_RULES}
 どうしても完了できない場合だけ outcome=stuck にして、理由を stuckReason に書く。`
 }
@@ -157,13 +189,24 @@ ${PLACES}
 7. 置いた仮定が docs/tasks/implementation-log.md に、人が手で確かめる項目が docs/tasks/manual-checks.md に記録されているか。
 
 コードの書き方（スタイル）は Biome に任せ、見なくてよい。
-不合格なら、直すべき点を具体的に issues に書く。合格なら issues は空にする。`
+不合格なら、直すべき点を具体的に issues に書く。合格なら issues は空にする。
+lessons には、この不合格や確かめる作業から見えた、他のタスクでも起こりうる落とし穴を返す（このタスクだけの誤りは issues に書けば足りる）。`
 }
 
-function mergePrompt(t) {
+// 担当が返した lessons とレビューの不合格を、merge・block の担当に渡す材料にする
+function lessonsNote(t, notes) {
+  const lines = notes.length ? notes.map(n => `- ${n}`).join('\n') : '- （なし）'
+  return `docs/tasks/lessons.md の末尾に「### ${t.id} ${t.title}」の見出しを足し、次の材料を、そのファイルの「書き方」に沿って [未還元] の項目にする。同じことを言っている材料は 1 項目にまとめ、他のタスクに通じないもの（このタスクだけの誤り）は落とす。残る項目が無ければ見出しも足さない。
+材料:
+${lines}`
+}
+
+function mergePrompt(t, notes) {
   return `タスク ${t.id}「${t.title}」はレビューに合格しました。完了の処理と main へのマージをしてください。
 ${PLACES}
-1. タスクの worktree（${wt(t)}）の中で、${t.path} の front matter を status: done にし、「完了の条件」のチェックボックスを [x] にする。docs/tasks/README.md の状態欄も done にする。${statusRule(t)} コミットする（例: docs(${t.id}): 完了にする）。
+1. タスクの worktree（${wt(t)}）の中で、${t.path} の front matter を status: done にし、「完了の条件」のチェックボックスを [x] にする。docs/tasks/README.md の状態欄も done にする。${statusRule(t)}
+   ${lessonsNote(t, notes)}
+   コミットする（例: docs(${t.id}): 完了にする）。
 2. 共有のチェックアウトが main で、作業ツリーがきれいなことを確かめる。違えば何も変えずに ok=false にして、状態を detail に書く。
 3. 共有のチェックアウトで git merge --no-ff task/${t.id} -m "merge(${t.id}): ${t.title}" を実行する。
 4. 競合したら、共有のチェックアウトでは git merge --abort して、ファイルは編集しない。代わりにタスクの worktree の中で git merge main を行い、両方の意図を残して解消し、pnpm verify が通ることを確かめてからコミットする。そのあと 3 をやり直す。
@@ -172,7 +215,7 @@ ${PLACES}
 ok は、main にマージされ、共有のチェックアウトの作業ツリーがきれいなときだけ true にする。`
 }
 
-function blockPrompt(t, reason) {
+function blockPrompt(t, reason, notes) {
   return `タスク ${t.id}「${t.title}」は、何度やってもレビューに合格しませんでした。blocked として記録してください。
 理由: ${reason}
 ${PLACES}
@@ -180,6 +223,7 @@ ${PLACES}
 2. main の上での記録は、共有のチェックアウトを編集せずに行う。共有のチェックアウトで git worktree add --detach .claude/worktrees/block-${t.id} main を実行し、その一時の worktree の中で:
    - ${t.path} の front matter を status: blocked にし、docs/tasks/README.md の状態欄も blocked にする。${statusRule(t)}
    - docs/tasks/implementation-log.md に「${t.id} は blocked。理由、最後の指摘、task/${t.id} ブランチ（${wt(t)}）に途中の作業がある」と追記する。
+   - ${lessonsNote(t, notes)}
    - docs(${t.id}): blocked にする としてコミットする。
 3. 共有のチェックアウト（main で作業ツリーがきれいなこと）で git merge --ff-only <2 のコミット> を実行して main を進める。
 4. 共有のチェックアウトで git worktree remove .claude/worktrees/block-${t.id} を実行して一時の worktree を消す。push はしない。
@@ -233,12 +277,22 @@ for (let loop = 0; loop < MAX_LOOP; loop++) {
   let review = null
   let lastIssues = []
   let passed = false
+  // lessons.md に書く材料（担当の lessons と、レビューの不合格。末尾の #n で何回目の差し戻しかが分かる）
+  const notes = []
+  const collect = (r, who) => {
+    for (const l of (r && r.lessons) || []) notes.push(`〔${l.kind}〕${l.text} 根拠: ${l.evidence}（${who}）`)
+  }
+  collect(impl, 'impl')
 
   // 実装 → レビュー → 差し戻し（最大 MAX_FIXES 回）→ 新しい担当で 1 回やり直し
   const attempts = [...Array(MAX_FIXES).fill('fix'), 'retry']
   for (let i = 0; i <= attempts.length; i++) {
     if (impl && impl.outcome === 'ready') {
       review = await agent(reviewPrompt(t), { label: `review:${t.id}#${i + 1}`, phase: 'Tasks', schema: REVIEW_SCHEMA })
+      collect(review, `review#${i + 1}`)
+      if (review && !review.pass) {
+        for (const issue of review.issues) notes.push(`〔レビューの指摘〕${issue}（review#${i + 1} で不合格）`)
+      }
       if (review && review.pass) {
         passed = true
         break
@@ -251,10 +305,11 @@ for (let loop = 0; loop < MAX_LOOP; loop++) {
     const mode = attempts[i]
     log(`${t.id} 不合格（${i + 1} 回目）→ ${mode === 'fix' ? '差し戻し' : '新しい担当でやり直し'}`)
     impl = await agent(implPrompt(t, mode, lastIssues), { label: `${mode}:${t.id}#${i + 1}`, phase: 'Tasks', schema: IMPL_SCHEMA })
+    collect(impl, `${mode}#${i + 1}`)
   }
 
   if (passed) {
-    const merged = await agent(mergePrompt(t), { label: `merge:${t.id}`, phase: 'Tasks', schema: DONE_SCHEMA, effort: 'low' })
+    const merged = await agent(mergePrompt(t, notes), { label: `merge:${t.id}`, phase: 'Tasks', schema: DONE_SCHEMA, effort: 'low' })
     if (merged && merged.ok) {
       t.status = 'done'
       log(`${t.id} 完了・main にマージ済み`)
@@ -264,7 +319,7 @@ for (let loop = 0; loop < MAX_LOOP; loop++) {
     lastIssues = [`マージに失敗: ${merged ? merged.detail : '結果が返らなかった'}`]
   }
 
-  await agent(blockPrompt(t, lastIssues.join(' / ')), { label: `block:${t.id}`, phase: 'Tasks', schema: DONE_SCHEMA, effort: 'low' })
+  await agent(blockPrompt(t, lastIssues.join(' / '), notes), { label: `block:${t.id}`, phase: 'Tasks', schema: DONE_SCHEMA, effort: 'low' })
   t.status = 'blocked'
   log(`${t.id} は blocked。依存していないタスクを続ける`)
   results.push({ id: t.id, status: 'blocked', issues: lastIssues })
@@ -276,9 +331,22 @@ const waiting = remaining
   .map(t => ({ id: t.id, waitingOn: t.depends.filter(d => !byId[d] || byId[d].status !== 'done') }))
 log(`終了。done ${tasks.length - remaining.length}/${tasks.length}、blocked ${remaining.filter(t => t.status === 'blocked').length}、依存待ち ${waiting.length}`)
 
+// ---- 知見を還元する ----
+// 中断した実行では回らない。lessons.md の [未還元] は残るので、再開して最後まで回ったときにまとめて還元する
+phase('Retro')
+const retro = await agent(
+  `implement-all の実行が終わりました。共有のチェックアウトにある .claude/skills/retro/SKILL.md を読み、その手順に従って docs/tasks/lessons.md の知見を還元してください。
+${PLACES}
+この実行で扱ったタスク: ${results.map(r => `${r.id}（${r.status}）`).join('、') || 'なし'}
+人には聞かない。見送るかどうかも自分で決め、理由を PR の本文と lessons.md に残す。PR は ready で出し、マージはしない。`,
+  { label: 'retro', phase: 'Retro', schema: RETRO_SCHEMA },
+)
+log(`Retro: ${retro ? `${retro.outcome} ${retro.prUrl || retro.branch || ''}` : '結果が返らなかった'}`)
+
 return {
   thisRun: results,
   blocked: remaining.filter(t => t.status === 'blocked').map(t => t.id),
   waiting,
-  next: '人が確かめる項目は docs/tasks/manual-checks.md、仮定と blocked の理由は docs/tasks/implementation-log.md を見る',
+  retro,
+  next: '人が確かめる項目は docs/tasks/manual-checks.md、仮定と blocked の理由は docs/tasks/implementation-log.md を見る。Retro の PR をレビューしてマージする（Retro が失敗していれば /retro で回し直す）',
 }
