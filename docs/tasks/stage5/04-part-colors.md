@@ -1,7 +1,7 @@
 ---
 id: S5-04
 title: 歯車・ラック・キャリア・アンカーの色を部品ごとに選べるようにする
-status: todo
+status: doing
 depends: []
 ---
 
