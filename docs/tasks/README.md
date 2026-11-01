@@ -88,6 +88,16 @@
 | [S4-07](stage4/07-motor-model.md) | モーターを本物らしい形にする | S4-03 | done |
 | [S4-08](stage4/08-palette-icons.md) | パレットにアイコンを付ける | S4-02 | done |
 
+## 段階 5: 見た目・音・往復の機構
+
+| ID | 題名 | 依存 | 状態 |
+|---|---|---|---|
+| [S5-01](stage5/01-thin-gears.md) | 歯車とラックを 0.5 mm 刻みで薄くできるようにする | - | todo |
+| [S5-02](stage5/02-property-panel-text.md) | プロパティの厚さの欄をそろえ、括弧書きをなくす | S5-01 | todo |
+| [S5-03](stage5/03-gear-sound-tuning.md) | 金属の音を歯車らしく、木の音を重くする | - | todo |
+| [S5-04](stage5/04-part-colors.md) | 歯車・ラック・キャリア・アンカーの色を部品ごとに選べるようにする | - | todo |
+| [S5-05](stage5/05-partial-gear-rack-reciprocation.md) | 欠け歯車でラックを往復させる | S5-02, S5-03, S5-04 | todo |
+
 ## タスク資料のひな形
 
 各タスクの資料は次の形で書く。Claude Code が 1 タスクずつ読んで実装する前提で書く。外から見える振る舞いとテストの観点を書き、内部の構造までは決めない。
