@@ -9,7 +9,11 @@ export const meta = {
 }
 
 // 運用の決定（変えるときはここと docs/tasks/README.md を合わせる）
-// - 直列。タスクごとに task/<ID> ブランチを切り、合格したら main に --no-ff でマージしてブランチを消す
+// - 直列。タスクごとに task/<ID> ブランチと worktree（.claude/worktrees/task-<ID>）を作り、impl・差し戻し・レビューで共有する。
+//   合格したら main に --no-ff でマージし、worktree とブランチを消す
+// - 共有のチェックアウト（git worktree list の先頭）は main のままにし、git の操作（merge・worktree add/remove・branch -d）だけに使う。
+//   ファイルの編集はしない（バックグラウンドのジョブでは共有のチェックアウトへの編集が止められるため）
+// - agent() の isolation: 'worktree' は使わない（担当ごとの使い捨てになり、同じブランチを引き継げないため）
 // - 差し戻しは 2 回まで。それでも不合格なら、まっさらなエージェントで 1 回やり直す。駄目なら blocked
 // - 人には聞かない。仮定は docs/tasks/implementation-log.md、手で確かめる項目は docs/tasks/manual-checks.md
 // - push しない
@@ -20,8 +24,22 @@ const MAX_LOOP = 80
 const STATE_SCHEMA = {
   type: 'object',
   properties: {
-    currentBranch: { type: 'string' },
-    dirty: { type: 'boolean', description: '作業ツリーに未コミットの変更があるか' },
+    currentBranch: { type: 'string', description: '共有のチェックアウトの今のブランチ名' },
+    dirty: { type: 'boolean', description: '共有のチェックアウトに未コミットの変更があるか' },
+    taskBranches: { type: 'array', items: { type: 'string' }, description: '既存の task/* ブランチ（例: task/S1-05）' },
+    taskWorktrees: {
+      type: 'array',
+      description: '既存の .claude/worktrees/task-* の worktree',
+      items: {
+        type: 'object',
+        properties: {
+          path: { type: 'string', description: '共有のチェックアウトからの相対パス' },
+          branch: { type: 'string' },
+          dirty: { type: 'boolean' },
+        },
+        required: ['path', 'branch', 'dirty'],
+      },
+    },
     tasks: {
       type: 'array',
       description: 'docs/tasks/README.md の表の順',
@@ -38,7 +56,7 @@ const STATE_SCHEMA = {
       },
     },
   },
-  required: ['currentBranch', 'dirty', 'tasks'],
+  required: ['currentBranch', 'dirty', 'taskBranches', 'taskWorktrees', 'tasks'],
 }
 
 const IMPL_SCHEMA = {
@@ -71,10 +89,21 @@ const DONE_SCHEMA = {
   required: ['ok', 'detail'],
 }
 
+function wt(t) {
+  return `.claude/worktrees/task-${t.id}`
+}
+
+const PLACES = `
+作業場所:
+- 「共有のチェックアウト」は git worktree list の先頭の行のパス（main のまま）。ここではファイルを編集しない。git の操作（merge・worktree add/remove・branch -d）だけに使う。
+- 「タスクの worktree」は、共有のチェックアウトの中の .claude/worktrees/task-<ID>（ブランチは task/<ID>）。
+- Bash の cd は次の呼び出しに引き継がれないことがある。コマンドは毎回絶対パスで書くか、git -C <パス> / cd <パス> && ... の形で場所を明示する。Edit/Write も絶対パスで、タスクの worktree の中のファイルを指す。
+`
+
 const COMMON_RULES = `
 共通の決まり:
 - 人間には質問できない。止まらずに最後までやる。仕様が曖昧なところは合理的な仮定を置いて進め、docs/tasks/implementation-log.md に「タスク ID・仮定・理由」を追記する。
-- コミットは task/<ID> ブランチの上だけで行う。main への直接コミット、push、他のブランチへのマージはしない（マージは別の担当が行う）。
+- 編集・テスト・コミットはタスクの worktree（task/<ID> ブランチ）の中だけで行う。共有のチェックアウトでの checkout・編集、main への直接コミット、push、他のブランチへのマージはしない（マージは別の担当が行う）。
 - コミットメッセージは design.md §11 の形式（例: feat(S1-05): 日本語の要約）。ブランチの中では細かく分けてよい。
 - テストの削除・skip・期待値の緩和、Biome や tsconfig の規則の緩和で verify を通してはいけない。
 - タスク資料の「範囲外」に書かれたものには手を出さない。
@@ -84,33 +113,39 @@ function implPrompt(t, mode, issues) {
   const header = {
     first: `タスク ${t.id}「${t.title}」（${t.path}）を実装して、レビューに出せる状態にしてください。`,
     fix: `タスク ${t.id}「${t.title}」（${t.path}）はレビューで不合格になりました。指摘を直してください。`,
-    retry: `タスク ${t.id}「${t.title}」（${t.path}）は、これまでの試行がレビューで ${MAX_FIXES + 1} 回不合格になりました。あなたは新しい担当です。task/${t.id} ブランチの現状と最後の指摘を見て、続きから直すか、ブランチを main の位置からやり直す（git reset --hard main）かを判断し、合格する状態にしてください。`,
+    retry: `タスク ${t.id}「${t.title}」（${t.path}）は、これまでの試行がレビューで ${MAX_FIXES + 1} 回不合格になりました。あなたは新しい担当です。task/${t.id} ブランチの現状と最後の指摘を見て、続きから直すか、ブランチを main の位置からやり直す（タスクの worktree の中で git reset --hard main）かを判断し、合格する状態にしてください。`,
   }[mode]
   const issueText = issues && issues.length ? `\n最後のレビューの指摘:\n${issues.map(i => `- ${i}`).join('\n')}\n` : ''
   return `${header}
 ${issueText}
+${PLACES}
 手順:
-1. git の状態を確認する。今が main なら task/${t.id} ブランチを作って移る。既にそのブランチがあれば checkout し、git log と差分を見て進み具合を確かめてから続ける。
+1. タスクの worktree（${wt(t)}）を用意する。共有のチェックアウトで git worktree list と git branch --list task/${t.id} を見て:
+   - worktree が既にあれば、それを使う。git log と差分を見て進み具合を確かめてから続ける。
+   - ブランチ task/${t.id} だけあって worktree が無ければ、共有のチェックアウトで git worktree add ${wt(t)} task/${t.id} を実行する。
+   - どちらも無ければ、共有のチェックアウトで git worktree add ${wt(t)} -b task/${t.id} main を実行する。
+   作ったときは、その worktree の中で pnpm install --frozen-lockfile を流す。以降の作業はすべてその worktree の中で行う。
 2. まだ doing でなければ、タスク資料の front matter と docs/tasks/README.md の状態欄を doing にする。
 3. タスク資料を全部読む。docs/design.md、docs/requirements.md の関連する節、依存タスクの資料（特に「作るもの」）も読む。既存のコードも確かめる。
 4. 「テストケース」の節のテストを先に書き、それから実装する（Vitest / Playwright / Playwright（見た目））。期待値は資料の値をそのまま使う。
 5. pnpm verify が通るまで直す。
 6. 「完了の条件」の 2 つ目: 前提が変わったら docs/design.md と後続のタスク資料を書き換える。window.__gearSim の API を足したら design.md §10 の表も更新する。
 7. 「人が手で確かめる項目」と、エージェントの環境では確かめられない受け入れ条件（ブラウザでの目視、実機での計測など）は、docs/tasks/manual-checks.md に「タスク ID・項目・確かめ方」を追記する。自動で確かめられるもの（わざと違反を入れて失敗を確かめて戻す、など）は自分で実際に行い、結果を summary に書く。
-8. すべてコミットして、作業ツリーをきれいにして終える。status を done にするのは、あなたではなくマージ担当の仕事なので、doing のままにする。
+8. タスクの worktree の中ですべてコミットして、作業ツリーをきれいにして終える。worktree は消さない（レビューとマージで使う）。status を done にするのは、あなたではなくマージ担当の仕事なので、doing のままにする。
 ${COMMON_RULES}
 どうしても完了できない場合だけ outcome=stuck にして、理由を stuckReason に書く。`
 }
 
 function reviewPrompt(t) {
-  return `タスク ${t.id}「${t.title}」（${t.path}）の実装をレビューしてください。ブランチは task/${t.id} です（checkout されていなければ checkout する）。
-あなたはファイルを一切変更しない。コミットもしない。
+  return `タスク ${t.id}「${t.title}」（${t.path}）の実装をレビューしてください。ブランチは task/${t.id} で、タスクの worktree（${wt(t)}）に checkout されています。
+${PLACES}
+あなたはファイルを一切変更しない。コミットもしない。どこでも checkout しない。読むのも pnpm verify を流すのも、タスクの worktree の中で行う。
 
 確かめること:
-1. 作業ツリーがきれいか（未コミットの変更があれば不合格）。
-2. git diff main...task/${t.id} を読み、資料の「受け入れ条件」がすべて満たされているか。
+1. タスクの worktree の作業ツリーがきれいか（未コミットの変更があれば不合格）。worktree が無ければ不合格にして、その旨を issues に書く。
+2. タスクの worktree の中で git diff main...task/${t.id} を読み、資料の「受け入れ条件」がすべて満たされているか。
 3. 資料の「テストケース」がすべてテストとして書かれていて、資料の期待値どおりに検証しているか。skip や期待値の緩和がないか。Biome や tsconfig の規則が緩められていないか。
-4. pnpm verify を自分で実行して、通るか。
+4. タスクの worktree の中で pnpm verify を自分で実行して、通るか。
 5. 「完了の条件」の 2 つ目: 必要な docs/design.md や後続のタスク資料の更新（§10 の API の表など）が漏れていないか。
 6. 「範囲外」に書かれたものに手を出していないか。
 7. 置いた仮定が docs/tasks/implementation-log.md に、人が手で確かめる項目が docs/tasks/manual-checks.md に記録されているか。
@@ -121,42 +156,54 @@ function reviewPrompt(t) {
 
 function mergePrompt(t) {
   return `タスク ${t.id}「${t.title}」はレビューに合格しました。完了の処理と main へのマージをしてください。
-1. task/${t.id} ブランチで、${t.path} の front matter を status: done にし、「完了の条件」のチェックボックスを [x] にする。docs/tasks/README.md の状態欄も done にする。コミットする（例: docs(${t.id}): 完了にする）。
-2. git checkout main して、git merge --no-ff task/${t.id} -m "merge(${t.id}): ${t.title}" を実行する。
-3. 競合したら、両方の意図を残して解消し、pnpm verify が通ることを確かめてからマージコミットを作る。
-4. git branch -d task/${t.id} でブランチを消す。
-5. main で作業ツリーがきれいなことを確かめる。push はしない。
-ok は、main にマージされ、作業ツリーがきれいなときだけ true にする。`
+${PLACES}
+1. タスクの worktree（${wt(t)}）の中で、${t.path} の front matter を status: done にし、「完了の条件」のチェックボックスを [x] にする。docs/tasks/README.md の状態欄も done にする。コミットする（例: docs(${t.id}): 完了にする）。
+2. 共有のチェックアウトが main で、作業ツリーがきれいなことを確かめる。違えば何も変えずに ok=false にして、状態を detail に書く。
+3. 共有のチェックアウトで git merge --no-ff task/${t.id} -m "merge(${t.id}): ${t.title}" を実行する。
+4. 競合したら、共有のチェックアウトでは git merge --abort して、ファイルは編集しない。代わりにタスクの worktree の中で git merge main を行い、両方の意図を残して解消し、pnpm verify が通ることを確かめてからコミットする。そのあと 3 をやり直す。
+5. 共有のチェックアウトで git worktree remove ${wt(t)} を実行する。未追跡のファイルが理由で断られたら、worktree の中で git status --porcelain が空（コミット漏れが無い）ことを確かめてから --force を付けて消す。続けて git branch -d task/${t.id} でブランチを消す。
+6. 共有のチェックアウトが main で作業ツリーがきれいなことを確かめる。push はしない。
+ok は、main にマージされ、共有のチェックアウトの作業ツリーがきれいなときだけ true にする。`
 }
 
 function blockPrompt(t, reason) {
   return `タスク ${t.id}「${t.title}」は、何度やってもレビューに合格しませんでした。blocked として記録してください。
 理由: ${reason}
-1. task/${t.id} ブランチに未コミットの変更があれば、wip(${t.id}): 途中の状態 としてコミットする。ブランチは消さない。
-2. git checkout main する。
-3. main の上で ${t.path} の front matter を status: blocked にし、docs/tasks/README.md の状態欄も blocked にする。
-4. docs/tasks/implementation-log.md に「${t.id} は blocked。理由、最後の指摘、task/${t.id} ブランチに途中の作業がある」と追記する。
-5. docs(${t.id}): blocked にする としてコミットする。push はしない。`
+${PLACES}
+1. タスクの worktree（${wt(t)}）に未コミットの変更があれば、その中で wip(${t.id}): 途中の状態 としてコミットする。worktree とブランチは消さない。
+2. main の上での記録は、共有のチェックアウトを編集せずに行う。共有のチェックアウトで git worktree add --detach .claude/worktrees/block-${t.id} main を実行し、その一時の worktree の中で:
+   - ${t.path} の front matter を status: blocked にし、docs/tasks/README.md の状態欄も blocked にする。
+   - docs/tasks/implementation-log.md に「${t.id} は blocked。理由、最後の指摘、task/${t.id} ブランチ（${wt(t)}）に途中の作業がある」と追記する。
+   - docs(${t.id}): blocked にする としてコミットする。
+3. 共有のチェックアウト（main で作業ツリーがきれいなこと）で git merge --ff-only <2 のコミット> を実行して main を進める。
+4. 共有のチェックアウトで git worktree remove .claude/worktrees/block-${t.id} を実行して一時の worktree を消す。push はしない。
+ok は、main に blocked の記録が入り、共有のチェックアウトの作業ツリーがきれいなときだけ true にする。`
 }
 
 // ---- 状態を読む ----
 phase('State')
 const state = await agent(
   `gear-simulator リポジトリの状態を読んでください。ファイルは変更しない。
-- git の今のブランチ名と、未コミットの変更があるか。
+- 共有のチェックアウト（git worktree list の先頭の行）の今のブランチ名と、未コミットの変更があるか。
+- 既存の task/* ブランチ（git branch --list 'task/*'）。
+- git worktree list のうち .claude/worktrees/task-* にある worktree の、共有のチェックアウトからの相対パス、ブランチ名、未コミットの変更があるか。
 - docs/tasks/README.md の表にあるすべてのタスクについて、表の順に、ID、題名、資料のパス、資料の front matter の status、依存を返す。
 - 依存の「S1-01〜S1-30」「S2-01〜S2-04」のような範囲表記は、個別の ID に展開する。依存が「-」なら空配列。`,
   { label: 'read-state', schema: STATE_SCHEMA, effort: 'low' },
 )
 
-if (state.dirty && !state.currentBranch.startsWith('task/')) {
-  log(`作業ツリーに未コミットの変更があります（ブランチ: ${state.currentBranch}）。片付けてから起動し直してください。`)
-  return { aborted: true, reason: 'dirty working tree', branch: state.currentBranch }
+if (state.currentBranch !== 'main' || state.dirty) {
+  log(`共有のチェックアウトが main でないか、未コミットの変更があります（ブランチ: ${state.currentBranch}、dirty: ${state.dirty}）。main のきれいな状態にしてから起動し直してください。作業中のタスクは .claude/worktrees/task-<ID> に残っていれば続きから進みます。`)
+  return { aborted: true, reason: 'shared checkout is not clean main', branch: state.currentBranch, dirty: state.dirty }
 }
 
 const tasks = state.tasks
 const byId = Object.fromEntries(tasks.map(t => [t.id, t]))
-const resumeId = state.currentBranch.startsWith('task/') ? state.currentBranch.slice('task/'.length) : null
+// 再開の判定: status が doing のタスク、次に worktree かブランチが残っているタスクを優先する
+const leftover = new Set([
+  ...state.taskWorktrees.map(w => w.branch.replace(/^refs\/heads\//, '')),
+  ...state.taskBranches,
+].filter(b => b.startsWith('task/')).map(b => b.slice('task/'.length)))
 const results = []
 
 function ready(t) {
@@ -164,11 +211,10 @@ function ready(t) {
 }
 
 function pickNext() {
-  if (resumeId && byId[resumeId] && ready(byId[resumeId])) return byId[resumeId]
-  return tasks.find(ready)
+  return tasks.find(t => ready(t) && t.status === 'doing') || tasks.find(t => ready(t) && leftover.has(t.id)) || tasks.find(ready)
 }
 
-log(`タスク ${tasks.length} 本。done ${tasks.filter(t => t.status === 'done').length} 本、blocked ${tasks.filter(t => t.status === 'blocked').length} 本。`)
+log(`タスク ${tasks.length} 本。done ${tasks.filter(t => t.status === 'done').length} 本、blocked ${tasks.filter(t => t.status === 'blocked').length} 本。途中の worktree・ブランチ: ${[...leftover].join(', ') || 'なし'}`)
 
 // ---- タスクを 1 本ずつ ----
 phase('Tasks')
