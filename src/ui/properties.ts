@@ -304,9 +304,9 @@ export function createProperties(deps: PropertiesDeps): Properties {
       },
       step,
     );
-    const unit = text('span', 'gs-prop__unit', 'properties.width.unit');
+    // 単位は注意書き（properties.width.range）に書き、［−］入力［＋］は歯数の行と同じ並び・幅にする（S5-02）
     const stepper = h('div', 'gs-prop__stepper');
-    stepper.append(dec, input, inc, unit);
+    stepper.append(dec, input, inc);
     return [
       row('properties.width', stepper),
       text('span', 'gs-prop__hint', 'properties.width.range', { min, max, step }),

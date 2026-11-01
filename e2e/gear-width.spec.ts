@@ -67,6 +67,25 @@ test('小の平歯車を選び、厚さの［−］を 7 回押す → width が
   expect(await widthOf(page, 'gear_1')).toBe(0.5);
 });
 
+test('平歯車を選ぶ → 厚さの［−］［＋］が歯数の［−］［＋］と同じ x 座標・幅に並ぶ（S5-02）', async ({
+  page,
+}) => {
+  await openApp(page, { scene: twoGears, camera: TOP_VIEW });
+  await page.evaluate(() => window.__gearSim?.select('gear_1'));
+  for (const [teeth, width] of [
+    ['prop-teeth-dec', 'prop-width-dec'],
+    ['prop-teeth-inc', 'prop-width-inc'],
+    ['prop-teeth', 'prop-width'],
+  ] as const) {
+    const a = await page.getByTestId(teeth).boundingBox();
+    const b = await page.getByTestId(width).boundingBox();
+    expect(a).not.toBeNull();
+    expect(b).not.toBeNull();
+    expect(b?.x).toBe(a?.x);
+    expect(b?.width).toBe(a?.width);
+  }
+});
+
 test('厚さを入力すると 0.5 mm の倍数に丸めてから範囲に収める', async ({ page }) => {
   await openApp(page, { scene: twoGears, camera: TOP_VIEW });
   await page.evaluate(() => window.__gearSim?.select('gear_1'));

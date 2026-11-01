@@ -691,7 +691,7 @@ interface Settings {
   - コンテキストメニュー: キャリア・ラックの上の「固定する／固定を外す」「ここに寄る」「削除」は S3-03・S3-04 で済。
 - **プロパティパネル**（S1-20。`src/ui/properties.ts` の `createProperties({ setContent, getState, getLayout, dispatch })`。S2-05 で種類ごとの表示を足した: 種類の名前 `prop-kind`（`data-kind`、辞書 `gearKind.<種類>`）、ハスバ歯車のねじれの向き `prop-hand`（表示だけ）、かさ歯車の注記 `prop-bevel-note` と「向きを反転」`prop-bevel-flip`（`flipBevelApex`。`bevel` のシャフトの子では `disabled`）、ウォームの「1 条」`prop-worm-threads`（歯数の欄を出さない）。ホイール・ねじ歯車は歯数を編集できる）: `main.ts` がストアの購読で `refresh()` を呼び、選択かシーン（Undo を含む）の参照が前回と変わったときと、言語が変わったときに中身を作り直して `UiShell.properties.setContent` に渡す（選択が無ければ `null` で案内文）。作り直す前にフォーカスのあった要素は、作り直した後の同じ `data-testid` の要素に戻す。
   - 歯車を選んでいるとき: 見出し（`prop-heading`）・種類（平歯車）・大きさ（`prop-size`）・歯数（`prop-teeth`、`prop-teeth-dec`、`prop-teeth-inc`。範囲は `GEAR_SIZES[size]`）と、そのシャフトのモーターの欄。シャフトを選んでいるとき: 見出し・向き（`prop-shaft-axis`、`getLayout().shafts[id].axis`）とモーターの欄。
-  - 厚さ（S4-05）: 厚さを変えられる歯車（`isWidthAdjustable`）は大きさの下に厚さの欄（`prop-width`、`prop-width-dec`・`prop-width-inc` で `GEAR_WIDTH_STEP`（0.5 mm）ずつ。S5-01 まで `AXIAL_SNAP`。単位 mm と範囲の説明 `properties.width.range`）。入力した値は 0.5 mm の倍数に四捨五入してから `GEAR_WIDTH_RANGE` に収める（`ui/number-input.ts` の `parseClampedStep`・`clampToStep`。入力欄は `inputMode: 'decimal'`）。かさ歯車・ウォーム・ホイールには出さない。ラックは歯数の下に `prop-rack-width`（`-dec`・`-inc`）。確定するとまず今のシーンで `applyCommand` を試し、`notAllowed`（ほかの部品とぶつかる）ならコマンドを出さずにトースト `properties.width.blocked`（error）で理由を出す。
+  - 厚さ（S4-05）: 厚さを変えられる歯車（`isWidthAdjustable`）は大きさの下に厚さの欄（`prop-width`、`prop-width-dec`・`prop-width-inc` で `GEAR_WIDTH_STEP`（0.5 mm）ずつ。S5-01 まで `AXIAL_SNAP`。範囲の説明 `properties.width.range` に単位と刻みを書く。S5-02 で［−］入力［＋］の右の単位の欄をなくし、歯数の行と左端・右端・入力欄の幅をそろえた）。入力した値は 0.5 mm の倍数に四捨五入してから `GEAR_WIDTH_RANGE` に収める（`ui/number-input.ts` の `parseClampedStep`・`clampToStep`。入力欄は `inputMode: 'decimal'`）。かさ歯車・ウォーム・ホイールには出さない。ラックは歯数の下に `prop-rack-width`（`-dec`・`-inc`）。確定するとまず今のシーンで `applyCommand` を試し、`notAllowed`（ほかの部品とぶつかる）ならコマンドを出さずにトースト `properties.width.blocked`（error）で理由を出す。
   - モーターの欄（`prop-motor`、見出し `prop-motor-heading`）: 無ければ `prop-motor-add-<S|M|L>`（`addMotor`）。あれば大きさ `prop-motor-size-<S|M|L>`（`role="radio"`・`aria-checked`）、rpm のスライダー `prop-motor-rpm-slider`（`input` は表示だけ、`change` で確定）と入力欄 `prop-motor-rpm`、向き `prop-motor-direction`（`data-direction` が `1`／`-1`）、ON/OFF `prop-motor-on`（`aria-pressed`）、外す `prop-motor-remove`。
   - 固定具の欄（S3-01。`prop-anchor`、見出し「固定具」）: 「固定する」のチェック `prop-anchor-check`（`addAnchor`／`removeAnchor`）。歯車を選んでいるときは、そのシャフトを固定する旨の注記 `prop-anchor-note` を出す。歯車・シャフトのどちらでもモーターの欄の後に置く。
   - 数値の入力欄は `type="text"`（`inputmode="numeric"`）。Enter でフォーカスを外し、`blur` で `parseClampedInt`（`src/ui/number-input.ts`。四捨五入・範囲の端に丸め・数でなければ null）で確定する。Esc は元の値に戻してフォーカスを外す。値が変わらない確定ではコマンドを出さない。どの変更も 1 回の確定が 1 回のコマンド（Undo 1 回）で、`coalesceKey` は使っていない（スライダーは離したときにだけ確定するため）。
@@ -763,6 +763,7 @@ interface Settings {
 - 実行時の言語は `app/i18n.ts` が持つ（`t`・`getLanguage`・`setLanguage`・`onLanguageChange`。DOM には触れない）。画面の文字列はすべて `t()` で出し、言語が変わったら `onLanguageChange` で書き換える。`setLanguage` は言語が変わったときだけ購読者に知らせる。
 - `main.ts` が、言語が変わるたびに `document.title = t('app.title')` と `<html lang>` を合わせる。
 - 辞書のキーは各 UI タスクが、そのタスクで `ja.ts` と `en.ts` の両方に足す。
+- プロパティパネルの文言（`properties.*` の見出し・値・注意書き・ツールチップ）には括弧書き（ja の「（）」、en の「()」）を使わない。補足は読点や「・」でつなぐか、文を分ける（S5-02。`i18n.test.ts` で確かめる）。単位は欄の外に置かず、見出しか注意書きに書く（例: 「回転数 rpm」「0.5〜32 mm、0.5 mm 刻み」）。
 
 ## 9. 保存形式
 
